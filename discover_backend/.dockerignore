@@ -1,0 +1,30 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+
+# ---- 环境与密钥（仓库只允许提交 .env.example）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- 运行时数据（以卷挂载，不入镜像）----
+storage/
+logs/
+workspaces/
+
+# ---- 开发 / 测试 / 历史参考 ----
+tests/
+.ai/
+.claude/
+.vscode/
+eitia-client-finder/
+README.md

@@ -1,5 +1,5 @@
 # ===== discover_frontend 多阶段构建 =====
-# 构建上下文为项目根（context: ..），本文件位于 .docker/。
+# 构建上下文为当前目录（discover_frontend/），根级 compose 指定 context: ./discover_frontend。
 # 阶段一 base：运行时 + 包管理器
 FROM node:22-alpine AS base
 RUN corepack enable
@@ -29,8 +29,8 @@ RUN pnpm build
 FROM nginx:1.27-alpine AS runtime
 # 官方 nginx 镜像启动时对 /etc/nginx/templates/*.template 执行 envsubst，
 # 将 ${BACKEND_PROXY_PASS} 替换为后端地址
-COPY .docker/nginx.conf /etc/nginx/templates/default.conf.template
-COPY .docker/security-headers.conf /etc/nginx/security-headers.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

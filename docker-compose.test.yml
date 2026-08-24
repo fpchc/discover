@@ -1,0 +1,49 @@
+name: discover-test
+
+services:
+  backend:
+    build:
+      context: ./discover_backend
+      dockerfile: Dockerfile
+    image: discover-backend:test
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: agent_platform
+      HOST: 0.0.0.0
+      PORT: 8000
+    env_file:
+      - path: ./discover_backend/.env
+        required: false
+    volumes:
+      - backend-storage:/app/storage
+      - backend-logs:/app/logs
+      - backend-workspaces:/app/workspaces
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./discover_frontend
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        VITE_APP_ENV: test
+        VITE_API_BASE_URL: /api/v1
+    image: discover-frontend:test
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8081:80"
+    environment:
+      - BACKEND_PROXY_PASS=http://backend:8000
+
+volumes:
+  pgdata:
+  backend-storage:
+  backend-logs:
+  backend-workspaces:

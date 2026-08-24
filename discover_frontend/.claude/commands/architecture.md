@@ -47,7 +47,7 @@ src/
 └── utils/             纯工具（叶子层）：sse.ts 帧解析原语、persist.ts localStorage 封装、logger.ts 结构化日志
 ```
 
-> 环境文件统一收容于 `env/`（vite `envDir: ./env`），dev/test/prod 三套模板；Docker 资产在 `.docker/`。
+> 环境文件统一收容于 `env/`（vite `envDir: ./env`），dev/test/prod 三套模板；`Dockerfile` / `nginx.conf` 等构建文件在本项目根，全栈 compose 在仓库根。
 
 **结构性红线**：组件不直接发 HTTP、不直接解析 SSE、不持有对话副本；HTTP 唯一出口在 `src/api/`；SSE 解析唯一处在 `useChatStream.ts`；共享状态唯一通道是 Pinia。
 

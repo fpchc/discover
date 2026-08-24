@@ -1,0 +1,76 @@
+# ===== discover 全栈 dev 编排 =====
+# 一键拉起：PostgreSQL + 后端（FastAPI 热重载）+ 前端（Vite 热更新，/api 反代后端）
+# 启动：docker compose up --build
+# 停止并清库：docker compose down -v
+# 端口：前端 5173，后端 8000，PostgreSQL 5432
+name: discover
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: discover-pg
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agent_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./discover_backend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: discover-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # 指向 compose 内 postgres 服务（覆盖宿主机 .env 里的远程地址）
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: agent_platform
+      HOST: 0.0.0.0
+      PORT: 8000
+    env_file:
+      # 密钥与其余配置走宿主机 discover_backend/.env（可缺省）
+      - path: ./discover_backend/.env
+        required: false
+    volumes:
+      # 源码热挂载 + .venv 匿名卷（不污染宿主机）
+      - ./discover_backend:/app
+      - /app/.venv
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./discover_frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: discover-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      # 源码热挂载 + node_modules 匿名卷
+      - ./discover_frontend:/app
+      - /app/node_modules
+    environment:
+      # dev 代理：/api 反代到 compose 内 backend 服务（免 CORS）
+      - VITE_PROXY_TARGET=http://backend:8000
+    stdin_open: true
+    tty: true
+
+volumes:
+  pgdata:

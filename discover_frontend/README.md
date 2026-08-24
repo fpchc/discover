@@ -20,10 +20,11 @@ Vue 3.5 · TypeScript(strict) · Vite · Element Plus · Pinia · Vue Router 4 �
 | 环境 | 启动方式 | 说明 |
 |---|---|---|
 | **dev** | `pnpm dev` / `docker compose up --build` | vite 热更新，`/api` 走 vite 代理（免 CORS） |
-| **test** | `pnpm dev:test` 或 `docker compose -f .docker/docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代到 test 后端（8081） |
-| **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f .docker/docker-compose.prod.yml up --build -d` | 构建产物 + nginx 反代（8080） |
+| **test** | `pnpm dev:test` 或 `docker compose -f docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代（8081） |
+| **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f docker-compose.prod.yml up --build -d` | 构建产物 + nginx 反代（8080） |
 
-反代目标通过 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://host.docker.internal:8000`）。
+> 根级 compose 为全栈编排（postgres + 后端 + 前端）；`docker compose up frontend` 也会连带启动其依赖（后端 / postgres）。
+> 反代目标经 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://backend:8000`，compose 服务名）。
 
 ## 质量门禁（提交前，见 CLAUDE.md 第 12 节）
 
@@ -38,25 +39,30 @@ CI（`.github/workflows/ci.yml`）将以上四项**并行**执行。
 
 ## Docker
 
+前端自带构建文件（`Dockerfile` / `nginx.conf` / `security-headers.conf` 位于本目录根），
+根级 compose 以 `context: ./discover_frontend` 引用，与后端 / postgres 组成全栈编排：
+
 ```
-.docker/
+discover_frontend/
 ├── Dockerfile              多阶段：base → dev → build → runtime(nginx)
 ├── nginx.conf              SSE 反代(proxy_buffering off) + hash 长缓存（envsubst 模板）
 ├── security-headers.conf   CSP / X-Frame-Options 等安全头 snippet
-├── docker-compose.dev.yml
-├── docker-compose.prod.yml
-└── docker-compose.test.yml
-docker-compose.yml          标准入口（include dev）
+└── .dockerignore
+docker-compose.yml          dev 全栈（postgres + 后端热重载 + 前端热更新）
+docker-compose.prod.yml     prod 全栈（nginx 反代，8080）
+docker-compose.test.yml     test 全栈（nginx 反代，8081）
 ```
 
 ```bash
-# dev（热更新，5173）
+# dev（全栈热更新：前端 5173 / 后端 8000 / postgres 5432）
 docker compose up --build
 # prod（8080）
-docker compose -f .docker/docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.prod.yml up --build -d
 # test（8081）
-docker compose -f .docker/docker-compose.test.yml up --build -d
+docker compose -f docker-compose.test.yml up --build -d
 ```
+
+> 后端镜像与全栈编排细节见仓库根 `README.md`。
 
 ## 目录速查
 

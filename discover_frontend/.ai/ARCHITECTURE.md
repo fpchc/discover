@@ -7,13 +7,6 @@
 
 ```
 discover_frontend/
-├── .docker/                    # Docker 资产
-│   ├── Dockerfile              多阶段：base → dev → build → runtime(nginx)
-│   ├── nginx.conf              SSE 反代(proxy_buffering off) + hash 长缓存（envsubst 模板）
-│   ├── security-headers.conf   CSP / X-Frame-Options 等安全头 snippet（add_header 继承陷阱处理）
-│   ├── docker-compose.dev.yml  dev 热更新（标准入口经根 docker-compose.yml include）
-│   ├── docker-compose.prod.yml prod（nginx + 反代，8080）
-│   └── docker-compose.test.yml test（nginx + 反代，8081）
 ├── env/                        # 环境模板（vite envDir=./env）：.env.example / .development / .test / .production
 ├── .github/workflows/ci.yml    # CI 并行：lint / typecheck / test / build
 ├── src/
@@ -47,7 +40,7 @@ discover_frontend/
 | 消息快照 | localStorage `disf_snap_<cid>` | 仅已完成消息落盘（中断不落），刷新 / 切换按会话恢复 |
 | 环境 | VITE_* 收容 `env/`，`envDir: ./env` | 三环境模板、配置驱动、无硬编码 |
 | 校验 | Biome（Rust，lint+format 单一源） | 替代 ESLint+Prettier，消除规则重叠 |
-| 部署 | 多阶段 Docker + nginx | 同源 SSE 反代、hash 长缓存、CSP |
+| 部署 | 多阶段 Docker + nginx（各子项目自带构建文件） | 同源 SSE 反代、hash 长缓存、CSP；`Dockerfile` / `nginx.conf` 在各自项目根，全栈 compose 在仓库根 |
 | 会话持久化 | localStorage（`disf_` 前缀） | 仅元数据，不存消息全文 |
 
 ## 关键契约确认（2026-08-24，与后端对齐）

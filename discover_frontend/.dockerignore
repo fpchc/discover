@@ -13,4 +13,3 @@ README.md
 *.key
 env/.env.local
 env/.env.*.local
-.docker/docker-compose*.yml

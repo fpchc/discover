@@ -1,0 +1,77 @@
+# ===== discover 全栈 prod 编排 =====
+# 构建生产镜像：postgres + backend + frontend（nginx 静态服务 + /api 反代）
+# 启动：docker compose -f docker-compose.prod.yml up --build -d
+# 停止：docker compose -f docker-compose.prod.yml down
+# 端口：前端 8080；后端与 postgres 不对外暴露端口
+name: discover-prod
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: discover-prod-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agent_platform
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./discover_backend
+      dockerfile: Dockerfile
+    image: discover-backend:prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # 指向 compose 内 postgres 服务
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: agent_platform
+      HOST: 0.0.0.0
+      PORT: 8000
+    env_file:
+      # 密钥与其余配置走宿主机 discover_backend/.env（可缺省）
+      - path: ./discover_backend/.env
+        required: false
+    volumes:
+      # 运行时可写目录持久化
+      - backend-storage:/app/storage
+      - backend-logs:/app/logs
+      - backend-workspaces:/app/workspaces
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./discover_frontend
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        VITE_APP_ENV: production
+        VITE_API_BASE_URL: /api/v1
+    image: discover-frontend:prod
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    environment:
+      # nginx 反代目标：compose 内 backend 服务（同源 /api，SSE 长连接）
+      - BACKEND_PROXY_PASS=http://backend:8000
+
+volumes:
+  pgdata:
+  backend-storage:
+  backend-logs:
+  backend-workspaces:

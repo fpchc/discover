@@ -1,6 +1,0 @@
-# 标准入口：dev 环境热更新（docker compose up --build）
-# 环境切换：
-#   docker compose -f .docker/docker-compose.prod.yml up --build -d   # prod
-#   docker compose -f .docker/docker-compose.test.yml up --build -d   # test
-include:
-  - path: .docker/docker-compose.dev.yml

@@ -26,9 +26,9 @@
 | localStorage 封装（`disf_` 前缀） | `src/utils/persist.ts` |
 | 结构化日志 + 全局错误捕获 | `src/utils/logger.ts` |
 | 全局样式 | `src/styles/main.css` |
-| Docker 多阶段构建 / nginx 模板 / 安全头 | `.docker/Dockerfile` / `.docker/nginx.conf` / `.docker/security-headers.conf` |
-| 三环境 Docker compose | `.docker/docker-compose.{dev,prod,test}.yml` |
-| 标准 compose 入口（dev） | `docker-compose.yml` |
+| 前端 Docker 多阶段构建 / nginx 模板 / 安全头 | `Dockerfile` / `nginx.conf` / `security-headers.conf`（本目录根） |
+| 后端 Docker 镜像 | `../discover_backend/Dockerfile` |
+| 三环境全栈 compose | `../docker-compose.yml`（dev）/ `../docker-compose.prod.yml` / `../docker-compose.test.yml` |
 | 环境模板（envDir=./env） | `env/.env.{example,development,test,production}` |
 | CI（并行校验） | `.github/workflows/ci.yml` |
 | lint+format 单一规则源 | `biome.json` |
