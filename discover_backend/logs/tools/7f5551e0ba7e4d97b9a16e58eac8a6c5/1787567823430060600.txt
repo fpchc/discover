@@ -1,0 +1,241 @@
+结构校验通过：5 家客户
+WARNING: cover 缺少字段: scope
+WARNING: cover 缺少字段: date
+WARNING: cover 缺少字段: data_date
+WARNING: cover 缺少字段: summary
+WARNING: l0 缺少字段: funnel
+WARNING: l0 缺少字段: signal_heatmap
+WARNING: l0 缺少字段: top_n
+WARNING: l0.industry 缺少字段: market_size
+WARNING: l0.industry 缺少字段: eitia_position
+WARNING: l0.industry 缺少字段: customer_map
+WARNING: l0.industry 缺少字段: competitive_landscape
+WARNING: l0.industry 缺少字段: key_trends
+WARNING: clients[0].fullname 缺失
+WARNING: clients[0].display_name 缺失
+WARNING: clients[0].score 缺失
+WARNING: clients[0].tags 缺失
+WARNING: clients[0].kpi_row 缺失
+WARNING: clients[0].oneliner 缺失
+WARNING: clients[0].basic_table 缺失
+WARNING: clients[0].equity_section 缺失
+WARNING: clients[0].match_highlights 缺失
+WARNING: clients[0].match_risks 缺失
+WARNING: clients[0].veto_check 缺失
+WARNING: clients[0].contacts_intro 缺失
+WARNING: clients[0].decision_insight 缺失
+WARNING: clients[0].decision_chain 缺失
+WARNING: clients[0].signal_insight 缺失
+WARNING: clients[0].match_subscore_1 缺失
+WARNING: clients[0].match_subscore_2 缺失
+WARNING: clients[0].match_subscore_3 缺失
+WARNING: clients[0].match_subscore_4 缺失
+WARNING: clients[0].match_subscore_5 缺失
+WARNING: clients[0].match_subscore_6 缺失
+WARNING: clients[0].match_subscore_7 缺失
+WARNING: clients[0].match_subscore_8 缺失
+WARNING: clients[0].contact_cards 缺失
+WARNING: clients[0].signals 缺失
+WARNING: clients[0].tags 为空
+WARNING: clients[0].kpi_row 为空
+WARNING: clients[0].basic_table 为空
+WARNING: clients[0].veto_check 为空
+WARNING: clients[0].decision_insight 为空
+WARNING: clients[0].signal_insight 为空
+WARNING: clients[0].contact_cards 不足（至少 1 张）
+WARNING: clients[0].match_subscore_1 缺失或不完整
+WARNING: clients[0].match_subscore_2 缺失或不完整
+WARNING: clients[0].match_subscore_3 缺失或不完整
+WARNING: clients[0].match_subscore_4 缺失或不完整
+WARNING: clients[0].match_subscore_5 缺失或不完整
+WARNING: clients[0].match_subscore_6 缺失或不完整
+WARNING: clients[0].match_subscore_7 缺失或不完整
+WARNING: clients[0].match_subscore_8 缺失或不完整
+WARNING: clients[1].fullname 缺失
+WARNING: clients[1].display_name 缺失
+WARNING: clients[1].score 缺失
+WARNING: clients[1].tags 缺失
+WARNING: clients[1].kpi_row 缺失
+WARNING: clients[1].oneliner 缺失
+WARNING: clients[1].basic_table 缺失
+WARNING: clients[1].equity_section 缺失
+WARNING: clients[1].match_highlights 缺失
+WARNING: clients[1].match_risks 缺失
+WARNING: clients[1].veto_check 缺失
+WARNING: clients[1].contacts_intro 缺失
+WARNING: clients[1].decision_insight 缺失
+WARNING: clients[1].decision_chain 缺失
+WARNING: clients[1].signal_insight 缺失
+WARNING: clients[1].match_subscore_1 缺失
+WARNING: clients[1].match_subscore_2 缺失
+WARNING: clients[1].match_subscore_3 缺失
+WARNING: clients[1].match_subscore_4 缺失
+WARNING: clients[1].match_subscore_5 缺失
+WARNING: clients[1].match_subscore_6 缺失
+WARNING: clients[1].match_subscore_7 缺失
+WARNING: clients[1].match_subscore_8 缺失
+WARNING: clients[1].contact_cards 缺失
+WARNING: clients[1].signals 缺失
+WARNING: clients[1].tags 为空
+WARNING: clients[1].kpi_row 为空
+WARNING: clients[1].basic_table 为空
+WARNING: clients[1].veto_check 为空
+WARNING: clients[1].decision_insight 为空
+WARNING: clients[1].signal_insight 为空
+WARNING: clients[1].contact_cards 不足（至少 1 张）
+WARNING: clients[1].match_subscore_1 缺失或不完整
+WARNING: clients[1].match_subscore_2 缺失或不完整
+WARNING: clients[1].match_subscore_3 缺失或不完整
+WARNING: clients[1].match_subscore_4 缺失或不完整
+WARNING: clients[1].match_subscore_5 缺失或不完整
+WARNING: clients[1].match_subscore_6 缺失或不完整
+WARNING: clients[1].match_subscore_7 缺失或不完整
+WARNING: clients[1].match_subscore_8 缺失或不完整
+WARNING: clients[2].fullname 缺失
+WARNING: clients[2].display_name 缺失
+WARNING: clients[2].score 缺失
+WARNING: clients[2].tags 缺失
+WARNING: clients[2].kpi_row 缺失
+WARNING: clients[2].oneliner 缺失
+WARNING: clients[2].basic_table 缺失
+WARNING: clients[2].equity_section 缺失
+WARNING: clients[2].match_highlights 缺失
+WARNING: clients[2].match_risks 缺失
+WARNING: clients[2].veto_check 缺失
+WARNING: clients[2].contacts_intro 缺失
+WARNING: clients[2].decision_insight 缺失
+WARNING: clients[2].decision_chain 缺失
+WARNING: clients[2].signal_insight 缺失
+WARNING: clients[2].match_subscore_1 缺失
+WARNING: clients[2].match_subscore_2 缺失
+WARNING: clients[2].match_subscore_3 缺失
+WARNING: clients[2].match_subscore_4 缺失
+WARNING: clients[2].match_subscore_5 缺失
+WARNING: clients[2].match_subscore_6 缺失
+WARNING: clients[2].match_subscore_7 缺失
+WARNING: clients[2].match_subscore_8 缺失
+WARNING: clients[2].contact_cards 缺失
+WARNING: clients[2].signals 缺失
+WARNING: clients[2].tags 为空
+WARNING: clients[2].kpi_row 为空
+WARNING: clients[2].basic_table 为空
+WARNING: clients[2].veto_check 为空
+WARNING: clients[2].decision_insight 为空
+WARNING: clients[2].signal_insight 为空
+WARNING: clients[2].contact_cards 不足（至少 1 张）
+WARNING: clients[2].match_subscore_1 缺失或不完整
+WARNING: clients[2].match_subscore_2 缺失或不完整
+WARNING: clients[2].match_subscore_3 缺失或不完整
+WARNING: clients[2].match_subscore_4 缺失或不完整
+WARNING: clients[2].match_subscore_5 缺失或不完整
+WARNING: clients[2].match_subscore_6 缺失或不完整
+WARNING: clients[2].match_subscore_7 缺失或不完整
+WARNING: clients[2].match_subscore_8 缺失或不完整
+WARNING: clients[3].fullname 缺失
+WARNING: clients[3].display_name 缺失
+WARNING: clients[3].score 缺失
+WARNING: clients[3].tags 缺失
+WARNING: clients[3].kpi_row 缺失
+WARNING: clients[3].oneliner 缺失
+WARNING: clients[3].basic_table 缺失
+WARNING: clients[3].equity_section 缺失
+WARNING: clients[3].match_highlights 缺失
+WARNING: clients[3].match_risks 缺失
+WARNING: clients[3].veto_check 缺失
+WARNING: clients[3].contacts_intro 缺失
+WARNING: clients[3].decision_insight 缺失
+WARNING: clients[3].decision_chain 缺失
+WARNING: clients[3].signal_insight 缺失
+WARNING: clients[3].match_subscore_1 缺失
+WARNING: clients[3].match_subscore_2 缺失
+WARNING: clients[3].match_subscore_3 缺失
+WARNING: clients[3].match_subscore_4 缺失
+WARNING: clients[3].match_subscore_5 缺失
+WARNING: clients[3].match_subscore_6 缺失
+WARNING: clients[3].match_subscore_7 缺失
+WARNING: clients[3].match_subscore_8 缺失
+WARNING: clients[3].contact_cards 缺失
+WARNING: clients[3].signals 缺失
+WARNING: clients[3].tags 为空
+WARNING: clients[3].kpi_row 为空
+WARNING: clients[3].basic_table 为空
+WARNING: clients[3].veto_check 为空
+WARNING: clients[3].decision_insight 为空
+WARNING: clients[3].signal_insight 为空
+WARNING: clients[3].contact_cards 不足（至少 1 张）
+WARNING: clients[3].match_subscore_1 缺失或不完整
+WARNING: clients[3].match_subscore_2 缺失或不完整
+WARNING: clients[3].match_subscore_3 缺失或不完整
+WARNING: clients[3].match_subscore_4 缺失或不完整
+WARNING: clients[3].match_subscore_5 缺失或不完整
+WARNING: clients[3].match_subscore_6 缺失或不完整
+WARNING: clients[3].match_subscore_7 缺失或不完整
+WARNING: clients[3].match_subscore_8 缺失或不完整
+WARNING: clients[4].fullname 缺失
+WARNING: clients[4].display_name 缺失
+WARNING: clients[4].score 缺失
+WARNING: clients[4].tags 缺失
+WARNING: clients[4].kpi_row 缺失
+WARNING: clients[4].oneliner 缺失
+WARNING: clients[4].basic_table 缺失
+WARNING: clients[4].equity_section 缺失
+WARNING: clients[4].match_highlights 缺失
+WARNING: clients[4].match_risks 缺失
+WARNING: clients[4].veto_check 缺失
+WARNING: clients[4].contacts_intro 缺失
+WARNING: clients[4].decision_insight 缺失
+WARNING: clients[4].decision_chain 缺失
+WARNING: clients[4].signal_insight 缺失
+WARNING: clients[4].match_subscore_1 缺失
+WARNING: clients[4].match_subscore_2 缺失
+WARNING: clients[4].match_subscore_3 缺失
+WARNING: clients[4].match_subscore_4 缺失
+WARNING: clients[4].match_subscore_5 缺失
+WARNING: clients[4].match_subscore_6 缺失
+WARNING: clients[4].match_subscore_7 缺失
+WARNING: clients[4].match_subscore_8 缺失
+WARNING: clients[4].contact_cards 缺失
+WARNING: clients[4].signals 缺失
+WARNING: clients[4].tags 为空
+WARNING: clients[4].kpi_row 为空
+WARNING: clients[4].basic_table 为空
+WARNING: clients[4].veto_check 为空
+WARNING: clients[4].decision_insight 为空
+WARNING: clients[4].signal_insight 为空
+WARNING: clients[4].contact_cards 不足（至少 1 张）
+WARNING: clients[4].match_subscore_1 缺失或不完整
+WARNING: clients[4].match_subscore_2 缺失或不完整
+WARNING: clients[4].match_subscore_3 缺失或不完整
+WARNING: clients[4].match_subscore_4 缺失或不完整
+WARNING: clients[4].match_subscore_5 缺失或不完整
+WARNING: clients[4].match_subscore_6 缺失或不完整
+WARNING: clients[4].match_subscore_7 缺失或不完整
+WARNING: clients[4].match_subscore_8 缺失或不完整
+WARNING: #1: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: #1: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: #1: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: #1: signals 少于 4 条 — 数据受限
+WARNING: #1: 缺少高风险项
+WARNING: #2: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: #2: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: #2: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: #2: signals 少于 4 条 — 数据受限
+WARNING: #2: 缺少高风险项
+WARNING: #3: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: #3: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: #3: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: #3: signals 少于 4 条 — 数据受限
+WARNING: #3: 缺少高风险项
+WARNING: #4: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: #4: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: #4: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: #4: signals 少于 4 条 — 数据受限
+WARNING: #4: 缺少高风险项
+WARNING: #5: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: #5: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: #5: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: #5: signals 少于 4 条 — 数据受限
+WARNING: #5: 缺少高风险项
+输出检查通过：无残留变量，无工具名泄漏，无 CSS 泄露
+报告数据已落盘: C:\Users\admin\Desktop\discover_new\discover_backend\workspaces\eitia\output\report.json
+报告已生成: C:\Users\admin\Desktop\discover_new\discover_backend\workspaces\eitia\output\EITIA_高频高速互连器件_20260824_V5.html (49567 bytes)

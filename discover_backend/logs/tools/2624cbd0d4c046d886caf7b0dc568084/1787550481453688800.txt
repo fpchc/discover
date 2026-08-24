@@ -1,0 +1,97 @@
+{
+  "rankings": [
+    {
+      "company_name": "浪潮电子信息产业股份有限公司",
+      "uscc": "91370000706266601D",
+      "composite_score": 8.2,
+      "dimension_scores": {
+        "purchase_scale": 10,
+        "tech_match": 9,
+        "demand_intensity": 9,
+        "purchase_timing": 9,
+        "competitive_pos": 5,
+        "reach_feasibility": 5,
+        "decision_complex": 5,
+        "credit_safety": 9
+      },
+      "rank": 1,
+      "status": "推荐"
+    },
+    {
+      "company_name": "超聚变数字技术股份有限公司",
+      "uscc": "91410100MA9K6R0F06",
+      "composite_score": 8.1,
+      "dimension_scores": {
+        "purchase_scale": 8,
+        "tech_match": 9,
+        "demand_intensity": 9,
+        "purchase_timing": 9,
+        "competitive_pos": 6,
+        "reach_feasibility": 7,
+        "decision_complex": 6,
+        "credit_safety": 8
+      },
+      "rank": 2,
+      "status": "推荐"
+    },
+    {
+      "company_name": "新华三技术有限公司",
+      "uscc": "91330100754408889H",
+      "composite_score": 7.3,
+      "dimension_scores": {
+        "purchase_scale": 9,
+        "tech_match": 8,
+        "demand_intensity": 8,
+        "purchase_timing": 7,
+        "competitive_pos": 5,
+        "reach_feasibility": 5,
+        "decision_complex": 5,
+        "credit_safety": 8
+      },
+      "rank": 3,
+      "status": "推荐"
+    },
+    {
+      "company_name": "烽火通信科技股份有限公司",
+      "uscc": "914200007146661114",
+      "composite_score": 7.3,
+      "dimension_scores": {
+        "purchase_scale": 7,
+        "tech_match": 8,
+        "demand_intensity": 8,
+        "purchase_timing": 8,
+        "competitive_pos": 6,
+        "reach_feasibility": 6,
+        "decision_complex": 5,
+        "credit_safety": 9
+      },
+      "rank": 4,
+      "status": "推荐"
+    },
+    {
+      "company_name": "曙光信息产业股份有限公司",
+      "uscc": "91120000783342508F",
+      "composite_score": 7.2,
+      "dimension_scores": {
+        "purchase_scale": 8,
+        "tech_match": 9,
+        "demand_intensity": 7,
+        "purchase_timing": 7,
+        "competitive_pos": 5,
+        "reach_feasibility": 5,
+        "decision_complex": 5,
+        "credit_safety": 9
+      },
+      "rank": 5,
+      "status": "推荐"
+    }
+  ],
+  "excluded": [],
+  "reserve_pool": [],
+  "summary": {
+    "total_input": 5,
+    "recommended": 5,
+    "excluded": 0,
+    "reserve_pool": 0
+  }
+}

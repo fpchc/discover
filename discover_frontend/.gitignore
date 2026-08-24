@@ -1,0 +1,26 @@
+# ---- 依赖 / 构建产物 ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ---- 类型检查 / 静态分析 / 测试 ----
+coverage/
+.vite/
+*.tsbuildinfo
+
+# ---- 环境与密钥（无密钥的环境模板允许提交：env/.env.example / env/.env.development / env/.env.test / env/.env.production）----
+.env
+.env.local
+env/.env.local
+env/.env.*.local
+*.pem
+*.key
+
+# ---- IDE（团队共享配置随仓库提交，个人配置仍忽略）----
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/

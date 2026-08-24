@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev: Vite dev server",
+      "type": "npm",
+      "script": "dev",
+      "detail": "pnpm dev — 启动 Vite 开发服务器（http://localhost:5173，/api 代理到后端）",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      }
+    },
+    {
+      "label": "typecheck: vue-tsc",
+      "type": "npm",
+      "script": "typecheck",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$tsc"],
+      "detail": "pnpm typecheck — vue-tsc --noEmit（交付自检基线）"
+    },
+    {
+      "label": "lint: Biome",
+      "type": "npm",
+      "script": "lint",
+      "problemMatcher": [],
+      "detail": "pnpm lint — biome check --error-on-warnings"
+    },
+    {
+      "label": "test: Vitest run",
+      "type": "npm",
+      "script": "test:run",
+      "problemMatcher": [],
+      "detail": "pnpm test:run — vitest run"
+    }
+  ]
+}

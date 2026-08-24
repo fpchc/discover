@@ -1,0 +1,4 @@
+# pnpm 配置（pnpm 11 设置迁移至此，不再读 package.json 的 pnpm 字段）
+# 允许指定依赖执行构建脚本
+allowBuilds:
+  esbuild: true

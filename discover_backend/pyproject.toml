@@ -1,0 +1,106 @@
+[project]
+name = "agent-platform"
+version = "0.1.0"
+description = "多智能体承载平台：运行时、工具接入、会话隔离、流式输出、审批、产物管理"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.13",
+    "anyio>=4.4",
+    "asyncpg>=0.29",
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "langchain-core>=0.3",
+    "langgraph>=0.2",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "uvicorn[standard]>=0.30",
+]
+
+[project.scripts]
+# 对话控制台客户端（SSE 打字机渲染）
+platform-chat = "platform_engine.console.chat:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/platform_engine"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+# 历史参考包（迁移源），迁移进 agents/ 后另行纳入校验范围；.venv 非 git 仓库无法走 gitignore
+# alembic/versions 为自动生成迁移，不参与 lint
+exclude = ["eitia-client-finder", ".venv", "alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "I",  # isort
+    "UP",  # pyupgrade
+    "B",  # bugbear
+    "ASYNC",  # flake8-async
+    "TID",  # flake8-tidy-imports（含 TID251 禁用 asynccontextmanager）
+    "ANN",  # flake8-annotations：全量注解
+    "C4",  # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff 专属
+]
+
+# 中文本是项目语言，放行常用全角标点（RUF001/002/003 误报）
+allowed-confusables = ["，", "。", "：", "；", "、", "！", "？", "（", "）", "％", "—", "…", "“", "”", "‘", "’"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 依赖注入惯用法：Depends() 作为参数默认值
+extend-immutable-calls = ["fastapi.Depends"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+banned-api."contextlib.asynccontextmanager".msg = "应用生命周期与自定义异步上下文管理器一律类式实现（__aenter__/__aexit__），禁用 @asynccontextmanager"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+show_error_codes = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+exclude = ["tests/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "unit: 纯单元测试，无网络 / 无 DB",
+    "integration: 集成测试，依赖本地 PostgreSQL",
+    "http: HTTP 接入层测试（进程内 TestClient，无需真服务）",
+    "e2e: 端到端测试，需 127.0.0.1:8000 真服务在跑（未启动自动 skip）",
+]
+# 关闭输出捕获：tests/e2e/test_discover_live.py 用 print 做流式打字机输出，默认捕获会吞掉
+# 若想恢复安静测试输出，删掉这一行即可（logging 打印仍由下方 log_cli 控制）
+addopts = "-s"
+# 让应用 logging 输出实时打印到终端，便于定位异步链路问题
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+# 捕获模式下（caplog / 断言输出）同一套格式
+log_level = "INFO"
+log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"

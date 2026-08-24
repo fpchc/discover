@@ -1,0 +1,38 @@
+结构校验通过：5 家客户
+WARNING: 超聚变: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 超聚变: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 超聚变: signals 少于 4 条 — 数据受限
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 缺少高风险项
+WARNING: 华勤技术: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 华勤技术: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 华勤技术: signals 少于 4 条 — 数据受限
+WARNING: 华勤技术: 信号「」detail 无数字数据
+WARNING: 华勤技术: 信号「」detail 无数字数据
+WARNING: 华勤技术: 信号「」detail 无数字数据
+WARNING: 华勤技术: 缺少高风险项
+WARNING: 宝德计算机: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 宝德计算机: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 宝德计算机: signals 少于 4 条 — 数据受限
+WARNING: 宝德计算机: 信号「」detail 无数字数据
+WARNING: 宝德计算机: 信号「」detail 无数字数据
+WARNING: 宝德计算机: 信号「」detail 无数字数据
+WARNING: 宝德计算机: 缺少高风险项
+WARNING: 锐捷网络: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 锐捷网络: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: 锐捷网络: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 锐捷网络: signals 少于 4 条 — 数据受限
+WARNING: 锐捷网络: 信号「」detail 无数字数据
+WARNING: 锐捷网络: 信号「」detail 无数字数据
+WARNING: 锐捷网络: 信号「」detail 无数字数据
+WARNING: 锐捷网络: 缺少高风险项
+WARNING: 中科曙光: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 中科曙光: contact_cards 少于 2 张 — 数据受限，标注
+WARNING: 中科曙光: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 中科曙光: signals 少于 4 条 — 数据受限
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 缺少高风险项

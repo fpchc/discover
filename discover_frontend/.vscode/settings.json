@@ -1,0 +1,47 @@
+{
+  // ---- 通用编辑器：与 .editorconfig / biome.json 对齐（space / 2 / lf / 100）----
+  "files.eol": "\n",
+  "files.encoding": "utf8",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "editor.rulers": [100],
+  "editor.formatOnSave": true,
+
+  // ---- 格式与代码动作：Biome 为唯一 lint/format 规则源（替代 ESLint + Prettier）----
+  "editor.codeActionsOnSave": {
+    "source.fixAll.biome": "explicit",
+    "source.organizeImports.biome": "explicit"
+  },
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[javascriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[vue]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[json]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[jsonc]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[css]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[html]": { "editor.defaultFormatter": "biomejs.biome" },
+
+  // ---- 包管理器 / TypeScript / Biome LSP ----
+  "npm.packageManager": "pnpm",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "biome.lspBin": "node_modules/@biomejs/biome/bin/biome",
+
+  // ---- 排除扫描（与 CLAUDE.md 第 11 节禁止扫描路径一致）----
+  "search.exclude": {
+    "node_modules": true,
+    "dist": true,
+    "coverage": true,
+    ".vite": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true,
+    "**/.vite/**": true
+  }
+}

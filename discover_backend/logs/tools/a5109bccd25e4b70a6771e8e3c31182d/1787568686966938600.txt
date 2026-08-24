@@ -1,0 +1,29 @@
+{
+  "rankings": [
+    {
+      "company_name": "浪潮电子信息产业股份有限公司",
+      "uscc": "91370000706266601D",
+      "composite_score": 8.0,
+      "dimension_scores": {
+        "purchase_scale": 10,
+        "tech_match": 9,
+        "demand_intensity": 10,
+        "purchase_timing": 9,
+        "competitive_pos": 3,
+        "reach_feasibility": 4,
+        "decision_complex": 3,
+        "credit_safety": 10
+      },
+      "rank": 1,
+      "status": "推荐"
+    }
+  ],
+  "excluded": [],
+  "reserve_pool": [],
+  "summary": {
+    "total_input": 1,
+    "recommended": 1,
+    "excluded": 0,
+    "reserve_pool": 0
+  }
+}

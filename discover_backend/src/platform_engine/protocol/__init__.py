@@ -1,0 +1,57 @@
+"""对外事件契约：SSE 事件模型、节流发射器、脱敏工具。"""
+
+from platform_engine.protocol.emitter import QueueEmitter
+from platform_engine.protocol.events import (
+    AgentEvent,
+    AgentEventUnion,
+    AgentSelectedEvent,
+    ArtifactReadyEvent,
+    DoneEvent,
+    ErrorEvent,
+    GateCheckedEvent,
+    HeartbeatEvent,
+    SessionCreatedEvent,
+    SkillSelectedEvent,
+    SourceDegradedEvent,
+    TextDeltaEvent,
+    ThinkingDeltaEvent,
+    ThinkingEndedEvent,
+    ThinkingStartedEvent,
+    ToolCallCompletedEvent,
+    ToolCallStartedEvent,
+    ToolsReadyEvent,
+    event_adapter,
+)
+from platform_engine.protocol.sanitize import (
+    redact_sensitive,
+    sanitize_error_message,
+    sanitize_tool_args,
+    truncate,
+)
+
+__all__ = [
+    "AgentEvent",
+    "AgentEventUnion",
+    "AgentSelectedEvent",
+    "ArtifactReadyEvent",
+    "DoneEvent",
+    "ErrorEvent",
+    "GateCheckedEvent",
+    "HeartbeatEvent",
+    "QueueEmitter",
+    "SessionCreatedEvent",
+    "SkillSelectedEvent",
+    "SourceDegradedEvent",
+    "TextDeltaEvent",
+    "ThinkingDeltaEvent",
+    "ThinkingEndedEvent",
+    "ThinkingStartedEvent",
+    "ToolCallCompletedEvent",
+    "ToolCallStartedEvent",
+    "ToolsReadyEvent",
+    "event_adapter",
+    "redact_sensitive",
+    "sanitize_error_message",
+    "sanitize_tool_args",
+    "truncate",
+]

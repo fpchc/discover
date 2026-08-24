@@ -1,0 +1,18 @@
+# prod 环境：多阶段构建 → nginx 静态服务 + 后端反代（SSE 同源）
+# 构建上下文为项目根（context: ..）
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+      target: runtime
+      args:
+        VITE_APP_ENV: production
+        VITE_API_BASE_URL: /api/v1
+    image: discover-frontend:prod
+    ports:
+      - '8080:80'
+    environment:
+      # nginx 反代目标（同源 /api）；替换为实际后端地址或 compose 服务名
+      - BACKEND_PROXY_PASS=${BACKEND_PROXY_PASS:-http://host.docker.internal:8000}
+    restart: unless-stopped

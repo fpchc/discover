@@ -1,0 +1,22 @@
+# 模型提供方注册表样例（复制为 config/llm-providers.yaml 后使用）
+# 字段定义见 .claude/commands/llm-provider-spec.md §2
+# 认证令牌只存环境变量名，值从环境读取；代码中不出现模型名字面量。
+
+# 智能体清单「模型偏好」标识 → 实际提供方标识
+# 平台配置可覆盖智能体偏好；偏好标识不在 providers 中时解析到此处映射
+aliases:
+  opus: qwen3.7-max
+  sonnet: qwen3.7-max
+
+providers:
+  - id: qwen3.7-max
+    display_name: "Qwen 3.7 Max"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key_env: "LLM_API_KEY"
+    model: "qwen3.7-max"
+    supports_thinking: true
+    thinking_field: "reasoning_content"
+    supports_tool_calling: true
+    context_window: 131072
+    timeout_seconds: 60
+    retries: 2

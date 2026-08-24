@@ -1,0 +1,72 @@
+# discover_frontend
+
+ChatGPT 风格单页对话应用，消费 `discover_backend` 多智能体平台（单用户、无鉴权演示）。
+仅消费已有 API（`POST /api/v1/chat-messages`，SSE 流式），不新增后端接口；会话历史由后端持有，前端仅本地持久化会话元数据。
+
+## 技术栈
+
+Vue 3.5 · TypeScript(strict) · Vite · Element Plus · Pinia · Vue Router 4 · Axios · markdown-it + highlight.js + DOMPurify · **Biome**（lint+format 单一规则源）· Vitest
+
+## 快速开始
+
+- 环境：Node `>= 20.19`，pnpm `>= 9`（`corepack enable`）
+- 安装：`pnpm install`
+- 本地开发：`pnpm dev`（`/api` 代理到 `VITE_PROXY_TARGET`，默认 `http://127.0.0.1:8000`）
+
+## 三环境架构
+
+环境文件统一收容于 `env/`（`vite envDir: ./env`），本地覆盖用 `env/.env.development.local`（gitignore）：
+
+| 环境 | 启动方式 | 说明 |
+|---|---|---|
+| **dev** | `pnpm dev` / `docker compose up --build` | vite 热更新，`/api` 走 vite 代理（免 CORS） |
+| **test** | `pnpm dev:test` 或 `docker compose -f .docker/docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代到 test 后端（8081） |
+| **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f .docker/docker-compose.prod.yml up --build -d` | 构建产物 + nginx 反代（8080） |
+
+反代目标通过 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://host.docker.internal:8000`）。
+
+## 质量门禁（提交前，见 CLAUDE.md 第 12 节）
+
+```bash
+pnpm lint        # Biome：lint + format 单一规则源
+pnpm typecheck   # vue-tsc --noEmit（app + node）
+pnpm test:run    # vitest（happy-dom）
+pnpm build:test  # vue-tsc + vite build --mode test
+```
+
+CI（`.github/workflows/ci.yml`）将以上四项**并行**执行。
+
+## Docker
+
+```
+.docker/
+├── Dockerfile              多阶段：base → dev → build → runtime(nginx)
+├── nginx.conf              SSE 反代(proxy_buffering off) + hash 长缓存（envsubst 模板）
+├── security-headers.conf   CSP / X-Frame-Options 等安全头 snippet
+├── docker-compose.dev.yml
+├── docker-compose.prod.yml
+└── docker-compose.test.yml
+docker-compose.yml          标准入口（include dev）
+```
+
+```bash
+# dev（热更新，5173）
+docker compose up --build
+# prod（8080）
+docker compose -f .docker/docker-compose.prod.yml up --build -d
+# test（8081）
+docker compose -f .docker/docker-compose.test.yml up --build -d
+```
+
+## 目录速查
+
+- 架构快照 / 模块映射：`.ai/ARCHITECTURE.md`、`.ai/MODULE_MAP.md`（结构变化后同步更新）
+- 架构规范（分层 / 依赖方向 / 边界）：`.claude/commands/architecture.md`
+- 全局红线约束：`CLAUDE.md`
+
+## 已知限制
+
+- **Biome × Vue**：Biome 暂不识别 `<script setup>` 模板绑定，`biome.json` 对 `.vue` 关闭
+  `noUnusedVariables` / `noUnusedImports`（避免误删模板引用变量）；TS 文件仍启用。
+- Element Plus 全量引入（element chunk 约 900 kB），后续可切 `unplugin-vue-components` 按需引入。
+- `pnpm-workspace.yaml` 非 Monorepo 声明，是 pnpm 11 的设置文件（`allowBuilds.esbuild`），删除会导致依赖安装报 `ERR_PNPM_IGNORED_BUILDS`。

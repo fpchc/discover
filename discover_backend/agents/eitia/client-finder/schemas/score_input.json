@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "score_calculator 输入约束",
+  "description": "EITIA 八维评分计算脚本的入参约束。八维分数 0-10，红线为布尔。",
+  "type": "object",
+  "required": ["companies", "top_n"],
+  "additionalProperties": false,
+  "properties": {
+    "companies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["company_name", "scores"],
+        "additionalProperties": false,
+        "properties": {
+          "company_name": { "type": "string", "minLength": 1 },
+          "uscc": { "type": "string" },
+          "scores": {
+            "type": "object",
+            "required": [
+              "purchase_scale", "tech_match", "demand_intensity",
+              "purchase_timing", "competitive_pos", "reach_feasibility",
+              "decision_complex", "credit_safety"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "purchase_scale": { "type": "number", "minimum": 0, "maximum": 10 },
+              "tech_match": { "type": "number", "minimum": 0, "maximum": 10 },
+              "demand_intensity": { "type": "number", "minimum": 0, "maximum": 10 },
+              "purchase_timing": { "type": "number", "minimum": 0, "maximum": 10 },
+              "competitive_pos": { "type": "number", "minimum": 0, "maximum": 10 },
+              "reach_feasibility": { "type": "number", "minimum": 0, "maximum": 10 },
+              "decision_complex": { "type": "number", "minimum": 0, "maximum": 10 },
+              "credit_safety": { "type": "number", "minimum": 0, "maximum": 10 }
+            }
+          },
+          "red_flags": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dishonesty": { "type": "boolean" },
+              "bankruptcy": { "type": "boolean" },
+              "revoked": { "type": "boolean" },
+              "severe_penalty": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "top_n": { "type": "integer", "minimum": 1, "maximum": 20 }
+  }
+}

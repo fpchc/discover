@@ -1,0 +1,50 @@
+{
+  "name": "discover-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ChatGPT 风格单页对话应用（消费 discover_backend 多智能体平台）",
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@11.16.0",
+  "scripts": {
+    "dev": "vite",
+    "dev:test": "vite --mode test",
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "build:test": "vue-tsc --noEmit -p tsconfig.app.json && vite build --mode test",
+    "preview": "vite preview --port 4173",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json",
+    "lint": "biome check --error-on-warnings .",
+    "lint:fix": "biome check --write --unsafe .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "dompurify": "^3.2.4",
+    "element-plus": "^2.9.7",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "pinia": "^3.0.2",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.13.10",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "^3.1.1",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^18.0.1",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.1",
+    "vue-tsc": "^3.0.1"
+  }
+}

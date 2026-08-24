@@ -1,0 +1,45 @@
+# ---- 依赖 / 构建产物 ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ---- 类型检查 / 静态分析 / 测试 ----
+coverage/
+.vite/
+*.tsbuildinfo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+
+# ---- 环境与密钥 ----
+# 允许提交的模板文件
+!.env.example
+# 忽略所有其他 .env 文件
+.env
+.env.local
+.env.*
+*.pem
+*.key
+
+# ---- 运行时产物 ----
+sessions/
+*.log
+
+# ---- IDE ----
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/

@@ -1,0 +1,30 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# ---- 类型检查 / 静态分析 / 测试 ----
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+
+# ---- 环境与密钥（仓库只允许提交 .env.example）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- 运行时产物 ----
+sessions/
+*.log
+
+# ---- IDE ----
+.vscode/*
+!.vscode/settings.json
+.idea/

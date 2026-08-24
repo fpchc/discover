@@ -1,0 +1,8 @@
+{
+  "matched": false,
+  "similarity": 0.0,
+  "recommended": [],
+  "reserve_pool": [],
+  "all_excluded": [],
+  "matched_clue": null
+}

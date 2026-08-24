@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    // Vue 3 语言支持（Volar，官方）
+    "Vue.volar",
+    // Biome：唯一 lint / format 规则源
+    "biomejs.biome",
+    // Vitest 测试资源管理器
+    "vitest.explorer"
+  ],
+  "unwantedRecommendations": [
+    // ESLint / Prettier 已被 Biome 取代（单一规则源，见 CLAUDE.md）
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}

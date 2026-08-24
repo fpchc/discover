@@ -1,0 +1,48 @@
+import { API_BASE_URL } from '@/config/env'
+import { httpClient } from './client'
+import type { BlockingChatResponse, ChatRequest } from './types'
+
+export interface SendChatMessageParams {
+  query: string
+  /** 空串 = 新建会话；续聊必带后端回传的会话 ID */
+  conversationId: string
+  signal: AbortSignal
+}
+
+/**
+ * 发起流式对话请求。
+ * SSE 必须用 fetch + ReadableStream（POST 语义，不能用 EventSource）；
+ * 返回未消费的 Response，交由 useChatStream 读取帧。
+ */
+export function sendChatMessage(params: SendChatMessageParams): Promise<Response> {
+  const request: ChatRequest = {
+    query: params.query,
+    response_mode: 'streaming',
+    conversation_id: params.conversationId,
+  }
+  return fetch(`${API_BASE_URL}/chat-messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal: params.signal,
+  })
+}
+
+/**
+ * 阻塞模式对话（axios 普通 HTTP 出口）。
+ * 用于流式失败的兜底重试（F6，受 VITE_FEATURE_BLOCKING_FALLBACK 开关控制）；
+ * 返回后端 chat-messages JSON。
+ */
+export async function sendChatMessageBlocking(
+  params: SendChatMessageParams,
+): Promise<BlockingChatResponse> {
+  const request: ChatRequest = {
+    query: params.query,
+    response_mode: 'blocking',
+    conversation_id: params.conversationId,
+  }
+  const { data } = await httpClient.post<BlockingChatResponse>('/chat-messages', request, {
+    signal: params.signal,
+  })
+  return data
+}

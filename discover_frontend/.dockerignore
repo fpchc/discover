@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+.git
+.gitignore
+.vscode
+.idea
+.claude
+.ai
+README.md
+.github
+*.pem
+*.key
+env/.env.local
+env/.env.*.local
+.docker/docker-compose*.yml

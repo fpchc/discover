@@ -1,0 +1,15 @@
+# MCP 服务注册表样例（复制为 config/mcp-servers.yaml 后使用）
+# 字段定义见 .claude/commands/mcp-integration-spec.md §3
+# 认证令牌只存环境变量名，值从环境读取；代码中不出现端点 URL 字面量。
+
+servers:
+  - id: alibaba_search
+    transport: streamable_http
+    base_url: "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp"
+    auth:
+      type: bearer_token
+      token_env: "ALIBABA_SEARCH_TOKEN"
+    per_session: false
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3

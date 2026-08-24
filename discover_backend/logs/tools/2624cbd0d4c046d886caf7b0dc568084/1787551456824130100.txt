@@ -1,0 +1,38 @@
+结构校验通过：5 家客户
+WARNING: 浪潮信息: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 浪潮信息: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 浪潮信息: 信号「」detail 无数字数据
+WARNING: 浪潮信息: 信号「」detail 无数字数据
+WARNING: 浪潮信息: 信号「」detail 无数字数据
+WARNING: 浪潮信息: 信号「」detail 无数字数据
+WARNING: 浪潮信息: 缺少高风险项
+WARNING: 超聚变: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 超聚变: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 信号「」detail 无数字数据
+WARNING: 超聚变: 缺少高风险项
+WARNING: 新华三H3C: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 新华三H3C: 信号「」detail 无数字数据
+WARNING: 新华三H3C: 信号「」detail 无数字数据
+WARNING: 新华三H3C: 信号「」detail 无数字数据
+WARNING: 新华三H3C: 信号「」detail 无数字数据
+WARNING: 新华三H3C: 缺少高风险项
+WARNING: 烽火通信: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
+WARNING: 烽火通信: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 烽火通信: 信号「」detail 无数字数据
+WARNING: 烽火通信: 信号「」detail 无数字数据
+WARNING: 烽火通信: 信号「」detail 无数字数据
+WARNING: 烽火通信: 信号「」detail 无数字数据
+WARNING: 烽火通信: 缺少高风险项
+WARNING: 中科曙光: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 信号「」detail 无数字数据
+WARNING: 中科曙光: 缺少高风险项
+WARNING: 工具名泄漏: 发现 3 处 'tyc-mcp|tianyancha|天眼查' → 应替换为 '企业公开登记信息'
+输出检查通过：无残留变量，无工具名泄漏，无 CSS 泄露
+报告数据已落盘: C:\Users\admin\Desktop\discover_new\discover_backend\workspaces\eitia\output\report.json
+报告已生成: C:\Users\admin\Desktop\discover_new\discover_backend\workspaces\eitia\output\EITIA_高频高速互连器件板对板连接器线对板连接器_20260824_V5.html (83049 bytes)
