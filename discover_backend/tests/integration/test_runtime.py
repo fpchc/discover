@@ -4,20 +4,19 @@ import json
 from pathlib import Path
 
 import anyio
-
-from platform_engine.config.loader import LLMProvider, LLMRegistry, MCPRegistry, MCPServer
-from platform_engine.config.settings import Settings
-from platform_engine.db.engine import Database
-from platform_engine.llm.providers import ProviderRegistry
-from platform_engine.llm.stream_parser import (
+from app.config.loader import LLMProvider, LLMRegistry, MCPRegistry, MCPServer
+from app.config.settings import Settings
+from app.db.engine import Database
+from app.llm.providers import ProviderRegistry
+from app.llm.stream_parser import (
     FinishChunk,
     PhaseSwitchChunk,
     TextChunk,
     ToolCall,
     ToolCallsChunk,
 )
-from platform_engine.protocol.emitter import QueueEmitter
-from platform_engine.protocol.events import (
+from app.protocol.emitter import QueueEmitter
+from app.protocol.events import (
     AgentEvent,
     AgentSelectedEvent,
     DoneEvent,
@@ -26,14 +25,14 @@ from platform_engine.protocol.events import (
     ToolCallStartedEvent,
     ToolsReadyEvent,
 )
-from platform_engine.registry.registry import AgentRegistry
-from platform_engine.runtime.builder import route_from_route_agent
-from platform_engine.runtime.runner import Runtime
-from platform_engine.runtime.state import GraphState
-from platform_engine.session.service import SessionService
-from platform_engine.storage.local import LocalStorage
-from platform_engine.tools.mcp_client import MCPCallResult, MCPToolInfo
-from platform_engine.tools.script_executor import ScriptExecution
+from app.registry.registry import AgentRegistry
+from app.runtime.builder import route_from_route_agent
+from app.runtime.runner import Runtime
+from app.runtime.state import GraphState
+from app.session.service import SessionService
+from app.storage.local import LocalStorage
+from app.tools.mcp_client import MCPCallResult, MCPToolInfo
+from app.tools.script_executor import ScriptExecution
 
 AGENT_MD = """\
 ---

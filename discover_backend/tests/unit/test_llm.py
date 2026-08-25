@@ -4,20 +4,19 @@ import json
 
 import httpx
 import pytest
-
-from platform_engine.config.loader import LLMProvider, LLMRegistry
-from platform_engine.config.settings import Settings
-from platform_engine.errors.base import (
+from app.config.loader import LLMProvider, LLMRegistry
+from app.config.settings import Settings
+from app.errors.base import (
     ConfigError,
     LLMAuthError,
     LLMConnectionError,
     LLMTimeoutError,
 )
-from platform_engine.llm.client import LLMClient
-from platform_engine.llm.errors import classify_stream_error
-from platform_engine.llm.models import ChatMessage, ChatRequest, ChatToolSpec, ToolFunction
-from platform_engine.llm.providers import ProviderRegistry
-from platform_engine.llm.stream_parser import (
+from app.llm.client import LLMClient
+from app.llm.errors import classify_stream_error
+from app.llm.models import ChatMessage, ChatRequest, ChatToolSpec, ToolFunction
+from app.llm.providers import ProviderRegistry
+from app.llm.stream_parser import (
     PhaseSwitchChunk,
     SemanticChunk,
     StreamParser,

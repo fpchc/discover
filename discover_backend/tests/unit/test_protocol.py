@@ -3,15 +3,14 @@
 import asyncio
 
 import pytest
-
-from platform_engine.config.settings import Settings
-from platform_engine.errors.base import ErrorCategory
-from platform_engine.protocol.emitter import (
+from app.config.settings import Settings
+from app.errors.base import ErrorCategory
+from app.protocol.emitter import (
     QueueEmitter,
     _BoundedEventQueue,
     _TypewriterChannel,
 )
-from platform_engine.protocol.events import (
+from app.protocol.events import (
     AgentEvent,
     AgentSelectedEvent,
     DoneEvent,
@@ -21,8 +20,8 @@ from platform_engine.protocol.events import (
     ToolCallCompletedEvent,
     event_adapter,
 )
-from platform_engine.protocol.graphemes import split_graphemes
-from platform_engine.protocol.sanitize import (
+from app.protocol.graphemes import split_graphemes
+from app.protocol.sanitize import (
     redact_sensitive,
     sanitize_error_message,
     sanitize_tool_args,

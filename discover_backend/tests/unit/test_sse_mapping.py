@@ -4,18 +4,9 @@
 路由/工具等富事件在对外流中丢弃（返回 None）。纯函数测试，无网络无 DB。
 """
 
-from platform_engine.api.models import (
-    ErrorStreamEvent,
-    MessageEndEvent,
-    MessageEvent,
-    PingEvent,
-    ThinkingDeltaFrame,
-    ThinkingEndFrame,
-    ThinkingStartFrame,
-)
-from platform_engine.api.routes_chat import _map_stream_event
-from platform_engine.errors.base import ErrorCategory
-from platform_engine.protocol.events import (
+from app.api.routes_chat import _map_stream_event
+from app.errors.base import ErrorCategory
+from app.protocol.events import (
     AgentEvent,
     DoneEvent,
     ErrorEvent,
@@ -25,6 +16,15 @@ from platform_engine.protocol.events import (
     ThinkingEndedEvent,
     ThinkingStartedEvent,
     ToolCallStartedEvent,
+)
+from app.schemas import (
+    ErrorStreamEvent,
+    MessageEndEvent,
+    MessageEvent,
+    PingEvent,
+    ThinkingDeltaFrame,
+    ThinkingEndFrame,
+    ThinkingStartFrame,
 )
 
 _MESSAGE_ID = "msg-1"

@@ -1,0 +1,39 @@
+{
+  "matched": true,
+  "similarity": 0.85,
+  "matched_clue": {
+    "clue_id": "高频高速互连器件_板对板连接器_20260825",
+    "created_at": "2026-08-25T02:59:24.210684+00:00",
+    "total_found": 0,
+    "remaining_pool": 0
+  },
+  "recommended": [],
+  "reserve_pool": [],
+  "all_excluded": [
+    {
+      "company_name": "",
+      "uscc": "",
+      "status": ""
+    },
+    {
+      "company_name": "",
+      "uscc": "",
+      "status": ""
+    },
+    {
+      "company_name": "",
+      "uscc": "",
+      "status": ""
+    },
+    {
+      "company_name": "",
+      "uscc": "",
+      "status": ""
+    },
+    {
+      "company_name": "",
+      "uscc": "",
+      "status": ""
+    }
+  ]
+}

@@ -16,7 +16,8 @@
 
 ```
 L5  frontend/                  Chat UI（消费事件判别流）｜P1 未实现
-L4  api/ + console/            FastAPI 路由、会话生命周期、产物下载、对话接口；控制台客户端（terminal，SSE 打字机渲染）
+L4  api/（controller）          FastAPI 路由；应用组装（application.py）、DI（container.py）、DTO（schemas/）随接入层；
+                               中间件（middleware/：全局异常 + 请求日志）挂接入层；插件（plugins/：基础设施统一加载）由容器消费
 L3  runtime/                   LangGraph 图：route_agent → route_skill → assemble
                                 → agent ⇄ tool_node，generic_chat 兜底
 L2  registry/ + tools/broker   装配层：清单解析/索引/热重载/装配；ToolBroker 工具目录与三级暴露
@@ -33,7 +34,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 
 | 决策 | 结论 | 依据 |
 |------|------|------|
-| 包根名 | `platform_engine`（`platform` 与 stdlib 同名，需偏离规范目录字面量） | 已批准偏离 |
+| 包根名 | `app`（仓库根单层包，去除 src/ 包裹与 platform_engine 层；api/ 仅路由） | 用户决策 2026-08 |
 | 业务流程载体 | 图只提供执行环境，流程知识写在智能体/技能清单正文 | graph-runtime-spec §1 |
 | 两级路由 | 一级 `route_agent` → 二级 `route_skill`；会话内 `active_agent` 非空则跳过一级（重入保护） | graph-runtime-spec §9 |
 | 技能耦合面 | 唯一耦合面是 `AGENT.md` / `SKILL.md` frontmatter | agent-package-spec |
@@ -58,6 +59,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 后台热重载任务 | 单常驻协程 + CancelScope 宿主任务（`asyncio.create_task`），不用跨 startup/shutdown 常驻的 anyio task group：任务组跨任务退出报 cancel-scope 跨任务错误（pytest-asyncio 生成器 fixture setup/teardown 分任务），嵌套任务组宿主取消时死锁 | 实测修复 |
 | 配置 | `pydantic-settings` 唯一入口，无硬编码 URL/密钥/阈值；env 白名单透传 | CLAUDE.md §5 |
 | 生命周期 | 类式异步上下文管理器（`__aenter__` / `__aexit__`），禁用 `@asynccontextmanager` | CLAUDE.md §4 |
+| 基础设施插件化 | 外部能力（logging/db/storage/redis/mcp/llm）以插件统一加载：配置开关 `{plugin}_enabled` + 生命周期（startup/shutdown）+ 类型化客户端（`app/plugins/`，注册顺序即启动顺序，logging 最先）；跨切面 HTTP 关注点（全局异常 + 请求日志）落中间件（`app/middleware/`），替代内联 `@app.exception_handler`；领域服务（session/registry/runtime）留容器层从插件取客户端，容器瘦身为编排器 | 用户决策 2026-08，可插拔 / 统一加载 |
 
 ## 主流程
 
@@ -74,9 +76,8 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 - 依赖：`uv sync`
 - 启动 PostgreSQL：`docker compose up -d`（本地 PG；停止并清卷 `docker compose down -v`）
 - 数据库迁移：`uv run alembic upgrade head`（改模型后 `uv run alembic revision --autogenerate -m "..."`）
-- 开发服务器：`uv run uvicorn platform_engine.api.app:create_app --factory`（host/port 配置驱动）
-- 对话控制台：`uv run platform-chat`（或 `python -m platform_engine.console`；`--base-url` / `--char-delay-ms` 覆盖 Settings）
-- 校验：`uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src`
+- 开发服务器：`uv run uvicorn app.application:create_app --factory`（host/port 配置驱动；或 `uv run python -m app.main`）
+- 校验：`uv run ruff check app tests && uv run ruff format --check app tests && uv run mypy app`
 - 测试：`uv run pytest`（135 收集；测试四层结构 `tests/{unit,integration,http,e2e}`，按目录自动打标，可用
   `-m unit|integration|http|e2e` 过滤；unit/http 自包含可离线跑，integration 需要本地 PG（docker compose）
   供产物/去重历史用例，e2e 需要 127.0.0.1:8000 真服务（未启动自动 skip）；`addopts=-s` 放开捕获供

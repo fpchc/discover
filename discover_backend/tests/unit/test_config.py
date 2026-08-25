@@ -3,10 +3,9 @@
 from pathlib import Path
 
 import pytest
-
-from platform_engine.config.loader import load_llm_providers, load_mcp_servers
-from platform_engine.config.settings import Settings
-from platform_engine.errors.base import ConfigError
+from app.config.loader import load_llm_providers, load_mcp_servers
+from app.config.settings import Settings
+from app.errors.base import ConfigError
 
 LLM_YAML = """\
 aliases:

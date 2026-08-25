@@ -4,11 +4,10 @@ from pathlib import Path
 import anyio
 import httpx
 import pytest
-
-from platform_engine.api.app import create_app
-from platform_engine.config.settings import Settings
-from platform_engine.protocol.events import DoneEvent
-from platform_engine.runtime.state import GraphState
+from app.application import create_app
+from app.config.settings import Settings
+from app.protocol.events import DoneEvent
+from app.runtime.state import GraphState
 
 # 目录 → marker 映射：四层测试结构，按目录自动打标（pytest 9 的 conftest pytestmark
 # 不再传播到同目录模块，故用 collection 钩子统一处理）

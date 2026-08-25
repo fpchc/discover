@@ -11,9 +11,7 @@ SSE 帧与 blocking 响应均为跨边界 DTO（CLAUDE.md §3）：一律经 pyd
 from typing import Annotated
 
 import httpx
-from pydantic import Field, TypeAdapter
-
-from platform_engine.api.models import (
+from app.schemas import (
     ChatMessageResponse,
     ErrorStreamEvent,
     MessageEndEvent,
@@ -23,6 +21,7 @@ from platform_engine.api.models import (
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
+from pydantic import Field, TypeAdapter
 
 _LOCAL_BASE_URL = "http://127.0.0.1:8000"
 

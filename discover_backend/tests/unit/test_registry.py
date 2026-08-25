@@ -4,13 +4,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-
-from platform_engine.config.loader import MCPRegistry, MCPServer
-from platform_engine.config.settings import Settings
-from platform_engine.errors.base import RegistryValidationError
-from platform_engine.registry.hot_reload import HotReloader
-from platform_engine.registry.loader import AgentRegistrySnapshot
-from platform_engine.registry.registry import AgentRegistry
+from app.config.loader import MCPRegistry, MCPServer
+from app.config.settings import Settings
+from app.errors.base import RegistryValidationError
+from app.registry.hot_reload import HotReloader
+from app.registry.loader import AgentRegistrySnapshot
+from app.registry.registry import AgentRegistry
 
 
 def _agent_md(

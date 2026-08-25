@@ -4,13 +4,12 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-
-from platform_engine.config.settings import Settings
-from platform_engine.db.engine import Database
-from platform_engine.errors.base import SessionError, SessionNotFoundError
-from platform_engine.session.models import ArtifactRecord, SessionStatus
-from platform_engine.session.service import SessionService, artifact_download_path
-from platform_engine.storage.local import LocalStorage
+from app.config.settings import Settings
+from app.db.engine import Database
+from app.errors.base import SessionError, SessionNotFoundError
+from app.session.models import ArtifactRecord, SessionStatus
+from app.session.service import SessionService, artifact_download_path
+from app.storage.local import LocalStorage
 
 # 测试共享同一数据库引擎（连接池有界；假脚本场景不触 DB，产物场景才连接）。
 _DATABASE = Database(Settings(_env_file=None))

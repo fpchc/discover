@@ -7,20 +7,19 @@ from pathlib import Path
 import anyio
 import httpx
 import pytest
-
-from platform_engine.config.loader import MCPServer, MCPServerAuth
-from platform_engine.config.settings import Settings, SideEffectType
-from platform_engine.errors.base import (
+from app.config.loader import MCPServer, MCPServerAuth
+from app.config.settings import Settings, SideEffectType
+from app.errors.base import (
     ErrorCategory,
     MCPAuthError,
     MCPInvalidArgumentError,
     MCPRateLimitError,
     MCPTimeoutError,
 )
-from platform_engine.registry.assemble import AssemblyPlan
-from platform_engine.registry.manifests import ScriptDeclaration
-from platform_engine.tools.broker import ToolBroker, ToolCallRequest
-from platform_engine.tools.descriptor import (
+from app.registry.assemble import AssemblyPlan
+from app.registry.manifests import ScriptDeclaration
+from app.tools.broker import ToolBroker, ToolCallRequest
+from app.tools.descriptor import (
     ToolDescriptor,
     ToolSource,
     mcp_qualified_name,
@@ -28,12 +27,12 @@ from platform_engine.tools.descriptor import (
     split_qualified_name,
     to_chat_tool_spec,
 )
-from platform_engine.tools.mcp_client import (
+from app.tools.mcp_client import (
     MCPCallResult,
     MCPClient,
     MCPToolInfo,
 )
-from platform_engine.tools.script_executor import (
+from app.tools.script_executor import (
     ENV_SKILL_ROOT_DIR,
     ENV_WORKSPACE_DIR,
     ScriptExecution,

@@ -20,8 +20,8 @@ RUN mkdir -p storage logs/tools workspaces
 
 EXPOSE 8000
 # 启动：先应用 Alembic 迁移，再起 uvicorn（host/port 配置驱动）
-CMD ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn platform_engine.api.app:create_app --factory --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.application:create_app --factory --host 0.0.0.0 --port 8000"]
 
 # dev 目标：源码热挂载（compose 里绑 ./discover_backend:/app）+ --reload
 FROM base AS dev
-CMD ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn platform_engine.api.app:create_app --factory --host 0.0.0.0 --port 8000 --reload"]
+CMD ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.application:create_app --factory --host 0.0.0.0 --port 8000 --reload"]

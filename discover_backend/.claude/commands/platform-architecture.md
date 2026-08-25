@@ -83,7 +83,7 @@ L0  数据层（非代码）
 
 ```
 项目根/
-├── src/platform_engine/            平台代码（不含任何业务）
+├── app/            平台代码（不含任何业务）
 │   ├── config/                     配置：Settings 定义与加载
 │   ├── protocol/                   对外契约：SSE 事件模型
 │   ├── errors/                     领域异常

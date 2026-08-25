@@ -20,37 +20,36 @@ import sys
 from pathlib import Path
 
 import pytest
-
-from platform_engine.config.loader import (
+from app.config.loader import (
     LLMProvider,
     load_llm_providers,
     load_mcp_servers,
 )
-from platform_engine.config.settings import Settings
-from platform_engine.db.engine import Database
-from platform_engine.llm.providers import ProviderRegistry
-from platform_engine.llm.stream_parser import (
+from app.config.settings import Settings
+from app.db.engine import Database
+from app.llm.providers import ProviderRegistry
+from app.llm.stream_parser import (
     FinishChunk,
     PhaseSwitchChunk,
     TextChunk,
     ToolCall,
     ToolCallsChunk,
 )
-from platform_engine.protocol.emitter import QueueEmitter
-from platform_engine.protocol.events import (
+from app.protocol.emitter import QueueEmitter
+from app.protocol.events import (
     AgentEvent,
     AgentSelectedEvent,
     DoneEvent,
     SkillSelectedEvent,
     ToolsReadyEvent,
 )
-from platform_engine.registry.loader import _find_absolute_path_literals
-from platform_engine.registry.registry import AgentRegistry
-from platform_engine.runtime.runner import Runtime
-from platform_engine.session.service import SessionService
-from platform_engine.storage.local import LocalStorage
-from platform_engine.tools.mcp_client import MCPCallResult, MCPToolInfo
-from platform_engine.tools.script_executor import ScriptExecution
+from app.registry.loader import _find_absolute_path_literals
+from app.registry.registry import AgentRegistry
+from app.runtime.runner import Runtime
+from app.session.service import SessionService
+from app.storage.local import LocalStorage
+from app.tools.mcp_client import MCPCallResult, MCPToolInfo
+from app.tools.script_executor import ScriptExecution
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS_DIR = ROOT / "agents"

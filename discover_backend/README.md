@@ -9,7 +9,7 @@
 ## 目录结构
 
 ```text
-src/platform_engine/  平台代码（不含业务）
+app/  平台代码（不含业务）
 agents/              智能体包（数据，可挂载卷）
 config/              平台配置（非密钥，.example 样例）
 frontend/            Chat UI
@@ -17,14 +17,14 @@ docker/              镜像与编排定义
 tests/               测试
 ```
 
-> 包根名取 `platform_engine`（非 `platform`）：`platform` 与 Python 标准库模块同名，会导致导入被 stdlib 截获。
+> 包根名为 `app`（仓库根单层包，无 src/ 包裹；`api/` 仅暴露路由，如 Java controller）。
 
 ## 开发环境
 
 - 安装依赖：`uv sync`
-- 代码校验：`uv run ruff check . && uv run ruff format --check . && uv run mypy src/platform_engine`
+- 代码校验：`uv run ruff check . && uv run ruff format --check . && uv run mypy app`
 - 测试：`uv run pytest`
-- 开发服务器：`uv run uvicorn platform_engine.api.app:create_app --factory --reload`
+- 开发服务器：`uv run uvicorn app.application:create_app --factory --reload`
 
 ## 对话接口（chat-messages）
 

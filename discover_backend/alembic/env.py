@@ -1,7 +1,7 @@
 """Alembic 迁移环境（异步）。
 
 数据库 URL 从平台配置读取（get_settings().database_url），不在 ini 硬编码。
-模型经 platform_engine.db 包导入注册进 Base.metadata，供 autogenerate 比对。
+模型经 app.db 包导入注册进 Base.metadata，供 autogenerate 比对。
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import platform_engine.db.models as _models  # noqa: F401  # 注册全部 ORM 模型到 metadata
-from platform_engine.config.settings import get_settings
-from platform_engine.db.base import Base
+import app.db.models as _models  # noqa: F401  # 注册全部 ORM 模型到 metadata
+from app.config.settings import get_settings
+from app.db.base import Base
 
 config = context.config
 if config.config_file_name is not None:
