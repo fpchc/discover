@@ -34,10 +34,3 @@ class SessionStore:
         updated = current.model_copy(update={"agent_id": agent_id, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
-
-    def remove(self, session_id: str) -> SessionRecord:
-        """移除会话记录。"""
-        record = self._sessions.pop(session_id, None)
-        if record is None:
-            raise SessionNotFoundError(f"未知会话：{session_id}")
-        return record

@@ -1,0 +1,1420 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>高频高速互连器件 · 潜在客户发现报告</title>
+<meta name="author" content="EITIA·客户洞察">
+<style>
+ @font-face { font-family: "TsangerJinKai02"; src: url("../fonts/TsangerJinKai02-W04.ttf") format("truetype"), url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+ @font-face { font-family: "TsangerJinKai02"; src: url("../fonts/TsangerJinKai02-W05.ttf") format("truetype"), url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype"); font-weight: 500; font-style: normal; }
+ @page { size: A4; margin: 16mm 18mm 18mm 18mm; background: #f4f6f7;
+   @bottom-center { content: counter(page) "  ·   潜在客户评估报告"; font-family: "TsangerJinKai02","Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong",Georgia,serif; font-size: 9pt; color: #6b6a64; } }
+ @page:first { @bottom-center { content: ""; } }
+ * { box-sizing: border-box; margin: 0; padding: 0; }
+ :root {
+   --parchment: #f4f6f7; --ivory: #fafbfc; --near-black: #141413; --dark-warm: #3d3d3a;
+   --olive: #504e49; --stone: #6b6a64; --brand: #059669; --border: #e0e2e3; --border-soft: #e8eaeb;
+   --tag-bg: #d4f0e0; --positive: #059669; --negative: #c0392b; --warn: #f59e0b;
+   --info-blue: #3b82f6; --purple: #8b5cf6; --confidence-high: #059669; --confidence-mid: #f59e0b; --confidence-low: #c0392b;
+   --serif: "TsangerJinKai02","Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong",Georgia,serif;
+   --sans: var(--serif); --rhythm-module: 12pt; --rhythm-section: 16pt; }
+ html, body { background: var(--parchment); }
+ @media screen { body { max-width: 210mm; margin: 0 auto; padding: 16mm 18mm 18mm 18mm; } }
+ body { color: var(--near-black); font-family: var(--serif); font-size: 10pt; line-height: 1.5; letter-spacing: 0.3pt; widows: 3; orphans: 3; }
+ .cover { min-height: 245mm; display: flex; flex-direction: column; justify-content: flex-start; padding: 24mm 0 0 0; break-after: page; }
+ .cover-eyebrow { display: inline-flex; align-items: center; gap: 8pt; font-size: 10pt; color: var(--brand); letter-spacing: 1.5pt; font-weight: 500; margin-bottom: 14pt; }
+ .cover-eyebrow::before { content: ""; width: 9pt; height: 1.5pt; border-radius: 0.75pt; background: var(--brand); flex-shrink: 0; }
+ .cover-title { font-size: 36pt; font-weight: 500; color: var(--near-black); line-height: 1.15; letter-spacing: 0.3pt; margin-bottom: 14pt; margin-top: 10pt; }
+ .cover-sub { font-size: 14pt; color: var(--olive); line-height: 1.5; max-width: 85%; margin-bottom: 10pt; }
+ .cover-company { font-size: 11pt; color: var(--brand); font-weight: 500; margin-bottom: 14pt; }
+ .cover-meta { font-size: 10pt; color: var(--stone); line-height: 1.5; }
+ .cover-meta strong { color: var(--dark-warm); font-weight: 500; }
+ .cover-spacer { flex: 1; min-height: 8mm; }
+/* V5.4.1: 封面页脚 — 始终靠底 */
+.cover-footer { padding-top: 10pt; border-top: 0.5pt solid var(--border); font-size: 9pt; color: var(--stone); line-height: 1.5; }
+.cover-footer p:last-child { font-size: 8pt; color: var(--brand); margin-top: 4pt; }
+ .chapter { break-before: page; }
+ h1 { font-size: 22pt; font-weight: 500; line-height: 1.2; margin: 0 0 10pt 0; border-left: 2.5pt solid var(--brand); border-radius: 1.5pt; padding-left: 8pt; color: var(--near-black); break-after: avoid; }
+ h2 { font-size: 16pt; font-weight: 500; line-height: 1.25; margin: 24pt 0 8pt 0; color: var(--near-black); break-after: avoid; string-set: section-title content(); }
+ h3 { font-size: 13pt; font-weight: 500; line-height: 1.3; margin: 18pt 0 6pt 0; color: var(--dark-warm); break-after: avoid; }
+ h4 { font-size: 11pt; font-weight: 500; margin: 14pt 0 4pt 0; color: var(--dark-warm); break-after: avoid; }
+ p { margin: 0 0 8pt 0; line-height: 1.5; widows: 2; orphans: 2; }
+ ul, ol { margin: 4pt 0 8pt 0; padding-left: 18pt; line-height: 1.5; }
+ ul li::marker { color: var(--brand); }
+ strong { font-weight: 500; }
+ .badge { display: inline-block; padding: 2pt 8pt; border-radius: 10pt; font-size: 8pt; font-weight: 500; white-space: nowrap; vertical-align: middle; }
+ .badge-now { background: #d4f0e0; color: #059669; } .badge-attention { background: #e6f4ec; color: #067a4c; }
+ .badge-cultivate { background: #f0f4f8; color: #64748b; } .badge-watch { background: #fffbeb; color: #c67a1a; }
+ .risk-dot { display: inline-block; width: 8pt; height: 8pt; border-radius: 50%; margin-right: 4pt; vertical-align: middle; }
+ .risk-dot.low { background: #059669; } .risk-dot.mid { background: #f59e0b; } .risk-dot.high { background: #c0392b; }
+ .risk-block.risk-low { border-left: 3pt solid #059669; background: #e6f4ec; }
+ .risk-block.risk-mid { border-left: 3pt solid #f59e0b; background: #fffbeb; }
+ .risk-block.risk-high { border-left: 3pt solid #c0392b; background: #fde8e8; }
+ .caller-guide { background: var(--ivory); border-left: 3pt solid var(--brand); border-radius: 6pt; padding: 16pt 20pt; margin: 14pt 0; break-inside: avoid; }
+ .caller-guide h2 { margin-top: 0; font-size: 13pt; }
+ .guide-steps { display: flex; gap: 0; margin-top: 10pt; }
+ .guide-step { flex: 1; text-align: center; }
+ .guide-step-num { width: 28pt; height: 28pt; border-radius: 50%; background: var(--brand); color: #fff; font-size: 13pt; font-weight: 500; line-height: 28pt; margin: 0 auto 6pt auto; }
+ .guide-step-text { font-size: 9pt; color: var(--stone); line-height: 1.4; }
+ table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 8pt 0; break-inside: avoid; }
+ table th { text-align: left; font-weight: 500; color: var(--dark-warm); padding: 5pt 6pt; border-bottom: 1pt solid var(--border); background: transparent; }
+ table td { padding: 4pt 6pt; border-bottom: 0.3pt solid var(--border-soft); vertical-align: top; }
+ table.striped tbody tr:nth-child(even) td { background: var(--ivory); }
+ table.compact th, table.compact td { padding: 2pt 5pt; font-size: 8pt; line-height: 1.35; }
+ .metrics { display: flex; gap: 0; margin: 8pt 0 14pt 0; padding: 6pt 0; border-top: 0.3pt dotted var(--border); border-bottom: 0.3pt dotted var(--border); flex-wrap: nowrap; overflow-x: auto; justify-content: space-between; }
+ .metric { flex: 1; min-width: 60pt; text-align: center; }
+ .metric-value { font-size: 26pt; font-weight: 500; color: var(--brand); line-height: 1.1; }
+ .metric-label { font-size: 8pt; color: var(--stone); letter-spacing: 0.5pt; }
+ .client-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14pt; padding-bottom: 10pt; border-bottom: 1.2pt solid var(--brand); }
+ .client-header-left { flex: 1; } .client-header-right { text-align: right; font-size: 9pt; color: var(--stone); }
+ .client-name { font-size: 18pt; font-weight: 500; color: var(--near-black); }
+ .client-tags { display: flex; gap: 6pt; flex-wrap: wrap; margin-top: 4pt; }
+ .client-tag { font-size: 8pt; padding: 2pt 8pt; background: var(--tag-bg); color: var(--brand); border-radius: 10pt; }
+ .client-tag.warn { background: #fde8d0; color: #c67a1a; }
+
+ .match-subscore { display: flex; gap: 6pt; margin: 10pt 0; flex-wrap: nowrap; }
+ .match-subscore-item { flex: 1; min-width: 0; text-align: center; background: var(--ivory); border-radius: 4pt; padding: 6pt 4pt; }
+ .match-subscore-val { font-size: 16pt; font-weight: 500; color: var(--brand); }
+ .match-subscore-lbl { font-size: 7pt; color: var(--stone); margin-top: 2pt; white-space: nowrap; }
+ .match-subscore-src { font-size: 7pt; color: var(--stone); margin-top: 4pt; line-height: 1.3; }
+ .match-panel { display: flex; gap: 14pt; margin: 10pt 0; } .match-col { flex: 1; }
+ .match-high { background: #e6f4ec; border-left: 3pt solid var(--positive); border-radius: 4pt; padding: 10pt 14pt; margin-bottom: 8pt; }
+ .match-high h4 { margin: 0 0 4pt 0; color: var(--positive); font-size: 10pt; }
+ .match-high-item { display: flex; gap: 8pt; padding: 4pt 0; font-size: 9pt; border-bottom: 0.2pt dotted var(--border-soft); }
+ .match-high-item:last-child { border-bottom: none; }
+ .match-high-dot { width: 18pt; height: 18pt; border-radius: 50%; background: var(--positive); color: #fff; font-size: 8pt; font-weight: 500; line-height: 18pt; text-align: center; flex-shrink: 0; }
+ .match-risk-item-new { display: flex; gap: 8pt; padding: 4pt 0; font-size: 9pt; border-bottom: 0.2pt dotted var(--border-soft); background: #fffbeb; border-left: 3pt solid var(--warn); border-radius: 3pt; padding: 6pt 10pt; margin-bottom: 4pt; }
+ .match-risk-item-new:last-child { border-bottom: none; }
+ .match-risk-dot { width: 18pt; height: 18pt; border-radius: 50%; background: var(--warn); color: #fff; font-size: 8pt; font-weight: 500; line-height: 18pt; text-align: center; flex-shrink: 0; }
+ .procurement-bar { display: flex; margin: 10pt 0; border-radius: 4pt; overflow: hidden; height: 24pt; }
+ .procurement-segment { display: flex; align-items: center; justify-content: center; font-size: 9pt; font-weight: 500; color: #fff; }
+ .proc-seg-active { background: var(--brand); } .proc-seg-inactive { background: var(--border-soft); color: var(--stone); }
+ .procurement-range { font-size: 22pt; font-weight: 500; color: var(--brand); margin: 6pt 0; }
+ .calc-logic { background: #f0f4f8; border-radius: 4pt; padding: 12pt 16pt; margin: 10pt 0; font-size: 9pt; line-height: 1.6; break-inside: avoid; }
+ .calc-step { margin-bottom: 6pt; } .calc-note { font-size: 8pt; color: var(--stone); margin-top: 6pt; }
+ .calc-coef { display: flex; gap: 6pt; align-items: center; margin: 3pt 0 3pt 12pt; font-size: 8.5pt; }
+ .calc-coef-name { min-width: 80pt; color: var(--dark-warm); }
+ .calc-coef-val { font-weight: 500; color: var(--brand); min-width: 30pt; }
+ .calc-coef-reason { color: var(--stone); font-size: 8pt; }
+ .evidence-item { display: flex; gap: 8pt; padding: 5pt 0; border-bottom: 0.2pt dotted var(--border); font-size: 9pt; }
+ .evidence-item:last-child { border-bottom: none; }
+ .evidence-num { width: 18pt; height: 18pt; border-radius: 50%; background: var(--brand); color: #fff; font-size: 8pt; font-weight: 500; line-height: 18pt; text-align: center; flex-shrink: 0; }
+ .evidence-body { flex: 1; } .evidence-src { font-size: 7.5pt; color: var(--stone); }
+ .contact-cards { display: flex; gap: 10pt; margin: 10pt 0; flex-wrap: wrap; }
+ .contact-card { flex: 1; min-width: 180pt; max-width: 260pt; background: var(--ivory); border-radius: 6pt; padding: 10pt 14pt; border-top: 3pt solid var(--brand); overflow: hidden; }
+ .contact-card.tech { border-top-color: #3b82f6; } .contact-card.influencer { border-top-color: #8b5cf6; } .contact-card.buyer { border-top-color: var(--brand); }
+ .contact-card-name { font-size: 12pt; font-weight: 500; color: var(--near-black); overflow: hidden; text-overflow: ellipsis; }
+ .contact-card-title { font-size: 9pt; color: var(--brand); margin-bottom: 6pt; overflow: hidden; text-overflow: ellipsis; }
+ .contact-card-source { display: inline-block; font-size: 7pt; padding: 1pt 5pt; border-radius: 8pt; margin-left: 4pt; vertical-align: middle; }
+ .contact-card-source.professional { background: #e8f0fe; color: #1a73e8; }
+ .contact-card-source.gongshang { background: #f0f4f8; color: #64748b; }
+ .contact-card-source.guanwang { background: #e6f4ec; color: #059669; }
+ .contact-card-field { display: flex; gap: 4pt; margin: 2pt 0; font-size: 8.5pt; }
+ .contact-card-field strong { color: var(--dark-warm); min-width: 32pt; flex-shrink: 0; }
+ .decision-chain { background: var(--ivory); border-radius: 4pt; padding: 10pt 14pt; margin: 8pt 0; font-size: 9pt; }
+ .chain-arrow { color: var(--brand); font-weight: 500; margin: 0 4pt; }
+ /* V5.4.2: 决策链横向步骤条 — 支持 HTML 直出 + 纯文本降级 */
+ .decision-flow-h { display: flex; gap: 0; margin: 8pt 0; align-items: stretch; flex-wrap: nowrap; }
+ /* 新版：纯文本 render 用 df-step-card */
+ .df-step-card { flex: 1; min-width: 0; text-align: center; padding: 8pt 6pt; background: var(--ivory); border: 0.5pt solid var(--border-soft); border-radius: 4pt; }
+ .df-step-card:not(:last-child) { margin-right: 6pt; }
+ .df-step-role { font-size: 8pt; font-weight: 600; color: var(--dark-warm); margin-bottom: 2pt; }
+ .df-step-action { font-size: 7.5pt; color: var(--brand); }
+ .df-step-arrow { color: var(--brand); font-size: 14pt; font-weight: 500; align-self: center; padding: 0 3pt; flex-shrink: 0; }
+ /* HTML 直出 fallback：类名 df-step / df-role / df-action / df-arrow */
+ .decision-flow { display: flex; gap: 0; align-items: stretch; flex-wrap: nowrap; }
+ .df-step { flex: 1; min-width: 0; text-align: center; padding: 8pt 6pt; background: var(--ivory); border: 0.5pt solid var(--border-soft); border-radius: 4pt; }
+ .df-step:not(:last-child) { margin-right: 6pt; }
+ .df-role { font-size: 8pt; font-weight: 600; color: var(--dark-warm); margin-bottom: 2pt; }
+ .df-action { font-size: 7.5pt; color: var(--brand); }
+ .df-arrow { color: var(--brand); font-size: 14pt; font-weight: 500; align-self: center; padding: 0 3pt; flex-shrink: 0; }
+ .signal-row { display: flex; gap: 10pt; margin: 6pt 0; flex-wrap: wrap; }
+ .signal-card { flex: 1; min-width: 180pt; background: var(--ivory); border-radius: 4pt; padding: 10pt 14pt; }
+ .signal-card h4 { margin: 0 0 4pt 0; font-size: 10pt; } .signal-card ul { font-size: 8.5pt; margin: 2pt 0; padding-left: 14pt; }
+ .signal-card ul li { margin-bottom: 2pt; }
+ .signal-insight { background: #e6f4ec; border-left: 3pt solid var(--brand); border-radius: 4pt; padding: 12pt 16pt; margin: 12pt 0; break-inside: avoid; }
+ .signal-insight h4 { margin: 0 0 6pt 0; color: var(--brand); font-size: 11pt; }
+ .signal-insight p { font-size: 9.5pt; line-height: 1.55; margin-bottom: 6pt; }
+ .pitch-box { background: #e6f4ec; border-radius: 6pt; padding: 14pt 18pt; margin: 10pt 0; break-inside: avoid; }
+ .pitch-box h4 { margin: 0 0 4pt 0; color: var(--brand); font-size: 10pt; }
+ .talking-points { margin: 8pt 0; } .tp-item { display: flex; gap: 8pt; padding: 5pt 0; font-size: 9pt; border-bottom: 0.2pt dotted var(--border); }
+ .tp-item:last-child { border-bottom: none; } .tp-dot { width: 6pt; height: 6pt; border-radius: 50%; background: var(--brand); margin-top: 4pt; flex-shrink: 0; }
+ .obj-handler { background: #fffbeb; border-radius: 4pt; padding: 8pt 12pt; margin: 4pt 0; font-size: 9pt; }
+ .obj-handler-q { color: var(--warn); font-weight: 500; margin-bottom: 2pt; }
+ .obj-handler-a { color: var(--dark-warm); }
+ .timing-badge { display: inline-flex; align-items: center; gap: 6pt; padding: 6pt 14pt; border-radius: 20pt; font-size: 12pt; font-weight: 500; margin: 8pt 0; }
+ .timing-now { background: #d4f0e0; color: var(--positive); } .timing-3m { background: #e6f4ec; color: #067a4c; }
+ .timing-6m { background: #fffbeb; color: #c67a1a; } .timing-long { background: #f0f4f8; color: #64748b; }
+ .risk-grid { display: flex; gap: 12pt; flex-wrap: wrap; margin: 8pt 0; }
+ .risk-block { flex: 1; min-width: 140pt; background: var(--ivory); border-radius: 4pt; padding: 10pt; }
+ .risk-block h4 { margin: 0 0 4pt 0; font-size: 10pt; } .risk-desc { font-size: 8.5pt; color: var(--stone); line-height: 1.4; }
+ .check-pass { color: var(--positive); } .check-fail { color: var(--negative); font-weight: 500; }
+ .check-warn { color: var(--warn); }
+ .timeline { display: flex; gap: 12pt; margin: 10pt 0; }
+ .timeline-step { flex: 1; background: var(--ivory); border-radius: 4pt; padding: 10pt; border-top: 3pt solid var(--brand); }
+ .timeline-step-num { font-size: 9pt; font-weight: 500; color: var(--brand); margin-bottom: 4pt; }
+ .timeline-step-text { font-size: 8pt; color: var(--stone); line-height: 1.4; }
+ .callout { background: var(--ivory); border-left: 2pt solid var(--brand); padding: 10pt 14pt; border-radius: 3pt; margin: 12pt 0; line-height: 1.55; break-inside: avoid; }
+ .callout.warn { border-left-color: var(--warn); background: #fffbeb; }
+ .source-note { font-size: 7.5pt; color: var(--stone); margin-top: 6pt; }
+ .section-end { margin-top: 16pt; padding-top: 10pt; border-top: 0.3pt dotted var(--border-soft); }
+ .funnel { display: flex; flex-direction: column; align-items: center; margin: 12pt 0; }
+ .funnel-step { text-align: center; color: #fff; font-size: 8pt; font-weight: 500; padding: 8pt 6pt; margin: 2pt 0; border-radius: 3pt; }
+ .funnel-step .step-label { font-size: 8.5pt; font-weight: 500; }
+ .funnel-step .step-detail { font-size: 7pt; opacity: 0.85; margin-top: 2pt; }
+ .f1 { width: 100%; background: #047857; }
+ .f2 { width: 82%; background: #059669; }
+ .f3 { width: 64%; background: #34d399; color: var(--near-black); }
+ .f4 { width: 46%; background: #a7f3d0; color: var(--near-black); }
+ .f5 { width: 30%; background: #d1fae5; color: var(--stone); }
+ .f6 { width: 18%; background: #e6f4ec; color: var(--stone); }
+ /* V5 新增：行业全景样式 */
+ .industry-size { font-size: 18pt; font-weight: 500; color: var(--brand); text-align: center; margin: 8pt 0; }
+ .industry-size-src { font-size: 7.5pt; color: var(--stone); text-align: center; margin-top: 8pt; }
+ /* V5.4: 市场规模结构化 -- 三卡 + 分段表 */
+ .market-size-grid { display: flex; gap: 10pt; margin: 10pt 0; }
+ .market-card { flex: 1; background: var(--ivory); border-radius: 6pt; padding: 12pt 14pt; text-align: center; }
+ .market-card--primary { background: #d4f0e0; border: 1pt solid #a7f3d0; }
+ .market-card-label { font-size: 7.5pt; color: var(--stone); text-transform: uppercase; letter-spacing: 1pt; margin-bottom: 4pt; }
+ .market-card-value { font-size: 20pt; font-weight: 500; color: var(--near-black); line-height: 1.2; }
+ .market-card-unit { font-size: 10pt; font-weight: 400; color: var(--stone); margin-left: 2pt; }
+ .market-card--growth { color: var(--brand); }
+ .mini-bar-wrap { display: inline-block; width: 80pt; height: 6pt; background: #e8eaeb; border-radius: 3pt; vertical-align: middle; margin-right: 6pt; }
+ .mini-bar { height: 100%; background: var(--brand); border-radius: 3pt; min-width: 2pt; }
+ .mini-bar-label { font-size: 8pt; color: var(--dark-warm); vertical-align: middle; }
+ .market-seg-table { margin-top: 8pt; }
+ .market-size-fallback { margin: 10pt 0; }
+ /* EITIA 产业链卡位 */
+ .eitia-position-card { display: flex; gap: 16pt; background: var(--ivory); border-radius: 6pt; padding: 14pt 18pt; margin: 10pt 0; align-items: center; break-inside: avoid; }
+ .eitia-position-left { flex: 0 0 170pt; text-align: center; border-right: 1pt solid var(--border-soft); padding-right: 16pt; }
+ .eitia-position-tier { font-size: 16pt; font-weight: 500; color: var(--brand); line-height: 1.3; }
+ .eitia-position-badge { display: inline-block; padding: 2pt 10pt; border-radius: 10pt; font-size: 7.5pt; font-weight: 500; background: #d4f0e0; color: #059669; margin: 6pt 0 8pt 0; letter-spacing: 0.5pt; }
+.eitia-position-flow { display: flex; align-items: center; justify-content: center; gap: 4pt; font-size: 8pt; color: var(--stone); margin-top: 4pt; }
+.eitia-position-flow-arrow { color: var(--brand); font-weight: 500; font-size: 10pt; }
+.eitia-position-right { flex: 1; font-size: 9pt; color: var(--dark-warm); line-height: 1.6; }
+.eitia-position-right p { margin-bottom: 0; }
+/* V5.4: EITIA 四层垂直堆叠 */
+.eitia-layers-stack { margin: 10pt 0; }
+.eitia-layer { display: flex; gap: 8pt; align-items: center; padding: 6pt 10pt; border-left: 3pt solid var(--border); margin: 3pt 0; border-radius: 0 4pt 4pt 0; }
+.eitia-layer-tier { flex: 0 0 32pt; font-size: 8pt; font-weight: 700; color: var(--stone); text-align: center; }
+.eitia-layer-body { flex: 1; }
+.eitia-layer-cat { font-size: 8pt; font-weight: 500; color: var(--dark-warm); }
+.eitia-layer-prods { font-size: 7.5pt; color: var(--stone); margin-top: 1pt; }
+.eitia-layer-examples { font-size: 7pt; color: var(--brand); margin-top: 1pt; }
+/* V5.4.1: EITIA 层级徽章 */
+.eitia-layer-badge { display: inline-block; font-size: 7pt; font-weight: 700; padding: 1pt 5pt; border-radius: 3pt; margin-right: 4pt; vertical-align: middle; }
+.eitia-layer-badge.l4 { background: #f3e8ff; color: #7c3aed; }
+.eitia-layer-badge.l3 { background: #fffbeb; color: #b45309; }
+.eitia-layer-badge.l2 { background: #d4f0e0; color: #047857; }
+.eitia-layer-badge.l1 { background: #e0e7ff; color: #3730a3; }
+.eitia-layer-upstream { border-left-color: #f59e0b; background: #fffbeb; }
+.eitia-layer-downstream { border-left-color: #3b82f6; background: #eff6ff; }
+.eitia-layer-indirect { border-left-color: #10b981; background: #ecfdf5; }
+.eitia-layer-self { border-left-color: var(--brand); background: #d4f0e0; }
+ 
+ .trend-item { display: flex; gap: 8pt; padding: 6pt 0; border-bottom: 0.2pt dotted var(--border); font-size: 9pt; }
+ .trend-item:last-child { border-bottom: none; }
+ .trend-dot { width: 10pt; height: 10pt; border-radius: 50%; background: var(--brand); margin-top: 3pt; flex-shrink: 0; }
+ /* V5.3: 采购规模三卡片 + 推算流程 */
+.procurement-triple { display: flex; gap: 8pt; margin: 8pt 0; }
+.proc-card { flex: 1; background: var(--ivory); border-radius: 6pt; padding: 10pt 12pt; text-align: center; border-top: 3pt solid var(--brand); }
+.proc-card.range { border-top-color: var(--brand); }
+.proc-card.confidence { border-top-color: var(--info-blue); }
+.proc-card.scale { border-top-color: var(--purple); }
+.proc-card-val { font-size: 18pt; font-weight: 500; color: var(--dark-warm); line-height: 1.15; }
+.proc-card-lbl { font-size: 7.5pt; color: var(--stone); margin-top: 3pt; letter-spacing: 0.5pt; }
+.proc-card-sub { font-size: 7pt; color: var(--stone); margin-top: 2pt; }
+/* V5.4: 采购推算折叠区 */
+.proc-calc-details { margin: 8pt 0; }
+.proc-calc-details summary { font-size: 8.5pt; font-weight: 500; color: var(--brand); cursor: pointer; padding: 4pt 0; }
+.proc-calc-details summary:hover { color: #047857; }
+.proc-calc-formula { font-family: var(--serif); font-size: 8.5pt; background: #f0f4f8; padding: 6pt 10pt; border-radius: 4pt; margin: 4pt 0; }
+.proc-calc-coeff { font-size: 7.5pt; color: var(--stone); margin: 2pt 0; }
+.proc-evidence-list { font-size: 8pt; color: var(--dark-warm); margin: 4pt 0; padding-left: 14pt; }
+.proc-evidence-list li { margin: 2pt 0; }
+.calc-step-visual { display: flex; align-items: center; gap: 8pt; margin: 6pt 0; font-size: 9pt; flex-wrap: wrap; }
+.calc-step-box { padding: 4pt 10pt; background: var(--ivory); border-radius: 4pt; font-size: 8.5pt; min-width: 60pt; text-align: center; }
+.calc-step-arrow { color: var(--brand); font-weight: 500; font-size: 12pt; }
+.calc-step-result { padding: 4pt 12pt; background: #d4f0e0; border-radius: 4pt; font-weight: 500; color: var(--brand); }
+
+/* V5 新增：置信度着色 */
+ .confidence-high { color: var(--confidence-high); font-weight: 500; }
+ .confidence-mid { color: var(--confidence-mid); font-weight: 500; }
+ .confidence-low { color: var(--confidence-low); font-weight: 500; }
+ /* V5.4: 替代路径步骤时间线 */
+.sub-path-summary { font-size: 8.5pt; color: var(--dark-warm); margin: 6pt 0; line-height: 1.5; }
+.sub-steps-timeline { margin: 8pt 0; }
+.sub-step-card { display: flex; flex-direction: column; gap: 3pt; padding: 8pt 12pt; margin: 4pt 0; border-left: 3pt solid var(--brand); background: #f0fdf4; border-radius: 0 4pt 4pt 0; }
+.sub-step-card:nth-child(2) { border-left-color: #34d399; background: #ecfdf5; }
+.sub-step-card:nth-child(3) { border-left-color: #059669; background: #d4f0e0; }
+.sub-step-card:nth-child(4) { border-left-color: #047857; background: #d1fae5; }
+.sub-step-phase { font-size: 8.5pt; font-weight: 600; color: var(--brand); }
+.sub-step-action { font-size: 8pt; color: var(--dark-warm); }
+.sub-step-meta { display: flex; gap: 10pt; font-size: 7.5pt; color: var(--stone); flex-wrap: wrap; }
+.sub-step-dur, .sub-step-owner { white-space: nowrap; }
+.sub-path-footer { display: flex; gap: 16pt; margin-top: 8pt; padding: 8pt 12pt; background: var(--ivory); border-radius: 4pt; font-size: 8pt; color: var(--dark-warm); }
+.sub-key-risk { color: #c0392b; }
+/* V5.3: 旧格式替代路径 (降级路径) */
+.substitution-path { display: flex; gap: 0; margin: 10pt 0; align-items: stretch; }
+.sub-path-stage { flex: 1; background: var(--ivory); border-radius: 4pt; padding: 10pt 12pt; text-align: center; position: relative; }
+.sub-path-stage:not(:last-child)::after { content: "→"; position: absolute; right: -8pt; top: 50%; transform: translateY(-50%); color: var(--brand); font-size: 14pt; font-weight: 500; z-index: 1; }
+.sub-path-label { font-size: 7.5pt; color: var(--stone); letter-spacing: 0.5pt; margin-bottom: 4pt; }
+.sub-path-value { font-size: 12pt; font-weight: 500; color: var(--dark-warm); }
+.sub-path-detail { font-size: 7.5pt; color: var(--stone); margin-top: 2pt; }
+.success-bar-wrap { background: var(--border-soft); border-radius: 3pt; height: 6pt; margin: 6pt 8pt 0 8pt; overflow: hidden; }
+.success-bar-fill { height: 100%; border-radius: 3pt; background: var(--brand); }
+.switch-cost-grid { display: flex; gap: 10pt; margin: 8pt 0; flex-wrap: wrap; }
+.switch-cost-item { flex: 1; min-width: 120pt; background: var(--ivory); border-radius: 4pt; padding: 10pt 12pt; }
+.switch-cost-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4pt; }
+.switch-cost-val { font-size: 16pt; font-weight: 500; color: var(--dark-warm); }
+.switch-cost-lbl { font-size: 8pt; color: var(--stone); letter-spacing: 0.5pt; }
+.switch-cost-bar-wrap { background: var(--border-soft); border-radius: 2pt; height: 4pt; margin: 4pt 0; overflow: hidden; }
+.switch-cost-bar { height: 100%; border-radius: 2pt; }
+.switch-cost-desc { font-size: 7.5pt; color: var(--stone); line-height: 1.4; }
+/* V5.4: 切换成本子项列表 */
+.switch-cost-sub-items { margin-top: 6pt; border-top: 1pt solid var(--border-soft); padding-top: 4pt; }
+.switch-cost-sub-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 7.5pt; padding: 2pt 0; }
+.switch-cost-sub-name { color: var(--dark-warm); flex: 0 0 55%; }
+.switch-cost-sub-cost { color: var(--stone); font-weight: 500; text-align: right; }
+/* V5.4: 附录降级提示 */
+.appendix-fallback { font-size: 8.5pt; color: var(--dark-warm); line-height: 1.6; }
+/* V5.4.1: 术语解释样式 */
+.appendix-glossary { font-size: 9pt; color: var(--dark-warm); line-height: 1.6; }
+.appendix-glossary dt { font-weight: 600; color: var(--dark-warm); margin-top: 8pt; padding-top: 4pt; border-top: 0.2pt dotted var(--border-soft); }
+.appendix-glossary dt:first-child { border-top: none; margin-top: 0; }
+.appendix-glossary dd { margin-left: 14pt; color: var(--stone); font-size: 8.5pt; line-height: 1.5; margin-bottom: 2pt; }
+ /* V5 新增：壁垒四维标签 — 小巧 chip */
+ .barrier-row { display: flex; gap: 8pt; margin: 6pt 0; flex-wrap: wrap; }
+ .barrier-tag { font-size: 7pt; font-weight: 500; display: inline-block; }
+ .barrier-low { color: #047857; } .barrier-mid { color: #b45309; } .barrier-high { color: #b91c1c; }
+ /* V5 新增：差异化对比表 */
+ :root { --diff-col-dim: 14%; --diff-col-them: 28%; --diff-col-us: 28%; --diff-col-adv: 30%; }
+ .diff-table { font-size: 8.5pt; table-layout: fixed; }
+ .diff-table th { white-space: nowrap; }
+ .diff-table th:nth-child(1) { width: var(--diff-col-dim); }
+ .diff-table th:nth-child(2) { width: var(--diff-col-them); }
+ .diff-table th:nth-child(3) { width: var(--diff-col-us); }
+ .diff-table th:nth-child(4) { width: var(--diff-col-adv); }
+ .diff-table td:nth-child(2) { color: var(--negative); }
+ .diff-table td:nth-child(3) { color: var(--positive); font-weight: 500; }
+</style>
+</head>
+<section class="cover">
+<div class="cover-eyebrow">EITIA · 客户洞察</div>
+<h1 class="cover-title">高频高速互连器件 · 潜在客户发现报告</h1>
+<p class="cover-sub">板对板/线对板连接器 — 服务器·数据中心·通信设备制造商专项</p>
+
+<div class="cover-meta">
+<p><strong>产品</strong>：</p>
+<p><strong>范围</strong>：</p>
+<p><strong>报告日期</strong>：2026-03-26 · 数据截止 </p>
+</div>
+<div class="cover-spacer"></div>
+<div class="cover-footer">
+<p>基于企业公开信息的自动化分析，不构成商业决策唯一依据</p>
+<p></p>
+</div></section>
+
+<!-- ====== L0: 导读 + 行业全景 ====== -->
+<section class="chapter">
+<h1>报告导读</h1>
+<div class="caller-guide"><h2>30 秒上手</h2>
+<div class="guide-steps">
+<div class="guide-step"><div class="guide-step-num">1</div><div class="guide-step-text">先看行业全景<br>确认赛道有机会</div></div>
+<div class="guide-step"><div class="guide-step-num">2</div><div class="guide-step-text">看排名锁定<br>立即跟进目标</div></div>
+<div class="guide-step"><div class="guide-step-num">3</div><div class="guide-step-text">翻到客户页<br>制定跟进计划</div></div>
+</div></div>
+
+<!-- ── V5: 行业全景（5 项子组件，结构化渲染） ── -->
+<h2>行业全景</h2>
+
+  <!-- 向后兼容：旧版 l0.industry_overview HTML 块 -->
+  
+
+
+<h2>候选池全景</h2>
+  
+  <div class="funnel">
+  <div class="funnel-step f1"><div class="step-label">行业企业池</div><div class="step-detail">全国同类企业工商登记名录</div></div>
+  <div class="funnel-step f2"><div class="step-label">初筛过滤</div><div class="step-detail">注册资金>=500万+经营正常+人员>=50人</div></div>
+  <div class="funnel-step f3"><div class="step-label">EITIA匹配</div><div class="step-detail">四层产业链卡位+产品关键词命中</div></div>
+  <div class="funnel-step f4"><div class="step-label">八维评分</div><div class="step-detail">采购规模·技术匹配·需求强度·采购时机·竞争位置·触达可行·决策复杂度·信用安全</div></div>
+  <div class="funnel-step f5"><div class="step-label">TOP 推荐</div><div class="step-detail">综合评分排序，进入深度画像</div></div>
+  <div class="funnel-step f6"><div class="step-label">家完整画像</div><div class="step-detail">关键决策人·切入策略·竞品替代·风险评估</div></div>
+  </div>
+  
+
+<h2>信号热力图</h2>
+
+
+<h2>TOP  客户一览</h2>
+
+
+  <h2>评分维度与权重</h2>
+  <table class="compact" style="table-layout:fixed;">
+  <tr><th style="width:16%;">维度</th><th style="width:10%;">权重</th><th style="width:74%;">含义</th></tr>
+  <tr><td>采购规模</td><td>20%</td><td>客户对目标产品的潜在采购量级和增长趋势，基于产品线相关性、企业体量、增长信号综合评估</td></tr>
+  <tr><td>技术匹配</td><td>20%</td><td>客户技术需求与我方产品的契合度，基于EITIA层级关系、产品关键词命中、技术参数对位</td></tr>
+  <tr><td>需求强度</td><td>15%</td><td>客户当前的采购迫切程度，基于招标/扩产/招聘/展会等信号强度</td></tr>
+  <tr><td>采购时机</td><td>15%</td><td>联系客户的最佳时间窗口，基于信号时效性和衰减系数（招标 &gt; 融资 &gt; 新品 &gt; 招聘 &gt; 趋势）</td></tr>
+  <tr><td>竞争位置</td><td>10%</td><td>我方在竞品格局中的相对位置，基于客户供应商锁定程度、替代窗口、差异化匹配</td></tr>
+  <tr><td>触达可行</td><td>10%</td><td>实际接触决策人的能力，基于决策人可见度、触达渠道丰富度、企业性质</td></tr>
+  <tr><td>决策复杂度</td><td>5%</td><td>客户采购决策难度（分数高=容易成交），基于企业性质、规模、采购模式</td></tr>
+  <tr><td>信用安全</td><td>5%</td><td>客户信用可靠性，基于司法风险、经营合规、财务健康。含一票否决红线</td></tr>
+  </table>
+  <p class="source-note">综合分 = Σ(维度分 × 权重)。详细规则见附录B · 评分方法论。</p>
+</section>
+
+<!-- ====== L1: 客户深度档案（Jinja2 for 循环） ====== -->
+
+<section class="chapter">
+<h1> <span style="font-size:14pt;color:var(--stone);font-weight:400;"> — 综合 /10 · #1</span></h1>
+
+<!-- ── 1.1 企业速览卡 ── -->
+<div class="client-header"><div class="client-header-left">
+<div class="client-name"></div>
+<div class="client-tags"></div>
+</div></div>
+<!-- kpi_row removed per V5.4.3 -->
+<div class="callout" style="margin-bottom:14pt;"><strong>一句话定位</strong>：</div>
+
+
+
+
+  <!-- ── 1.2 匹配度诊断 ── -->
+  <h2>匹配度诊断</h2>
+  <div class="match-subscore">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  </div>
+
+  <div class="match-panel"><div class="match-col">
+  <h4 style="color:var(--positive);margin-bottom:8pt;">匹配亮点</h4>
+  
+    
+  
+  </div><div class="match-col"><h4 style="color:var(--warn);margin-bottom:8pt;">需注意</h4>
+  
+    
+  
+  </div></div>
+  <div style="font-size:9.5pt;"><h4>一票否决检查</h4></div>
+
+  <!-- ── 1.3 采购规模估算 ── -->
+  <h2>采购规模估算</h2>
+  <div class="procurement-triple">
+  <div class="proc-card scale">
+    <div class="proc-card-val">—</div>
+    <div class="proc-card-lbl">采购体量</div>
+  </div>
+  <div class="proc-card range">
+    <div class="proc-card-val">数据受限</div>
+    <div class="proc-card-lbl">年度估算范围</div>
+    <div class="proc-card-sub">P1 数据受限：无公开采购金额数据</div>
+  </div>
+  <div class="proc-card confidence">
+    <div class="proc-card-val"><span class="confidence-low">低</span></div>
+    <div class="proc-card-lbl">置信度</div>
+  </div>
+  </div>
+
+  <!-- V5.4: 推算过程（折叠区） -->
+  
+  <h4>证据链</h4>
+  
+
+  <!-- ── 1.4 关键决策人 ── -->
+  <h2>关键决策人</h2>
+  <p style="font-size:9pt;color:var(--stone);margin-bottom:8pt;"></p>
+  <div class="contact-cards">
+  
+  </div>
+  
+  <div class="decision-chain"><strong>建议触达路径</strong></div>
+  
+  
+  
+  <div class="decision-flow-h">
+  
+  <div class="df-step-card">
+    <div class="df-step-role"></div>
+  </div>
+  
+  
+  </div>
+  
+
+  <!-- ── 1.5 动态信号雷达 ── -->
+  <h2>动态信号雷达</h2>
+  <div class="signal-row">
+  
+  </div>
+  
+
+  <!-- ── 1.6 切入策略 ── -->
+  <h2>切入策略</h2>
+  
+  <div class="pitch-box"><h4>电梯演讲（30秒）</h4><p></p></div>
+  
+  <div class="talking-points">
+  <h4>价值主张</h4>
+  
+  </div>
+  <h4>话题切入点</h4>
+  <ul>
+  
+  <li>P1 数据受限</li>
+  
+  </ul>
+
+  <!-- V5: 异议预判 -->
+  
+
+  <h4>行动时间线</h4>
+  <div class="timeline">
+  
+  <div class="timeline-step"><div class="timeline-step-num">—</div><div class="timeline-step-text">P1 数据受限<br><span style="color:var(--brand);"></span></div></div>
+  
+  </div>
+  <div><span style="font-size:9pt;color:var(--stone);margin-left:8pt;"></span></div>
+
+  <!-- ── 1.7 竞品替代分析 ── -->
+  <h2>竞品替代分析</h2>
+
+  
+
+  <h3>竞品格局对比</h3>
+  <table class="compact striped">
+  <tr><th>竞品名称</th><th>市场份额（估计）</th><th>核心优势</th><th>核心劣势</th><th>客户群特征</th><th>我方优势</th></tr>
+  
+  <tr>
+  <td><strong>竞品格局（P1 数据受限）</strong></td>
+  <td>—</td>
+  <td>高速连接器领域，浪潮信息现有供应链可能包含安费诺(Amphenol)、莫仕(Molex)、Samtec等国际品牌以及华丰科技、鼎通科技等国产厂商。派兹互连可在国产替代趋势下寻求切入机会。</td>
+  <td></td>
+  <td>—</td>
+  <td><span class="check-pass">—</span></td>
+  </tr>
+  
+  </table>
+
+  <h3>替代路径分析</h3>
+  
+  <p>P1 数据受限：暂无替代路径数据</p>
+  
+
+  <!-- V5.4: 切换成本（结构化三列 + 子项条形图） -->
+  
+
+  <h3>进入壁垒评估</h3>
+  
+  <div class="metrics">
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">进入壁垒</div></div>
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">在位者强度</div></div>
+  </div>
+  
+
+  <h3>我方差异化优势</h3>
+  
+  <ul><li>P1 数据受限：暂无结构化差异化数据</li></ul>
+  
+
+  <!-- ── 1.8 风险与注意事项 ── -->
+  <h2>风险与注意事项</h2>
+  <div class="risk-grid">
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  </div>
+  <div class="section-end"></div>
+  </section>
+
+
+<section class="chapter">
+<h1> <span style="font-size:14pt;color:var(--stone);font-weight:400;"> — 综合 /10 · #2</span></h1>
+
+<!-- ── 1.1 企业速览卡 ── -->
+<div class="client-header"><div class="client-header-left">
+<div class="client-name"></div>
+<div class="client-tags"></div>
+</div></div>
+<!-- kpi_row removed per V5.4.3 -->
+<div class="callout" style="margin-bottom:14pt;"><strong>一句话定位</strong>：</div>
+
+
+
+
+  <!-- ── 1.2 匹配度诊断 ── -->
+  <h2>匹配度诊断</h2>
+  <div class="match-subscore">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  </div>
+
+  <div class="match-panel"><div class="match-col">
+  <h4 style="color:var(--positive);margin-bottom:8pt;">匹配亮点</h4>
+  
+    
+  
+  </div><div class="match-col"><h4 style="color:var(--warn);margin-bottom:8pt;">需注意</h4>
+  
+    
+  
+  </div></div>
+  <div style="font-size:9.5pt;"><h4>一票否决检查</h4></div>
+
+  <!-- ── 1.3 采购规模估算 ── -->
+  <h2>采购规模估算</h2>
+  <div class="procurement-triple">
+  <div class="proc-card scale">
+    <div class="proc-card-val">—</div>
+    <div class="proc-card-lbl">采购体量</div>
+  </div>
+  <div class="proc-card range">
+    <div class="proc-card-val">数据受限</div>
+    <div class="proc-card-lbl">年度估算范围</div>
+    <div class="proc-card-sub">P1 数据受限：无公开采购金额数据</div>
+  </div>
+  <div class="proc-card confidence">
+    <div class="proc-card-val"><span class="confidence-low">低</span></div>
+    <div class="proc-card-lbl">置信度</div>
+  </div>
+  </div>
+
+  <!-- V5.4: 推算过程（折叠区） -->
+  
+  <h4>证据链</h4>
+  
+
+  <!-- ── 1.4 关键决策人 ── -->
+  <h2>关键决策人</h2>
+  <p style="font-size:9pt;color:var(--stone);margin-bottom:8pt;"></p>
+  <div class="contact-cards">
+  
+  </div>
+  
+  <div class="decision-chain"><strong>建议触达路径</strong></div>
+  
+  
+  
+  <div class="decision-flow-h">
+  
+  <div class="df-step-card">
+    <div class="df-step-role"></div>
+  </div>
+  
+  
+  </div>
+  
+
+  <!-- ── 1.5 动态信号雷达 ── -->
+  <h2>动态信号雷达</h2>
+  <div class="signal-row">
+  
+  </div>
+  
+
+  <!-- ── 1.6 切入策略 ── -->
+  <h2>切入策略</h2>
+  
+  <div class="pitch-box"><h4>电梯演讲（30秒）</h4><p></p></div>
+  
+  <div class="talking-points">
+  <h4>价值主张</h4>
+  
+  </div>
+  <h4>话题切入点</h4>
+  <ul>
+  
+  <li>P1 数据受限</li>
+  
+  </ul>
+
+  <!-- V5: 异议预判 -->
+  
+
+  <h4>行动时间线</h4>
+  <div class="timeline">
+  
+  <div class="timeline-step"><div class="timeline-step-num">—</div><div class="timeline-step-text">P1 数据受限<br><span style="color:var(--brand);"></span></div></div>
+  
+  </div>
+  <div><span style="font-size:9pt;color:var(--stone);margin-left:8pt;"></span></div>
+
+  <!-- ── 1.7 竞品替代分析 ── -->
+  <h2>竞品替代分析</h2>
+
+  
+
+  <h3>竞品格局对比</h3>
+  <table class="compact striped">
+  <tr><th>竞品名称</th><th>市场份额（估计）</th><th>核心优势</th><th>核心劣势</th><th>客户群特征</th><th>我方优势</th></tr>
+  
+  <tr>
+  <td><strong>竞品格局（P1 数据受限）</strong></td>
+  <td>—</td>
+  <td>中科曙光高速连接器核心供应商为华丰科技（昇腾超节点高速互连唯一国产量产供应商，市占率50%-60%）。派兹互连可作为华丰科技的补充/备选供应商切入，特别是在scaleX40新品扩产阶段。</td>
+  <td></td>
+  <td>—</td>
+  <td><span class="check-pass">—</span></td>
+  </tr>
+  
+  </table>
+
+  <h3>替代路径分析</h3>
+  
+  <p>P1 数据受限：暂无替代路径数据</p>
+  
+
+  <!-- V5.4: 切换成本（结构化三列 + 子项条形图） -->
+  
+
+  <h3>进入壁垒评估</h3>
+  
+  <div class="metrics">
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">进入壁垒</div></div>
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">在位者强度</div></div>
+  </div>
+  
+
+  <h3>我方差异化优势</h3>
+  
+  <ul><li>P1 数据受限：暂无结构化差异化数据</li></ul>
+  
+
+  <!-- ── 1.8 风险与注意事项 ── -->
+  <h2>风险与注意事项</h2>
+  <div class="risk-grid">
+  
+  <div class="risk-block 中高">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  </div>
+  <div class="section-end"></div>
+  </section>
+
+
+<section class="chapter">
+<h1> <span style="font-size:14pt;color:var(--stone);font-weight:400;"> — 综合 /10 · #3</span></h1>
+
+<!-- ── 1.1 企业速览卡 ── -->
+<div class="client-header"><div class="client-header-left">
+<div class="client-name"></div>
+<div class="client-tags"></div>
+</div></div>
+<!-- kpi_row removed per V5.4.3 -->
+<div class="callout" style="margin-bottom:14pt;"><strong>一句话定位</strong>：</div>
+
+
+
+
+  <!-- ── 1.2 匹配度诊断 ── -->
+  <h2>匹配度诊断</h2>
+  <div class="match-subscore">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  </div>
+
+  <div class="match-panel"><div class="match-col">
+  <h4 style="color:var(--positive);margin-bottom:8pt;">匹配亮点</h4>
+  
+    
+  
+  </div><div class="match-col"><h4 style="color:var(--warn);margin-bottom:8pt;">需注意</h4>
+  
+    
+  
+  </div></div>
+  <div style="font-size:9.5pt;"><h4>一票否决检查</h4></div>
+
+  <!-- ── 1.3 采购规模估算 ── -->
+  <h2>采购规模估算</h2>
+  <div class="procurement-triple">
+  <div class="proc-card scale">
+    <div class="proc-card-val">—</div>
+    <div class="proc-card-lbl">采购体量</div>
+  </div>
+  <div class="proc-card range">
+    <div class="proc-card-val">数据受限</div>
+    <div class="proc-card-lbl">年度估算范围</div>
+    <div class="proc-card-sub">P1 数据受限：无公开采购金额数据</div>
+  </div>
+  <div class="proc-card confidence">
+    <div class="proc-card-val"><span class="confidence-low">低</span></div>
+    <div class="proc-card-lbl">置信度</div>
+  </div>
+  </div>
+
+  <!-- V5.4: 推算过程（折叠区） -->
+  
+  <h4>证据链</h4>
+  
+
+  <!-- ── 1.4 关键决策人 ── -->
+  <h2>关键决策人</h2>
+  <p style="font-size:9pt;color:var(--stone);margin-bottom:8pt;"></p>
+  <div class="contact-cards">
+  
+  </div>
+  
+  <div class="decision-chain"><strong>建议触达路径</strong></div>
+  
+  
+  
+  <div class="decision-flow-h">
+  
+  <div class="df-step-card">
+    <div class="df-step-role"></div>
+  </div>
+  
+  
+  </div>
+  
+
+  <!-- ── 1.5 动态信号雷达 ── -->
+  <h2>动态信号雷达</h2>
+  <div class="signal-row">
+  
+  </div>
+  
+
+  <!-- ── 1.6 切入策略 ── -->
+  <h2>切入策略</h2>
+  
+  <div class="pitch-box"><h4>电梯演讲（30秒）</h4><p></p></div>
+  
+  <div class="talking-points">
+  <h4>价值主张</h4>
+  
+  </div>
+  <h4>话题切入点</h4>
+  <ul>
+  
+  <li>P1 数据受限</li>
+  
+  </ul>
+
+  <!-- V5: 异议预判 -->
+  
+
+  <h4>行动时间线</h4>
+  <div class="timeline">
+  
+  <div class="timeline-step"><div class="timeline-step-num">—</div><div class="timeline-step-text">P1 数据受限<br><span style="color:var(--brand);"></span></div></div>
+  
+  </div>
+  <div><span style="font-size:9pt;color:var(--stone);margin-left:8pt;"></span></div>
+
+  <!-- ── 1.7 竞品替代分析 ── -->
+  <h2>竞品替代分析</h2>
+
+  
+
+  <h3>竞品格局对比</h3>
+  <table class="compact striped">
+  <tr><th>竞品名称</th><th>市场份额（估计）</th><th>核心优势</th><th>核心劣势</th><th>客户群特征</th><th>我方优势</th></tr>
+  
+  <tr>
+  <td><strong>竞品格局（P1 数据受限）</strong></td>
+  <td>—</td>
+  <td>交换机/服务器连接器领域，新华三供应链较为多元，国际品牌（TE Connectivity、安费诺）与国产品牌并存。新华三自研能力较强，对连接器技术规格有明确要求。</td>
+  <td></td>
+  <td>—</td>
+  <td><span class="check-pass">—</span></td>
+  </tr>
+  
+  </table>
+
+  <h3>替代路径分析</h3>
+  
+  <p>P1 数据受限：暂无替代路径数据</p>
+  
+
+  <!-- V5.4: 切换成本（结构化三列 + 子项条形图） -->
+  
+
+  <h3>进入壁垒评估</h3>
+  
+  <div class="metrics">
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">进入壁垒</div></div>
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">在位者强度</div></div>
+  </div>
+  
+
+  <h3>我方差异化优势</h3>
+  
+  <ul><li>P1 数据受限：暂无结构化差异化数据</li></ul>
+  
+
+  <!-- ── 1.8 风险与注意事项 ── -->
+  <h2>风险与注意事项</h2>
+  <div class="risk-grid">
+  
+  <div class="risk-block 低">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  </div>
+  <div class="section-end"></div>
+  </section>
+
+
+<section class="chapter">
+<h1> <span style="font-size:14pt;color:var(--stone);font-weight:400;"> — 综合 /10 · #4</span></h1>
+
+<!-- ── 1.1 企业速览卡 ── -->
+<div class="client-header"><div class="client-header-left">
+<div class="client-name"></div>
+<div class="client-tags"></div>
+</div></div>
+<!-- kpi_row removed per V5.4.3 -->
+<div class="callout" style="margin-bottom:14pt;"><strong>一句话定位</strong>：</div>
+
+
+
+
+  <!-- ── 1.2 匹配度诊断 ── -->
+  <h2>匹配度诊断</h2>
+  <div class="match-subscore">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  </div>
+
+  <div class="match-panel"><div class="match-col">
+  <h4 style="color:var(--positive);margin-bottom:8pt;">匹配亮点</h4>
+  
+    
+  
+  </div><div class="match-col"><h4 style="color:var(--warn);margin-bottom:8pt;">需注意</h4>
+  
+    
+  
+  </div></div>
+  <div style="font-size:9.5pt;"><h4>一票否决检查</h4></div>
+
+  <!-- ── 1.3 采购规模估算 ── -->
+  <h2>采购规模估算</h2>
+  <div class="procurement-triple">
+  <div class="proc-card scale">
+    <div class="proc-card-val">—</div>
+    <div class="proc-card-lbl">采购体量</div>
+  </div>
+  <div class="proc-card range">
+    <div class="proc-card-val">数据受限</div>
+    <div class="proc-card-lbl">年度估算范围</div>
+    <div class="proc-card-sub">P1 数据受限：无公开采购金额数据</div>
+  </div>
+  <div class="proc-card confidence">
+    <div class="proc-card-val"><span class="confidence-low">低</span></div>
+    <div class="proc-card-lbl">置信度</div>
+  </div>
+  </div>
+
+  <!-- V5.4: 推算过程（折叠区） -->
+  
+  <h4>证据链</h4>
+  
+
+  <!-- ── 1.4 关键决策人 ── -->
+  <h2>关键决策人</h2>
+  <p style="font-size:9pt;color:var(--stone);margin-bottom:8pt;"></p>
+  <div class="contact-cards">
+  
+  </div>
+  
+  <div class="decision-chain"><strong>建议触达路径</strong></div>
+  
+  
+  
+  <div class="decision-flow-h">
+  
+  <div class="df-step-card">
+    <div class="df-step-role"></div>
+  </div>
+  
+  
+  </div>
+  
+
+  <!-- ── 1.5 动态信号雷达 ── -->
+  <h2>动态信号雷达</h2>
+  <div class="signal-row">
+  
+  </div>
+  
+
+  <!-- ── 1.6 切入策略 ── -->
+  <h2>切入策略</h2>
+  
+  <div class="pitch-box"><h4>电梯演讲（30秒）</h4><p></p></div>
+  
+  <div class="talking-points">
+  <h4>价值主张</h4>
+  
+  </div>
+  <h4>话题切入点</h4>
+  <ul>
+  
+  <li>P1 数据受限</li>
+  
+  </ul>
+
+  <!-- V5: 异议预判 -->
+  
+
+  <h4>行动时间线</h4>
+  <div class="timeline">
+  
+  <div class="timeline-step"><div class="timeline-step-num">—</div><div class="timeline-step-text">P1 数据受限<br><span style="color:var(--brand);"></span></div></div>
+  
+  </div>
+  <div><span style="font-size:9pt;color:var(--stone);margin-left:8pt;"></span></div>
+
+  <!-- ── 1.7 竞品替代分析 ── -->
+  <h2>竞品替代分析</h2>
+
+  
+
+  <h3>竞品格局对比</h3>
+  <table class="compact striped">
+  <tr><th>竞品名称</th><th>市场份额（估计）</th><th>核心优势</th><th>核心劣势</th><th>客户群特征</th><th>我方优势</th></tr>
+  
+  <tr>
+  <td><strong>竞品格局（P1 数据受限）</strong></td>
+  <td>—</td>
+  <td>作为全球最大ODM，工业富联连接器供应商体系庞大，包含鸿腾精密(FIT，关联公司)、安费诺、莫仕等国际巨头，以及华丰科技、鼎通科技等国产厂商。供应商准入门槛极高，竞争极为激烈。</td>
+  <td></td>
+  <td>—</td>
+  <td><span class="check-pass">—</span></td>
+  </tr>
+  
+  </table>
+
+  <h3>替代路径分析</h3>
+  
+  <p>P1 数据受限：暂无替代路径数据</p>
+  
+
+  <!-- V5.4: 切换成本（结构化三列 + 子项条形图） -->
+  
+
+  <h3>进入壁垒评估</h3>
+  
+  <div class="metrics">
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">进入壁垒</div></div>
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">在位者强度</div></div>
+  </div>
+  
+
+  <h3>我方差异化优势</h3>
+  
+  <ul><li>P1 数据受限：暂无结构化差异化数据</li></ul>
+  
+
+  <!-- ── 1.8 风险与注意事项 ── -->
+  <h2>风险与注意事项</h2>
+  <div class="risk-grid">
+  
+  <div class="risk-block 高">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中高">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 高">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  </div>
+  <div class="section-end"></div>
+  </section>
+
+
+<section class="chapter">
+<h1> <span style="font-size:14pt;color:var(--stone);font-weight:400;"> — 综合 /10 · #5</span></h1>
+
+<!-- ── 1.1 企业速览卡 ── -->
+<div class="client-header"><div class="client-header-left">
+<div class="client-name"></div>
+<div class="client-tags"></div>
+</div></div>
+<!-- kpi_row removed per V5.4.3 -->
+<div class="callout" style="margin-bottom:14pt;"><strong>一句话定位</strong>：</div>
+
+
+
+
+  <!-- ── 1.2 匹配度诊断 ── -->
+  <h2>匹配度诊断</h2>
+  <div class="match-subscore">
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  </div>
+
+  <div class="match-panel"><div class="match-col">
+  <h4 style="color:var(--positive);margin-bottom:8pt;">匹配亮点</h4>
+  
+    
+  
+  </div><div class="match-col"><h4 style="color:var(--warn);margin-bottom:8pt;">需注意</h4>
+  
+    
+  
+  </div></div>
+  <div style="font-size:9.5pt;"><h4>一票否决检查</h4></div>
+
+  <!-- ── 1.3 采购规模估算 ── -->
+  <h2>采购规模估算</h2>
+  <div class="procurement-triple">
+  <div class="proc-card scale">
+    <div class="proc-card-val">—</div>
+    <div class="proc-card-lbl">采购体量</div>
+  </div>
+  <div class="proc-card range">
+    <div class="proc-card-val">数据受限</div>
+    <div class="proc-card-lbl">年度估算范围</div>
+    <div class="proc-card-sub">P1 数据受限：无公开采购金额数据</div>
+  </div>
+  <div class="proc-card confidence">
+    <div class="proc-card-val"><span class="confidence-low">低</span></div>
+    <div class="proc-card-lbl">置信度</div>
+  </div>
+  </div>
+
+  <!-- V5.4: 推算过程（折叠区） -->
+  
+  <h4>证据链</h4>
+  
+
+  <!-- ── 1.4 关键决策人 ── -->
+  <h2>关键决策人</h2>
+  <p style="font-size:9pt;color:var(--stone);margin-bottom:8pt;"></p>
+  <div class="contact-cards">
+  
+  </div>
+  
+  <div class="decision-chain"><strong>建议触达路径</strong></div>
+  
+  
+  
+  <div class="decision-flow-h">
+  
+  <div class="df-step-card">
+    <div class="df-step-role"></div>
+  </div>
+  
+  
+  </div>
+  
+
+  <!-- ── 1.5 动态信号雷达 ── -->
+  <h2>动态信号雷达</h2>
+  <div class="signal-row">
+  
+  </div>
+  
+
+  <!-- ── 1.6 切入策略 ── -->
+  <h2>切入策略</h2>
+  
+  <div class="pitch-box"><h4>电梯演讲（30秒）</h4><p></p></div>
+  
+  <div class="talking-points">
+  <h4>价值主张</h4>
+  
+  </div>
+  <h4>话题切入点</h4>
+  <ul>
+  
+  <li>P1 数据受限</li>
+  
+  </ul>
+
+  <!-- V5: 异议预判 -->
+  
+
+  <h4>行动时间线</h4>
+  <div class="timeline">
+  
+  <div class="timeline-step"><div class="timeline-step-num">—</div><div class="timeline-step-text">P1 数据受限<br><span style="color:var(--brand);"></span></div></div>
+  
+  </div>
+  <div><span style="font-size:9pt;color:var(--stone);margin-left:8pt;"></span></div>
+
+  <!-- ── 1.7 竞品替代分析 ── -->
+  <h2>竞品替代分析</h2>
+
+  
+
+  <h3>竞品格局对比</h3>
+  <table class="compact striped">
+  <tr><th>竞品名称</th><th>市场份额（估计）</th><th>核心优势</th><th>核心劣势</th><th>客户群特征</th><th>我方优势</th></tr>
+  
+  <tr>
+  <td><strong>竞品格局（P1 数据受限）</strong></td>
+  <td>—</td>
+  <td>通信设备连接器领域，中兴通讯现有供应商包括富士达(华为5G基站射频连接器核心供应商，也可能供应中兴)、安费诺、TE Connectivity等。通信设备对连接器可靠性要求极高，认证周期长。</td>
+  <td></td>
+  <td>—</td>
+  <td><span class="check-pass">—</span></td>
+  </tr>
+  
+  </table>
+
+  <h3>替代路径分析</h3>
+  
+  <p>P1 数据受限：暂无替代路径数据</p>
+  
+
+  <!-- V5.4: 切换成本（结构化三列 + 子项条形图） -->
+  
+
+  <h3>进入壁垒评估</h3>
+  
+  <div class="metrics">
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">进入壁垒</div></div>
+  <div class="metric"><div class="metric-value">P1 数据受限</div><div class="metric-label">在位者强度</div></div>
+  </div>
+  
+
+  <h3>我方差异化优势</h3>
+  
+  <ul><li>P1 数据受限：暂无结构化差异化数据</li></ul>
+  
+
+  <!-- ── 1.8 风险与注意事项 ── -->
+  <h2>风险与注意事项</h2>
+  <div class="risk-grid">
+  
+  <div class="risk-block 中高">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  <div class="risk-block 中">
+  <h4> <span class="risk-dot high"></span></h4>
+  <div class="risk-desc"><strong></strong><br></div>
+  
+  </div>
+  
+  </div>
+  <div class="section-end"></div>
+  </section>
+
+
+<!-- ====== 附录 V5.4 ====== -->
+<section class="chapter"><h1>附录 A · 数据采集日志</h1>
+<p style="font-size:9pt;color:var(--stone);margin-bottom:10pt;">数据截止 。数据来源均标注为通用类别（如企业工商数据库、公开搜索引擎等），具体查询工具因版本迭代可能不同，此处从略。</p>
+
+<table class="compact striped">
+<tr><th>工具</th><th>调用次数</th><th>用途</th><th>说明</th></tr>
+<tr><td>alibaba_search.bailian_web_search</td><td></td><td>多路关键词并发搜索：服务器制造商+高速连接器、数据中心设备+高速互连、通信设备+5G基站+连接器、AI服务器+GPU服务器制造商、浪潮信息/中科曙光/工业富联/新华三/中兴通讯等企业信息采集</td><td>P1数据受限版本，仅使用公开搜索引擎，不含专有工商/财务/社交平台数据库</td></tr>
+<tr><td>score_calculator</td><td></td><td>八维量化评分计算</td><td>每客户8维子分0-10，经脚本计算综合分与排名</td></tr>
+</table>
+
+</section>
+
+<section class="chapter"><h1>附录 B · 评分方法论</h1>
+
+
+<div class="appendix-fallback"></div>
+<p class="source-note" style="margin-top:6pt;">※ 评分方法论应包含三个子章节：§B.1 公式与权重、§B.2 各维度打分细则、§B.3 一票否决规则</p>
+
+</section>
+
+<section class="chapter"><h1>附录 C · 术语解释</h1>
+
+<div class="appendix-fallback"></div>
+<p class="source-note" style="margin-top:6pt;">※ 术语解释应使用 &lt;dl&gt; 列表格式，覆盖报告中出现的 ≥5 个专业术语</p>
+
+</section>
+
+<section class="chapter"><h1>附录 D · 免责声明</h1>
+
+<div class="appendix-fallback">本报告基于公开信息整理，不构成商业决策的唯一依据。建议在实地考察和深度尽调后再做最终合作决策。P1版本不含专有数据库信息，如需更精准报告可升级数据源。</div>
+<p class="source-note" style="margin-top:6pt;">※ 免责声明应包含三段内容：①数据来源说明 ②分析仅供参考不构成商业决策唯一依据 ③信息时效性声明</p>
+</section>
+</body></html>
+

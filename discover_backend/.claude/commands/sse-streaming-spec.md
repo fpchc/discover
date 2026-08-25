@@ -12,9 +12,9 @@
 
 | # | 约束 | 说明 |
 |---|------|------|
-| 1 | 对话接口对齐 chat-messages 契约 | `POST /chat-messages`；`response_mode=streaming` 走 SSE（`event` 判别帧，以 message_end 收尾，无 `[DONE]`）；`blocking` 返回 JSON |
+| 1 | 对话接口契约 | `POST /chat-messages`；`response_mode=streaming` 走 SSE（`event` 判别帧，以 message_end 收尾，无 `[DONE]`）；`blocking` 返回 JSON |
 | 2 | 正文必须逐字符节流推送 | 模型分片是成块到达的，直接透传是「块状跳变」，不是打字效果 |
-| 3 | 思考内容不进正文 | 流无法分区渲染，思考增量只作内部事件，不进入 `message` 帧的 `answer` |
+| 3 | 思考与正文分帧 | 思考增量**不进入** `message` 帧的 `answer`，经独立 `thinking_started` / `thinking_delta` / `thinking_ended` 帧推送，前端据此渲染 DeepSeek 式思考分区；正文只走 `message` 帧 |
 | 4 | 必须有心跳 | 无数据期超过代理超时会断连；心跳帧为 `event=ping` |
 | 5 | 必须禁用代理缓冲 | 不禁用则整条流被缓冲到结束才下发，流式完全失效 |
 | 6 | 审批已整体移除 | 无审批节点 / 事件 / 接口，工具调用直接执行 |
@@ -96,11 +96,13 @@
 | 完成 | 轮次、总耗时、用量 | 恢复输入框 |
 | 心跳 | — | 忽略 |
 
-事件模型用 pydantic 判别联合，以事件类型作判别字段。当前对外契约是
-chat-messages 流（§6），富事件仅作内部驱动：`text_delta` 映射为 `message`
-帧的 `answer`，心跳映射为 `ping`，`done` 触发 `message_end`（含 usage），
-错误映射为 `error`；其余事件（路由/思考/工具/产物）在对外流中丢弃。
-带富事件的前端在 P1 未实现。
+事件模型用 pydantic 判别联合，以事件类型作判别字段。对外契约是
+chat-messages 流（§6）：`text_delta` 映射为 `message` 帧的 `answer`，
+`thinking_started` / `thinking_delta` / `thinking_ended` 映射为同名的
+`thinking_*` 帧，心跳映射为 `ping`，`done` 触发 `message_end`（含 usage），
+错误映射为 `error`；其余事件（路由/工具/产物）在对外流中丢弃。
+思考分区前端渲染已具备契约（`thinking_*` 帧）；工具/产物面板等富事件
+对外仍不暴露（后续阶段）。
 
 **每个事件必须带单会话内单调递增的序号**（内部排序去重；对外帧不携带）。
 
@@ -110,7 +112,7 @@ chat-messages 流（§6），富事件仅作内部驱动：`text_delta` 映射�
 
 | 项 | 要求 |
 |---|------|
-| 帧格式 | 事件判别帧：`data: {json}\n\n`，`event` 判别字段；`message`（正文增量）、`message_end`（收尾，含 metadata.usage 与 conversation_id）、`ping`（心跳）、`error` |
+| 帧格式 | 事件判别帧：`data: {json}\n\n`，`event` 判别字段；`message`（正文增量）、`message_end`（收尾，含 metadata.usage 与 conversation_id）、`thinking_started`（思考开始）、`thinking_delta`（思考增量，`content` 字段）、`thinking_ended`（思考结束，含 duration_ms）、`ping`（心跳）、`error` |
 | 会话标识 | `conversation_id` 经帧内字段与响应头 `X-Conversation-Id` 返回（自动创建时客户端凭此续聊） |
 | 响应头 | 声明事件流类型、禁用缓存、**显式禁用反向代理缓冲** |
 | 心跳 | 周期小于代理超时（常见代理默认几十秒），可用注释帧或专用心跳事件 |
@@ -158,13 +160,13 @@ chat-messages 流（§6），富事件仅作内部驱动：`text_delta` 映射�
 
 ## 10. 自检清单
 
-- [ ] 对话接口对齐 Dify chat-messages（streaming/blocking 双路径）
+- [ ] 对话接口契约（streaming/blocking 双路径）
 - [ ] 正文经节流队列逐帧推送，未直接转发模型分片
 - [ ] 节流参数全部走配置
 - [ ] 有追赶机制，长回答不会严重滞后
 - [ ] 按字素簇切分，未切开多字节字符或组合字符
-- [ ] 思考增量不进入 `message` 帧的 `answer`
-- [ ] 帧字段与 Dify 兼容（event 判别：message/message_end/ping/error）
+- [ ] 思考增量不进入 `message` 帧的 `answer`，独立经 `thinking_started` / `thinking_delta` / `thinking_ended` 帧暴露
+- [ ] 帧字段 event 判别（message/message_end/thinking_*/ping/error）
 - [ ] 流式以 `message_end` 收尾（无 `[DONE]`）；`conversation_id` 在帧内与 `X-Conversation-Id` 头返回
 - [ ] 响应头已禁用代理缓冲
 - [ ] 心跳周期小于代理超时

@@ -10,21 +10,22 @@ discover_frontend/
 ├── env/                        # 环境模板（vite envDir=./env）：.env.example / .development / .test / .production
 ├── .github/workflows/ci.yml    # CI 并行：lint / typecheck / test / build
 ├── src/
-│   ├── main.ts                 入口：全局错误边界 + Pinia + Router + Element Plus
+│   ├── main.ts                 入口：全局错误边界 + Pinia + Router + Element Plus（含 EP dark css-vars）
 │   ├── App.vue                 壳层（RouterView）
 │   ├── env.d.ts                VITE_* 类型声明
 │   ├── config/env.ts           环境配置唯一入口（类型化收窄，禁止直读 import.meta.env）
 │   ├── router/index.ts         路由（ChatView 懒加载）
-│   ├── views/ChatView.vue      页面编排
+│   ├── views/ChatView.vue      页面编排（桌面侧栏折叠 / 移动抽屉 / 空态建议透传）
 │   ├── components/
-│   │   ├── layout/             AppSidebar / ChatWindow
-│   │   ├── chat/               ChatInput / MessageBubble
-│   │   └── common/             （预留）
-│   ├── composables/            useChatStream / useMarkdown / useNetworkStatus
+│   │   ├── layout/             AppSidebar / ChatWindow（空态 + 光晕 + 主题切换）
+│   │   ├── chat/               ChatInput / MessageBubble（头像 + 渐变气泡 + 思考卡）
+│   │   └── common/             AppIcon（手写内联 SVG，无图标依赖）
+│   ├── composables/            useChatStream / useMarkdown / useNetworkStatus / useTheme
 │   ├── stores/                 chat / conversations
 │   ├── api/                    client / chat / types / errors
 │   ├── utils/                  sse / persist / logger
-│   └── styles/main.css
+│   └── styles/                 theme.css（双主题令牌）/ main.css（全局 + Markdown 正文）
+├── public/theme-init.js        首屏防主题闪白（CSP 兼容经典脚本，读取 disf_theme）
 └── 根配置                      package.json / vite.config.ts / vitest.config.ts / tsconfig×3 / biome.json
 ```
 
@@ -39,16 +40,19 @@ discover_frontend/
 | 错误映射 | `api/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
 | 消息快照 | localStorage `disf_snap_<cid>` | 仅已完成消息落盘（中断不落），刷新 / 切换按会话恢复 |
 | 环境 | VITE_* 收容 `env/`，`envDir: ./env` | 三环境模板、配置驱动、无硬编码 |
+| 视觉体系 | 品牌渐变（靛蓝→紫→淡紫）+ 明暗双主题（`useTheme` 维护 `html.dark`，记忆 `disf_theme`）+ 空态建议卡片 + 光晕动效 | 仿主流 AI 产品观感；EP 变量映射到主题令牌保持一致；`theme-init.js` 首屏防闪白（生产 CSP 放行自托管经典脚本） |
+| 代码块 | highlight.js 统一 `github-dark`，`pre.codeblock` 深色外壳 + `::before` 语言标签 | 明暗主题一致（GitHub/Vercel 风格）；markdown-it highlight 返回以 `<pre` 开头避免二次包裹 |
 | 校验 | Biome（Rust，lint+format 单一源） | 替代 ESLint+Prettier，消除规则重叠 |
 | 部署 | 多阶段 Docker + nginx（各子项目自带构建文件） | 同源 SSE 反代、hash 长缓存、CSP；`Dockerfile` / `nginx.conf` 在各自项目根，全栈 compose 在仓库根 |
 | 会话持久化 | localStorage（`disf_` 前缀） | 仅元数据，不存消息全文 |
 
 ## 关键契约确认（2026-08-24，与后端对齐）
 
-* **SSE 判别帧仅 4 种**：`message` / `message_end` / `ping` / `error`（`routes_chat.py:_stream_sse`）。
-* **`message` 帧 `answer` 为纯文本增量**：thinking 走 `thinking_delta`、工具走 `tool_call_*`、产物走
-  `artifact_ready`，均为后端**内部**事件，不进入对外正文。据此需求 §3 契约澄清落地为 **M2–M4 保持纯正文
-  展示**，前端不虚构事件消费组件；`VITE_FEATURE_*` 开关为后端开放结构化片段后的预留配置（当前未消费）。
+* **SSE 判别帧共 7 种**：`message` / `message_end` / `ping` / `error` + 思考三帧
+  `thinking_started` / `thinking_delta` / `thinking_ended`（`routes_chat.py:_stream_sse` 映射）。
+* **思考已对外**：`thinking_*` 帧携带思考过程（`thinking_delta.content` 增量、`thinking_ended.duration_ms`），
+  前端渲染为可折叠思考分区（ThinkingBlock），由 `VITE_FEATURE_THINKING` 开关控制显示。工具走 `tool_call_*`、
+  产物走 `artifact_ready` 仍为后端**内部**事件，不进入对外正文；ToolCallCard / ArtifactLink 保持不在 v1。
 * **HTTP 错误体**：PlatformError `{error:{category,message}}` / FastAPI `{detail}`。
 * **`created_at` 为 epoch 秒**；`message_end.metadata.usage` = `{prompt_tokens, completion_tokens, total_tokens}`。
 
@@ -60,10 +64,16 @@ discover_frontend/
 
 ## 当前能力边界（v1 功能已落地）
 
-对话全流程可用：发送（Enter/Shift+Enter、长度校验）、流式打字机、会话自动创建与续聊
+对话全流程可用：发送（Enter/Shift+Enter、长度校验）、流式打字机、思考过程展示（`thinking_*` 帧 →
+可折叠思考分区，多段思考合并、结束后显示耗时）、会话自动创建与续聊
 （`X-Conversation-Id` 优先 / 帧内 id 兜底）、停止生成（保留已收内容）、错误态与可读文案、
-阻塞模式兜底重试、Markdown 渲染（sanitize + 高亮）、复制、用量展示、会话侧边栏
+阻塞模式兜底重试、Markdown 渲染（sanitize + 高亮、代码块深色外壳）、复制、用量展示、会话侧边栏
 （新建 / 切换 / 删除 / 本地持久化 + 消息快照）、<768px 响应式抽屉、跨标签 storage 同步。
 
-**不在 v1**：M2–M4 高级事件卡片（ThinkingBlock/ToolCallCard/ArtifactLink）——后端暂不外泄这些
-内部事件，正文为纯文本（见关键契约确认）；若后端后续在正文输出结构化片段，再按 feature 开关接入。
+**视觉重构（2026-08-25）**：页面按主流 AI 产品观感重写——明暗双主题 + 一键切换（默认跟随系统、
+记忆偏好、首屏防闪白）、品牌渐变（靛蓝→紫→淡紫，去高饱和粉）、空态欢迎区（大标题 + 4 张建议
+卡片点击即发送 + 光晕漂移动画）、玻璃输入卡 + 圆形渐变发送钮、助手渐变头像 / 用户渐变气泡 /
+思考卡 shimmer、桌面侧栏折叠；功能与数据流零改动。
+
+**不在 v1**：ToolCallCard / ArtifactLink 高级事件卡片——工具 / 产物事件仍为后端内部事件，不进入
+对外正文（见关键契约确认）；若后端后续开放，再按 feature 开关接入。

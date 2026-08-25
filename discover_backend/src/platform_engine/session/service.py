@@ -50,12 +50,6 @@ class SessionService:
     def bind_agent(self, session_id: str, agent_id: str) -> SessionRecord:
         return self._store.bind_agent(session_id, agent_id)
 
-    async def remove_session(self, session_id: str) -> SessionRecord:
-        """移除会话：清理注册记录与产物登记（工作区按智能体共享，不删除）。"""
-        record = self._store.remove(session_id)
-        await self._artifacts.remove_session(session_id)
-        return record
-
     # ---- 工作区 ----
     async def workspace_for(self, agent_id: str) -> Workspace:
         """返回（必要时创建）智能体工作区（按 agent 键控，跨会话共享）。"""

@@ -1,7 +1,0 @@
-结构校验通过：1 家客户
-WARNING: x: equity_section 内容不足（<100 字符）— P1 数据受限，标注来源即可
-WARNING: x: contact_cards 少于 2 张 — 数据受限，标注
-WARNING: x: 决策人来源无公开职业社交平台且无降级标注 — 请标注降级原因
-WARNING: x: signals 少于 4 条 — 数据受限
-WARNING: x: 信号「」detail 无数字数据
-WARNING: x: 缺少高风险项

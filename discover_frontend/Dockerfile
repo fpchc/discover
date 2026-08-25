@@ -21,8 +21,11 @@ COPY . .
 # 构建期环境：VITE_* 在构建时烘焙进产物；ENV 优先级高于 env/ 下的 .env 文件
 ARG VITE_APP_ENV=production
 ARG VITE_API_BASE_URL=/api/v1
+# 流式请求整体超时（ms）：长思考/工具调用流超过 5 分钟会误判超时，默认放宽到 15 分钟
+ARG VITE_SSE_TIMEOUT_MS=900000
 ENV VITE_APP_ENV=$VITE_APP_ENV \
-    VITE_API_BASE_URL=$VITE_API_BASE_URL
+    VITE_API_BASE_URL=$VITE_API_BASE_URL \
+    VITE_SSE_TIMEOUT_MS=$VITE_SSE_TIMEOUT_MS
 RUN pnpm build
 
 # 阶段四 runtime：nginx 静态服务 + 后端反代（SSE 优化）

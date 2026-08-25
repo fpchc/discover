@@ -1,8 +1,64 @@
-# ===== discover 全栈 prod 编排 =====
-# 构建生产镜像：postgres + backend + frontend（nginx 静态服务 + /api 反代）
-# 启动：docker compose -f docker-compose.prod.yml up --build -d
-# 停止：docker compose -f docker-compose.prod.yml down
-# 端口：前端 8080；后端与 postgres 不对外暴露端口
+x-common-env: &common-env
+  # ---- 服务 ----
+  LOG_LEVEL: INFO
+  HOST: 0.0.0.0
+  PORT: 8000
+  # ---- 路径 ----
+  AGENTS_ROOT_DIR: agents
+  MCP_REGISTRY_PATH: config/mcp-servers.yaml
+  LLM_PROVIDERS_PATH: config/llm-providers.yaml
+  AGENT_WORKSPACE_ROOT_DIR: workspaces
+  # ---- 持久化（PostgreSQL） ----
+  DB_USERNAME: postgres
+  DB_PASSWORD: v7Hf
+  DB_HOST: 175.178.45.21
+  DB_PORT: 5432
+  DB_DATABASE: agent_platform
+  # ---- 存储 ----
+  STORAGE_ROOT_DIR: storage
+  # ---- LLM ----
+  DEFAULT_PROVIDER_ID: qwen3.7-max
+  LLM_API_KEY: ""
+  LLM_CONNECT_TIMEOUT_SECONDS: 10
+  LLM_READ_TIMEOUT_SECONDS: 60
+  LLM_TOTAL_TIMEOUT_SECONDS: 300
+  ERROR_MESSAGE_MAX_CHARS: 500
+  # ---- 思考模式 ----
+  THINKING_ENABLED: "true"
+  # ---- SSE 打字机（正文） ----
+  TYPEWRITER_FRAME_INTERVAL_MS: 30
+  TYPEWRITER_CHARS_PER_FRAME: 2
+  TYPEWRITER_CATCHUP_THRESHOLD: 200
+  TYPEWRITER_CATCHUP_RATIO: 4
+  # ---- SSE 打字机（思考） ----
+  THINKING_FRAME_INTERVAL_MS: 20
+  THINKING_CHARS_PER_FRAME: 4
+  # ---- SSE 心跳 ----
+  SSE_HEARTBEAT_INTERVAL_SECONDS: 15
+  SSE_QUEUE_MAX_EVENTS: 128
+  # ---- 控制台客户端 ----
+  CONSOLE_BASE_URL: http://127.0.0.1:8000
+  CONSOLE_CHAR_DELAY_MS: 20
+  CONSOLE_REQUEST_TIMEOUT_SECONDS: 300
+  # ---- 工具 ----
+  TOOL_BATCH_CONCURRENCY: 10
+  TOOL_DEFAULT_TIMEOUT_SECONDS: 30
+  TOOL_OUTPUT_TRUNCATE_CHARS: 6000
+  TOOL_LOG_ROOT_DIR: logs/tools
+  # ---- MCP ----
+  ALIBABA_SEARCH_TOKEN: ""
+  # ---- 会话与产物 ----
+  ARTIFACT_MAX_SIZE_BYTES: 104857600
+  # ---- 推理与路由 ----
+  CONTEXT_BUDGET_TOKENS: 96000
+  REASONING_MAX_TURNS: 40
+  ROUTING_CONFIDENCE_THRESHOLD: 0.6
+  # ---- 装配 ----
+  AGENT_BODY_MAX_CHARS: 2000
+  SKILL_BODY_MAX_CHARS: 8000
+  # ---- 功能开关 ----
+  HOT_RELOAD_ENABLED: "false"
+  HOT_RELOAD_INTERVAL_SECONDS: 30
 name: discover-prod
 
 services:
@@ -23,6 +79,11 @@ services:
       retries: 10
 
   backend:
+    # 公共环境变量（LLM / SSE / 工具等）来自 docker-compose.base.yml 的 backend-base；
+    # 此处仅补充按环境区分的 DB_* 连接。
+    extends:
+      file: docker-compose.base.yml
+      service: backend-base
     build:
       context: ./discover_backend
       dockerfile: Dockerfile
@@ -32,18 +93,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # 指向 compose 内 postgres 服务
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
-      DB_DATABASE: agent_platform
-      HOST: 0.0.0.0
-      PORT: 8000
-    env_file:
-      # 密钥与其余配置走宿主机 discover_backend/.env（可缺省）
-      - path: ./discover_backend/.env
-        required: false
+      <<: *common-env
     volumes:
       # 运行时可写目录持久化
       - backend-storage:/app/storage

@@ -60,3 +60,36 @@ class ErrorStreamEvent(BaseModel):
     status: int
     code: str
     message: str
+
+
+class ThinkingStartFrame(BaseModel):
+    """思考开始帧（DeepSeek 式思考分区：前端据此打开折叠思考框）。
+
+    Frame 后缀为对外 SSE 帧，区别于 protocol/events.py 的内部事件
+    （ThinkingStartedEvent 等，routes_chat 同时 import 两者避免同名冲突）。
+    """
+
+    event: Literal["thinking_started"] = "thinking_started"
+    message_id: str
+    conversation_id: str
+    created_at: int
+
+
+class ThinkingDeltaFrame(BaseModel):
+    """思考增量帧：思考过程文字逐段到达，前端追加到思考分区。"""
+
+    event: Literal["thinking_delta"] = "thinking_delta"
+    message_id: str
+    conversation_id: str
+    content: str
+    created_at: int
+
+
+class ThinkingEndFrame(BaseModel):
+    """思考结束帧：携带思考耗时，前端折叠思考分区。"""
+
+    event: Literal["thinking_ended"] = "thinking_ended"
+    message_id: str
+    conversation_id: str
+    duration_ms: int
+    created_at: int

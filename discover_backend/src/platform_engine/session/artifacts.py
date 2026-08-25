@@ -12,7 +12,6 @@ import uuid
 from pathlib import Path
 
 import anyio
-from sqlalchemy import delete, select
 
 from platform_engine.config.settings import Settings
 from platform_engine.db.engine import Database
@@ -111,23 +110,3 @@ class ArtifactManager:
             if row is None or row.session_id != session_id:
                 return None
             return row
-
-    async def remove_session(self, session_id: str) -> None:
-        """清理某会话登记的全部产物：存储字节 + 元数据。"""
-        async with self._db.session_factory() as session:
-            keys = (
-                await session.scalars(
-                    select(UploadFileRecord.storage_key).where(
-                        UploadFileRecord.session_id == session_id
-                    )
-                )
-            ).all()
-            for key in keys:
-                try:
-                    await self._storage.delete(str(key))
-                except FileNotFoundError:
-                    continue
-            await session.execute(
-                delete(UploadFileRecord).where(UploadFileRecord.session_id == session_id)
-            )
-            await session.commit()

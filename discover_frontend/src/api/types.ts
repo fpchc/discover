@@ -3,9 +3,10 @@
  * 禁止在组件内散落重复定义；新契约字段先在此对齐。
  *
  * 边界已确认（discover_backend/src/platform_engine/api/routes_chat.py）：
- * SSE 判别帧仅 message / message_end / ping / error 四种；message 帧 answer 为
- * 纯文本增量（thinking / tool_call / artifact 均为内部事件，不外泄到正文），
- * 故 M2–M4 高级事件在 v1 保持纯正文展示。
+ * SSE 判别帧共 7 种：message / message_end / ping / error 与思考三帧
+ * thinking_started / thinking_delta / thinking_ended。message 帧 answer 为正文
+ * 纯文本增量；thinking_* 帧携带思考过程，独立于正文。tool_call_* / artifact_ready
+ * 仍为后端内部事件，不外泄到正文。
  */
 
 /** 会话元数据（仅本地持久化；消息全文由后端持有） */
@@ -38,6 +39,12 @@ export interface ChatMessage {
   /** 错误态展示文案（仅 status === 'error'） */
   errorMessage?: string
   usage?: UsageInfo
+  /** 思考过程（thinking_started → thinking_delta 累积；仅助手消息） */
+  thinking?: string
+  /** 思考分区状态：thinking=进行中（展开）/ done=已结束（收起显示时长） */
+  thinkingStatus?: 'thinking' | 'done'
+  /** 末次思考耗时 ms（thinking_ended.duration_ms） */
+  thinkingDurationMs?: number
 }
 
 /** 对话请求体（对齐后端 ChatMessageRequest） */
@@ -83,6 +90,26 @@ export interface SseMessageEndFrame extends SseFrameBase {
   created_at: number
 }
 
+/** thinking_started → 打开思考分区（可折叠） */
+export interface SseThinkingStartedFrame extends SseFrameBase {
+  event: 'thinking_started'
+  created_at: number
+}
+
+/** thinking_delta → 思考增量，追加到思考分区 */
+export interface SseThinkingDeltaFrame extends SseFrameBase {
+  event: 'thinking_delta'
+  content: string
+  created_at: number
+}
+
+/** thinking_ended → 思考结束，含耗时 ms；折叠思考分区 */
+export interface SseThinkingEndedFrame extends SseFrameBase {
+  event: 'thinking_ended'
+  duration_ms: number
+  created_at: number
+}
+
 /** ping → 心跳，忽略 */
 export interface SsePingFrame {
   event: 'ping'
@@ -97,4 +124,11 @@ export interface SseErrorFrame {
 }
 
 /** 流式事件判别联合 */
-export type SseStreamFrame = SseMessageFrame | SseMessageEndFrame | SsePingFrame | SseErrorFrame
+export type SseStreamFrame =
+  | SseMessageFrame
+  | SseMessageEndFrame
+  | SseThinkingStartedFrame
+  | SseThinkingDeltaFrame
+  | SseThinkingEndedFrame
+  | SsePingFrame
+  | SseErrorFrame

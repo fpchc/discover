@@ -19,13 +19,22 @@ from platform_engine.api.models import (
     MessageEndEvent,
     MessageEvent,
     PingEvent,
+    ThinkingDeltaFrame,
+    ThinkingEndFrame,
+    ThinkingStartFrame,
 )
 
 _LOCAL_BASE_URL = "http://127.0.0.1:8000"
 
 # 项目 SSE 帧判别联合（跨边界 DTO，event 字段判别）
 type StreamFrame = Annotated[
-    MessageEvent | MessageEndEvent | PingEvent | ErrorStreamEvent,
+    MessageEvent
+    | MessageEndEvent
+    | PingEvent
+    | ErrorStreamEvent
+    | ThinkingStartFrame
+    | ThinkingDeltaFrame
+    | ThinkingEndFrame,
     Field(discriminator="event"),
 ]
 STREAM_ADAPTER = TypeAdapter(StreamFrame)
@@ -38,7 +47,14 @@ def _parse_sse_line(line: str) -> StreamFrame | None:
     return STREAM_ADAPTER.validate_json(line[len("data: ") :])
 
 
-query = "我是成都派兹互连电子技术有限公司的销售，我正在拓展客户，帮我找找潜在客户。\n\n【产品】我们主营：高频高速互连器件 / 【板对板、线对板连接器】，\n       主要用于服务器、数据中心的高速信号传输场景（请替换成您实际产品名+用途）。\n【目标行业】通信、服务器、数据中心相关制造业\n【目标区域】全国\n【客户规模】不限\n【排除条件】无\n【报告数量】5 家\n【销售节奏】均衡\n信息已给齐，直接开始搜索、评分并生成客户发现报告，不需要再向我确认需求。"
+query = (
+    "我是成都派兹互连电子技术有限公司的销售，我正在拓展客户，帮我找找潜在客户。\n\n"
+    "【产品】我们主营：高频高速互连器件 / 【板对板、线对板连接器】，\n"
+    "       主要用于服务器、数据中心的高速信号传输场景（请替换成您实际产品名+用途）。\n"
+    "【目标行业】通信、服务器、数据中心相关制造业\n"
+    "【目标区域】全国\n【客户规模】不限\n【排除条件】无\n【报告数量】5 家\n【销售节奏】均衡\n"
+    "信息已给齐，直接开始搜索、评分并生成客户发现报告，不需要再向我确认需求。"
+)
 
 
 async def test_chat_messages_streaming_auto_creates_conversation() -> None:

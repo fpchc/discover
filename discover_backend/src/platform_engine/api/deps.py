@@ -110,12 +110,6 @@ class AppServices:
             self.runtimes[session_id] = runtime
         return runtime
 
-    async def drop_runtime(self, session_id: str) -> None:
-        """会话删除时释放其运行时（MCP 引用计数）。"""
-        runtime = self.runtimes.pop(session_id, None)
-        if runtime is not None:
-            await runtime.close()
-
 
 def get_services(request: Request) -> AppServices:
     """FastAPI 依赖：取应用级服务容器。"""

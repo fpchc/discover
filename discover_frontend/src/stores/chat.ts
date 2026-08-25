@@ -71,6 +71,30 @@ export const useChatStore = defineStore('chat', () => {
     if (current !== undefined) current.content += delta
   }
 
+  /** 思考开始：打开当前助手消息的思考分区（首个 thinking_started） */
+  function startThinking(): void {
+    const current = currentStreamingMessage()
+    if (current !== undefined) current.thinkingStatus = 'thinking'
+  }
+
+  /** 思考增量：追加到思考分区（思考中状态保持展开；首个 thinking_delta 亦视为开始） */
+  function appendThinking(delta: string): void {
+    const current = currentStreamingMessage()
+    if (current !== undefined) {
+      current.thinking = (current.thinking ?? '') + delta
+      current.thinkingStatus = 'thinking'
+    }
+  }
+
+  /** 思考结束：折叠思考分区并记录耗时（thinking_ended.duration_ms） */
+  function endThinking(durationMs: number): void {
+    const current = currentStreamingMessage()
+    if (current !== undefined) {
+      current.thinkingStatus = 'done'
+      current.thinkingDurationMs = durationMs
+    }
+  }
+
   function completeAssistant(usage?: UsageInfo): void {
     const current = currentStreamingMessage()
     if (current !== undefined) {
@@ -140,6 +164,9 @@ export const useChatStore = defineStore('chat', () => {
     beginTurn,
     beginRetryTurn,
     appendDelta,
+    startThinking,
+    appendThinking,
+    endThinking,
     completeAssistant,
     failAssistant,
     abortTurn,

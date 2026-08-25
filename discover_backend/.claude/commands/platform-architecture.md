@@ -33,7 +33,7 @@
 | 4 | 流程控制写在图与脚本里，不写成自然语言提示词 | 参见 CLAUDE.md 技术栈 LangGraph 条 |
 | 5 | 所有阈值、路径、密钥、模型名走 pydantic-settings | 代码中出现字面量 URL、绝对路径、超时数字、模型名即违规 |
 | 6 | 跨边界对象一律 pydantic 模型 | 清单、事件、工具描述、执行结果用 dataclass 即违规 |
-| 7 | 对话接口对齐 chat-messages 契约 | streaming 必须逐字符节流走 SSE；blocking 返回 JSON |
+| 7 | 对话接口契约（chat-messages） | streaming 必须逐字符节流走 SSE；blocking 返回 JSON |
 | 8 | 智能体之间零共享可写状态 | 任一智能体能读写另一智能体的目录即违规 |
 
 ---

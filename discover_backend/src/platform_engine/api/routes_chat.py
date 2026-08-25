@@ -24,6 +24,9 @@ from platform_engine.api.models import (
     MessageEndEvent,
     MessageEvent,
     PingEvent,
+    ThinkingDeltaFrame,
+    ThinkingEndFrame,
+    ThinkingStartFrame,
 )
 from platform_engine.errors.base import ErrorCategory, PlatformError
 from platform_engine.protocol.emitter import QueueEmitter
@@ -33,6 +36,9 @@ from platform_engine.protocol.events import (
     ErrorEvent,
     HeartbeatEvent,
     TextDeltaEvent,
+    ThinkingDeltaEvent,
+    ThinkingEndedEvent,
+    ThinkingStartedEvent,
 )
 from platform_engine.protocol.sanitize import sanitize_error_message
 
@@ -128,34 +134,14 @@ async def _stream_sse(
 ) -> AsyncIterator[str]:
     """流式：内部事件转 `event` 判别帧，以 message_end 收尾。"""
     async for event in _run_turn_events(services, conversation_id, user_input):
-        if isinstance(event, HeartbeatEvent):
-            yield _sse_frame(PingEvent())
-        elif isinstance(event, TextDeltaEvent):
-            yield _sse_frame(
-                MessageEvent(
-                    message_id=message_id,
-                    conversation_id=conversation_id,
-                    answer=event.text,
-                    created_at=created_at,
-                )
-            )
-        elif isinstance(event, ErrorEvent):
-            yield _sse_frame(
-                ErrorStreamEvent(
-                    status=_ERROR_STATUS.get(event.category, 500),
-                    code=event.category.value,
-                    message=event.message,
-                )
-            )
-        elif isinstance(event, DoneEvent):
-            yield _sse_frame(
-                MessageEndEvent(
-                    message_id=message_id,
-                    conversation_id=conversation_id,
-                    metadata={"usage": _compat_usage(event.usage)},
-                    created_at=created_at,
-                )
-            )
+        frame = _map_stream_event(
+            event,
+            message_id=message_id,
+            conversation_id=conversation_id,
+            created_at=created_at,
+        )
+        if frame is not None:
+            yield _sse_frame(frame)
 
 
 def _compat_usage(usage: dict[str, int]) -> dict[str, int]:
@@ -167,7 +153,77 @@ def _compat_usage(usage: dict[str, int]) -> dict[str, int]:
     }
 
 
-def _sse_frame(event: MessageEvent | MessageEndEvent | PingEvent | ErrorStreamEvent) -> str:
+# 对外 SSE 帧判别联合（event 字段判别）；tests/http/test_api.py 维护同构联合
+_StreamFrame = (
+    MessageEvent
+    | MessageEndEvent
+    | PingEvent
+    | ErrorStreamEvent
+    | ThinkingStartFrame
+    | ThinkingDeltaFrame
+    | ThinkingEndFrame
+)
+
+
+def _map_stream_event(
+    event: AgentEvent,
+    *,
+    message_id: str,
+    conversation_id: str,
+    created_at: int,
+) -> _StreamFrame | None:
+    """内部 AgentEvent → 对外 SSE 帧（纯函数，便于单测）。
+
+    思考事件独立映射为 thinking_* 帧，供前端渲染 DeepSeek 式思考分区，
+    与正文 message 帧（打字机）区分；路由/工具/产物等富事件在对外流中
+    丢弃（返回 None）。
+    """
+    if isinstance(event, ThinkingStartedEvent):
+        return ThinkingStartFrame(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            created_at=created_at,
+        )
+    if isinstance(event, ThinkingDeltaEvent):
+        return ThinkingDeltaFrame(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            content=event.text,
+            created_at=created_at,
+        )
+    if isinstance(event, ThinkingEndedEvent):
+        return ThinkingEndFrame(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            duration_ms=event.duration_ms,
+            created_at=created_at,
+        )
+    if isinstance(event, HeartbeatEvent):
+        return PingEvent()
+    if isinstance(event, TextDeltaEvent):
+        return MessageEvent(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            answer=event.text,
+            created_at=created_at,
+        )
+    if isinstance(event, ErrorEvent):
+        return ErrorStreamEvent(
+            status=_ERROR_STATUS.get(event.category, 500),
+            code=event.category.value,
+            message=event.message,
+        )
+    if isinstance(event, DoneEvent):
+        return MessageEndEvent(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            metadata={"usage": _compat_usage(event.usage)},
+            created_at=created_at,
+        )
+    return None
+
+
+def _sse_frame(event: _StreamFrame) -> str:
     return f"data: {event.model_dump_json()}\n\n"
 
 

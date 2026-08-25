@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import { computed, ref } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
 
 const props = defineProps<{
   /** 发送中：隐藏发送、显示「停止」 */
@@ -52,43 +53,67 @@ function handleKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="chat-input">
+  <div class="input" :class="{ 'is-disabled': disabled }">
     <textarea
       ref="textareaRef"
       v-model="text"
-      class="chat-input__textarea"
+      class="input__textarea"
       :maxlength="maxLength"
-      :placeholder="disabled ? '正在生成回复…' : '发送消息（Enter 发送，Shift+Enter 换行）'"
+      :placeholder="disabled ? '正在生成回复…' : '发送消息，和你的智能体团队对话'"
       rows="1"
       @input="resize"
       @keydown="handleKeydown"
       @compositionstart="composing = true"
       @compositionend="composing = false"
     />
-    <div class="chat-input__footer">
-      <span class="chat-input__counter">{{ text.length }}/{{ maxLength }}</span>
-      <el-button v-if="disabled" class="chat-input__stop" type="danger" plain size="small" @click="emit('stop')">
-        停止
-      </el-button>
-      <el-button v-else class="chat-input__send" type="primary" size="small" :disabled="!canSend" @click="submit">
-        发送
-      </el-button>
+    <div class="input__footer">
+      <span class="input__hint">Enter 发送 · Shift+Enter 换行</span>
+      <div class="input__side">
+        <span class="input__counter">{{ text.length }}/{{ maxLength }}</span>
+        <el-button
+          v-if="disabled"
+          class="input__stop"
+          circle
+          title="停止生成"
+          @click="emit('stop')"
+        >
+          <template #icon><AppIcon name="square" :size="13" /></template>
+        </el-button>
+        <el-button
+          v-else
+          class="input__send"
+          circle
+          :disabled="!canSend"
+          title="发送"
+          @click="submit"
+        >
+          <template #icon><AppIcon name="arrow-up" :size="16" /></template>
+        </el-button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.chat-input {
-  border: 1px solid var(--el-border-color);
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: var(--el-bg-color);
-  box-shadow: var(--el-box-shadow-light);
+.input {
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  padding: 12px 16px 10px;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-composer);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
-.chat-input:focus-within {
-  border-color: var(--el-color-primary);
+.input:focus-within {
+  border-color: var(--brand-2);
+  box-shadow: var(--glow-primary), var(--shadow-composer);
 }
-.chat-input__textarea {
+.input.is-disabled {
+  opacity: 0.85;
+}
+.input__textarea {
   display: block;
   width: 100%;
   border: none;
@@ -96,21 +121,79 @@ function handleKeydown(event: KeyboardEvent): void {
   resize: none;
   max-height: 200px;
   font: inherit;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.6;
   background: transparent;
-  color: var(--el-text-color-primary);
+  color: var(--text-1);
 }
-.chat-input__textarea::placeholder {
-  color: var(--el-text-color-placeholder);
+.input__textarea::placeholder {
+  color: var(--text-3);
 }
-.chat-input__footer {
+.input__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 8px;
 }
-.chat-input__counter {
+.input__hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--text-3);
+  user-select: none;
+}
+.input__side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.input__counter {
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.input__send.el-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--brand-gradient);
+  color: #fff;
+  box-shadow: var(--glow-brand);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+.input__send.el-button:hover:not(.is-disabled) {
+  transform: scale(1.06);
+  box-shadow: 0 8px 26px rgba(139, 92, 246, 0.5);
+}
+.input__send.el-button.is-disabled {
+  background: var(--surface-hover);
+  color: var(--text-3);
+  box-shadow: none;
+}
+.input__stop.el-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--text-1);
+  transition: background-color 0.15s ease;
+}
+.input__stop.el-button:hover {
+  background: var(--surface-hover);
+}
+
+@media (max-width: 767px) {
+  .input__hint {
+    display: none;
+  }
+  .input {
+    border-radius: 16px;
+    padding: 10px 14px 8px;
+  }
 }
 </style>

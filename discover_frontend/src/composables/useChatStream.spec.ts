@@ -53,6 +53,9 @@ describe('consumeChatStream', () => {
 
     await consumeChatStream(streamResponse(sse), {
       onDelta: (delta) => deltas.push(delta),
+      onThinkingStart: () => {},
+      onThinkingDelta: () => {},
+      onThinkingEnd: () => {},
       onEnd: (metadata, conversationId) => {
         endPayload = { usage: metadata.usage, conversationId }
       },
@@ -77,6 +80,9 @@ describe('consumeChatStream', () => {
 
     await consumeChatStream(streamResponse(sse), {
       onDelta: (delta) => deltas.push(delta),
+      onThinkingStart: () => {},
+      onThinkingDelta: () => {},
+      onThinkingEnd: () => {},
       onEnd: () => {},
       onError: (error) => errors.push(error.message),
     })
@@ -91,6 +97,9 @@ describe('consumeChatStream', () => {
 
     await consumeChatStream(streamResponse(sse), {
       onDelta: () => {},
+      onThinkingStart: () => {},
+      onThinkingDelta: () => {},
+      onThinkingEnd: () => {},
       onEnd: () => {},
       onError: (error) => errors.push(error.message),
     })
@@ -103,9 +112,94 @@ describe('consumeChatStream', () => {
     await expect(
       consumeChatStream(response, {
         onDelta: () => {},
+        onThinkingStart: () => {},
+        onThinkingDelta: () => {},
+        onThinkingEnd: () => {},
         onEnd: () => {},
         onError: () => {},
       }),
     ).rejects.toThrow()
+  })
+
+  it('按序分发 thinking_started / thinking_delta / thinking_ended', async () => {
+    const thinkingStarts: number[] = []
+    const thinkingDeltas: string[] = []
+    const thinkingEnds: number[] = []
+    const sse = `${[
+      frame({ event: 'thinking_started', message_id: 'm1', conversation_id: 'c1', created_at: 1 }),
+      frame({
+        event: 'thinking_delta',
+        message_id: 'm1',
+        conversation_id: 'c1',
+        content: '先分析产业链',
+        created_at: 1,
+      }),
+      frame({
+        event: 'thinking_delta',
+        message_id: 'm1',
+        conversation_id: 'c1',
+        content: '再圈定候选客户',
+        created_at: 1,
+      }),
+      frame({
+        event: 'thinking_ended',
+        message_id: 'm1',
+        conversation_id: 'c1',
+        duration_ms: 8123,
+        created_at: 1,
+      }),
+      frame({
+        event: 'message',
+        message_id: 'm1',
+        conversation_id: 'c1',
+        answer: '# 报告',
+        created_at: 1,
+      }),
+      frame({
+        event: 'message_end',
+        message_id: 'm1',
+        conversation_id: 'c1',
+        metadata: {},
+        created_at: 1,
+      }),
+    ].join('\n\n')}\n\n`
+
+    await consumeChatStream(streamResponse(sse), {
+      onDelta: () => {},
+      onThinkingStart: () => thinkingStarts.push(1),
+      onThinkingDelta: (delta) => thinkingDeltas.push(delta),
+      onThinkingEnd: (durationMs) => thinkingEnds.push(durationMs),
+      onEnd: () => {},
+      onError: () => {},
+    })
+
+    expect(thinkingStarts).toHaveLength(1)
+    expect(thinkingDeltas).toEqual(['先分析产业链', '再圈定候选客户'])
+    expect(thinkingEnds).toEqual([8123])
+  })
+
+  it('仅收到 thinking_* 帧未到 message_end → 仍视为流中断', async () => {
+    const errors: string[] = []
+    const sse = `${[
+      frame({ event: 'thinking_started', message_id: 'm1', conversation_id: 'c1', created_at: 1 }),
+      frame({
+        event: 'thinking_delta',
+        message_id: 'm1',
+        conversation_id: 'c1',
+        content: '思考中',
+        created_at: 1,
+      }),
+    ].join('\n\n')}\n\n`
+
+    await consumeChatStream(streamResponse(sse), {
+      onDelta: () => {},
+      onThinkingStart: () => {},
+      onThinkingDelta: () => {},
+      onThinkingEnd: () => {},
+      onEnd: () => {},
+      onError: (error) => errors.push(error.message),
+    })
+
+    expect(errors).toEqual(['连接中断，已保留已接收内容'])
   })
 })

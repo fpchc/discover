@@ -65,7 +65,10 @@
 * SSE 帧解析规则（后端契约，不可臆造）：
   * `data:` 行按空行分隔为帧；帧 JSON 的 `event` 字段判别类型。
   * `message` → 正文增量，追加到当前回复；`message_end` → 收尾帧，含 `metadata.usage`，**流结束，无 `[DONE]`**。
+  * `thinking_started` → 打开思考分区；`thinking_delta` → 思考增量（`content`）追加到思考分区；`thinking_ended` → 收起并显示耗时（`duration_ms`）。
+  * 思考可多段（思考→工具→再思考）：所有思考追加同一分区，首个 `thinking_started` 打开、末次 `thinking_ended` 收起；思考不进正文。
   * `ping` → 心跳，忽略；`error` → 错误帧 `{status, code, message}`，展示错误态。
+  * `response_mode=blocking` 不推思考帧，返回完整 JSON `{answer, metadata, conversation_id}`，思考不可见。
 * 取消 / 停止：`AbortController` 关联 `fetch`，取消后同步复位 Pinia 中的流式状态，禁止残留半条消息态。
 * 断线 / 超时：按 `VITE_SSE_TIMEOUT_MS` 兜底；流中断未到 `message_end` 视为异常，提示重试并保留已收内容。
 * 消息去重 / 排序：以 `message_id` 标识当前消息，`seq`（后端内部事件序号）仅用于开发调试，不参与 UI 排序。

@@ -66,12 +66,16 @@ export function readConversationId(response: Response): string {
 
 export interface ChatStreamHandlers {
   onDelta: (delta: string) => void
+  onThinkingStart: () => void
+  onThinkingDelta: (delta: string) => void
+  onThinkingEnd: (durationMs: number) => void
   onEnd: (metadata: { usage?: UsageInfo }, conversationId: string) => void
   onError: (error: AppError) => void
 }
 
 /**
- * 消费流：message → onDelta、message_end → onEnd、error → onError、ping → 忽略。
+ * 消费流：message → onDelta、thinking_* → 思考回调、message_end → onEnd、
+ * error → onError、ping → 忽略。
  * 流自然结束（读到 EOF）但未到 message_end 视为异常中断，回调 STREAM_INTERRUPTED。
  * 读取期抛错（网络断开 / abort）向上传播，由编排层决定错误语义。
  */
@@ -84,6 +88,12 @@ export async function consumeChatStream(
   for await (const frame of readChatStream(response)) {
     if (frame.event === 'message') {
       handlers.onDelta(frame.answer)
+    } else if (frame.event === 'thinking_started') {
+      handlers.onThinkingStart()
+    } else if (frame.event === 'thinking_delta') {
+      handlers.onThinkingDelta(frame.content)
+    } else if (frame.event === 'thinking_ended') {
+      handlers.onThinkingEnd(frame.duration_ms)
     } else if (frame.event === 'message_end') {
       terminated = true
       handlers.onEnd(frame.metadata, frame.conversation_id)
@@ -171,6 +181,15 @@ export function useChatStream() {
       await consumeChatStream(response, {
         onDelta: (delta) => {
           if (isCurrent()) chat.appendDelta(delta)
+        },
+        onThinkingStart: () => {
+          if (isCurrent()) chat.startThinking()
+        },
+        onThinkingDelta: (delta) => {
+          if (isCurrent()) chat.appendThinking(delta)
+        },
+        onThinkingEnd: (durationMs) => {
+          if (isCurrent()) chat.endThinking(durationMs)
         },
         onEnd: (metadata, conversationId) => {
           if (!isCurrent()) return

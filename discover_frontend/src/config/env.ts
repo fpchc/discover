@@ -28,8 +28,8 @@ export const APP_ENV: AppEnv = parseAppEnv(import.meta.env.VITE_APP_ENV)
 /** 后端 API base（含 /api/v1 前缀）；同源部署时由 vite / nginx 代理 */
 export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
-/** SSE 流式请求整体超时（毫秒） */
-export const SSE_TIMEOUT_MS: number = parsePositiveInt(import.meta.env.VITE_SSE_TIMEOUT_MS, 300_000)
+/** SSE 流式请求整体超时（毫秒）；默认 15 分钟，长思考/工具调用流远超 5 分钟 */
+export const SSE_TIMEOUT_MS: number = parsePositiveInt(import.meta.env.VITE_SSE_TIMEOUT_MS, 900_000)
 
 /** 普通 HTTP（blocking）请求超时（毫秒） */
 export const REQUEST_TIMEOUT_MS: number = parsePositiveInt(

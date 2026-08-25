@@ -80,17 +80,6 @@ async def test_workspace_rejects_traversal_ids(tmp_path: Path, bad_id: str) -> N
         await service.workspace_for(bad_id)
 
 
-async def test_remove_session_keeps_agent_workspace(tmp_path: Path) -> None:
-    service, _ = _service(tmp_path)
-    record = await service.create_session()
-    ws = await service.workspace_for("finder")
-    (ws.root / "note.txt").write_text("x", encoding="utf-8")
-    await service.remove_session(record.session_id)
-    assert ws.root.exists()  # 工作区按智能体共享，会话删除不影响
-    with pytest.raises(SessionNotFoundError):
-        service.get_session(record.session_id)
-
-
 async def test_register_artifact_and_download_ownership(tmp_path: Path) -> None:
     service, storage = _service(tmp_path)
     owner = await service.create_session()
@@ -174,24 +163,6 @@ async def test_register_artifact_unknown_session(tmp_path: Path) -> None:
             source_path=src,
             filename="x.txt",
         )
-
-
-async def test_remove_session_cleans_artifacts(tmp_path: Path) -> None:
-    service, _ = _service(tmp_path)
-    record = await service.create_session()
-    ws = await service.workspace_for("finder")
-    src = ws.root / "f.txt"
-    src.write_text("x", encoding="utf-8")
-    artifact = await service.register_artifact(
-        session_id=record.session_id,
-        agent_id="finder",
-        source_path=src,
-        filename="f.txt",
-    )
-    await service.remove_session(record.session_id)
-    assert await service.resolve_download(record.session_id, artifact.artifact_id) is None
-    with pytest.raises(SessionNotFoundError):
-        service.get_session(record.session_id)
 
 
 def test_artifact_download_path() -> None:

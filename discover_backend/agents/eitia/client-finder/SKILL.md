@@ -24,7 +24,7 @@ scripts:
     schema_path: schemas/dedup_input.json
   - path: scripts/render_report.py
     name: render_report
-    description: 客户发现报告渲染与结构校验（入参 data 内联传报告本体，禁止传文件路径；check_only 只校验不渲染）
+    description: 客户发现报告 HTML 渲染与结构校验（下一阶段启用；本阶段直接输出文字报告，不调用）
     side_effect: write_file
     schema_path: schemas/render_input.json
 documents:
@@ -50,13 +50,13 @@ gates:
     condition: 每客户 8 维子分均非 0 且 score_calculator 输出有效
     blocking: false
   - id: render_pass
-    condition: render_report --check-only 零错误（clients 非空 + 无 Jinja 残留 + 无 CSS 泄露；字段齐全/工具名泄漏降级为警告）
+    condition: 本阶段交付文字报告，不生成 HTML；HTML 渲染与结构校验门禁于下一阶段（HTML 阶段）恢复
     validator: scripts/gate_render_valid.py
     schema_path: schemas/gate_input.json
-    blocking: true
+    blocking: false
 templates:
   - path: templates/eitia-cfr.html
-    purpose: 客户发现报告 HTML 模板（Jinja2），render_report 只读加载
+    purpose: 客户发现报告 HTML 模板（Jinja2，下一阶段 HTML 渲染时启用）
 ---
 # EITIA 客户发现工作流（P1 数据受限版）
 
@@ -100,14 +100,17 @@ P1 数据源仅 `alibaba_search`（公开搜索）。多路关键词并发：产
 ### 3.4 门禁
 - `candidate_pool` 候选池 ≥ 5 家：尽力，不足向用户说明。—— 警告级
 - `score_valid` 每客户 8 维子分非空且计算器输出有效。—— 警告级
-- `render_pass` 报告结构校验零错误。—— **阻断级**，未过不得交付。
+- `render_pass` 报告结构校验（下一阶段 HTML 渲染时启用）。—— 本阶段降为警告级，不阻断文字报告交付。
 
-## 4. 阶段 3：报告渲染与交付
+## 4. 阶段 3：文字报告交付（本阶段；HTML 渲染为下一阶段）
 
-1. 按 `references/report-structure.md` 组织报告 JSON（cover / l0 / clients / appendix，V5 结构）。
-2. 调用 `render_report`，报告数据**经 `data` 字段内联传入**（AI 无写文件工具，禁止传文件路径）；渲染成功即把报告 JSON 落盘工作区 `output/report.json`、HTML 输出到工作区 `output/`。
-3. 调用 `gate_render_pass` 门禁校验器，传 `report_json: "output/report.json"` 引用渲染落盘的报告；校验错误 → 按失败清单原地修复后重跑，直至零错误。
-4. 产物自动登记为可下载；向用户汇报推荐名单、综合分、行动优先级与数据受限说明。
+1. 按 `references/report-structure.md` 的内容结构组织报告（封面信息 / 导读 / 客户深度档案 / 附录），但**直接输出为完整 Markdown 文字报告**作为最终回复；**不调用 `render_report`、不生成 HTML、不跑 `gate_render_pass`**（HTML 渲染与其结构校验门禁属下一阶段）。
+2. 文字报告建议结构：
+   - **封面信息**：委托方、产品/能力、目标行业与区域、报告日期、数据来源受限说明。
+   - **报告导读**：执行摘要（推荐结论）、行业全景（市场规模 / 产业链卡位 / 竞争格局）、候选池漏斗、TOP N 客户一览（综合分排序）。
+   - **每客户一章**：企业速览 → 八维匹配诊断（含权重与依据）→ 采购规模估算 → 关键决策人 → 动态信号（带日期）→ 切入策略（定位 / 价值主张 / 切入点 / 异议预判 / 时间线）→ 竞品替代分析 → 风险与注意事项。
+   - **附录**：数据采集日志（工具来源）、评分方法论、免责声明。
+3. 报告以 Markdown 正文流式输出（打字机效果）交付；数据缺口显式标注「P1 数据受限」/「数据不充分·取中性分」，不静默编造。
 
 ## 5. 报告质量预期管理（P1）
 
@@ -120,5 +123,5 @@ P1 数据源仅 `alibaba_search`（公开搜索）。多路关键词并发：产
 
 - 先澄清再搜索，不跳过第一层必问。
 - 评分必须走 `score_calculator`，禁止手算综合分。
-- 报告必须过 `gate_render_pass`（引用 output/report.json）零错误才能交付。
+- 本阶段交付完整 Markdown 文字报告，不生成 HTML；HTML 渲染与 `gate_render_pass` 门禁属下一阶段。
 - 尽力采集 + 显式标注，绝不对数据缺口静默编造。

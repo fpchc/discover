@@ -53,7 +53,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | DB 连接地址 | 默认 URL 用 `127.0.0.1` 而非 `localhost`（Windows + Docker 下 localhost 先解析 IPv6 `::1`，回环转发超时 ~21s） | 实测修复 |
 | 门禁执行 | 有校验器的门禁注册为脚本工具 `…script.gate_<id>`，tool_node 写 gate_status | graph-runtime-spec §6 |
 | 审批 | 已整体移除：无审批节点 / 事件 / 接口 / 策略，工具调用直接执行 | 用户决策 2026-08 |
-| 对话输出 | chat-messages 契约：`POST /chat-messages`，`response_mode=streaming` 走 SSE（`event` 判别帧，message/message_end/ping/error，无 `[DONE]`），`blocking` 返回 JSON；typewriter 节流 + 有界队列背压；思考内容不进正文 | 用户决策 2026-08 |
+| 对话输出 | chat-messages 契约：`POST /chat-messages`，`response_mode=streaming` 走 SSE（`event` 判别帧，message/message_end/thinking_started/thinking_delta/thinking_ended/ping/error，无 `[DONE]`），`blocking` 返回 JSON；typewriter 节流 + 有界队列背压；思考经 `thinking_*` 帧独立暴露（不进 `message.answer`），供前端渲染 DeepSeek 式思考分区 | 用户决策 2026-08 |
 | emitter | 单协程 tick 循环（嵌套任务组在父作用域取消时本机 anyio/asyncio 会死锁，流尾挂起） | 实测修复 |
 | 后台热重载任务 | 单常驻协程 + CancelScope 宿主任务（`asyncio.create_task`），不用跨 startup/shutdown 常驻的 anyio task group：任务组跨任务退出报 cancel-scope 跨任务错误（pytest-asyncio 生成器 fixture setup/teardown 分任务），嵌套任务组宿主取消时死锁 | 实测修复 |
 | 配置 | `pydantic-settings` 唯一入口，无硬编码 URL/密钥/阈值；env 白名单透传 | CLAUDE.md §5 |

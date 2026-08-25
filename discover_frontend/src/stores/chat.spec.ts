@@ -69,6 +69,53 @@ describe('chat store', () => {
     expect(last.content).toBe('部分')
   })
 
+  it('startThinking / appendThinking / endThinking 管理思考分区', () => {
+    const chat = useChatStore()
+    chat.beginTurn('hi')
+    chat.startThinking()
+    expect(chat.messages[1].thinkingStatus).toBe('thinking')
+    chat.appendThinking('先分析产业链')
+    chat.appendThinking('再圈定候选客户')
+    expect(chat.messages[1].thinking).toBe('先分析产业链再圈定候选客户')
+    chat.endThinking(8123)
+    expect(chat.messages[1].thinkingStatus).toBe('done')
+    expect(chat.messages[1].thinkingDurationMs).toBe(8123)
+  })
+
+  it('多段思考追加到同一思考分区，末次结束记录耗时', () => {
+    const chat = useChatStore()
+    chat.beginTurn('hi')
+    chat.startThinking()
+    chat.appendThinking('第一段推理')
+    chat.endThinking(1000)
+    chat.startThinking()
+    chat.appendThinking('第二段推理')
+    chat.endThinking(2000)
+    const last = chat.messages[1]
+    expect(last.thinking).toBe('第一段推理第二段推理')
+    expect(last.thinkingStatus).toBe('done')
+    expect(last.thinkingDurationMs).toBe(2000)
+  })
+
+  it('思考内容随已完成消息落盘快照', () => {
+    const chat = useChatStore()
+    chat.beginTurn('hi')
+    chat.startThinking()
+    chat.appendThinking('推理过程')
+    chat.endThinking(500)
+    chat.appendDelta('answer')
+    chat.setConversationId('cid-t')
+    chat.completeAssistant()
+
+    const fresh = freshChatStore()
+    fresh.loadConversation('cid-t')
+    const last = fresh.messages[1]
+    expect(last.thinking).toBe('推理过程')
+    expect(last.thinkingStatus).toBe('done')
+    expect(last.thinkingDurationMs).toBe(500)
+    expect(last.content).toBe('answer')
+  })
+
   it('beginRetryTurn 移除上一条失败助手消息', () => {
     const chat = useChatStore()
     chat.beginTurn('hi')
