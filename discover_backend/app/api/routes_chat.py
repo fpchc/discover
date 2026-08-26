@@ -20,8 +20,9 @@ import anyio
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 
+from app.catalog.models import GENERIC_ASSISTANT_ID, AssistantTarget, TargetType
 from app.container import AppServices, get_services
-from app.errors.base import ErrorCategory, PlatformError, http_status_for
+from app.errors.base import ErrorCategory, NotFoundError, PlatformError, http_status_for
 from app.history.models import MessageStatus, TurnRecord, TurnUsage
 from app.protocol.emitter import QueueEmitter
 from app.protocol.events import (
@@ -50,6 +51,13 @@ from app.schemas import (
 router = APIRouter(tags=["chat"])
 
 _POLL_SECONDS = 0.1
+
+
+def _history_agent_label(target: AssistantTarget | None) -> str | None:
+    """历史落库的 agent_id 标签：expert 时取目标 id，其余（通用等）为 None。"""
+    if target is None or target.type != TargetType.EXPERT:
+        return None
+    return target.id
 
 
 @dataclass
@@ -88,7 +96,7 @@ async def chat_messages(
 ) -> StreamingResponse | ChatMessageResponse:
     """对话：会话缺省自动创建，续聊带 conversation_id。"""
     assert services.sessions is not None
-    conversation_id = await _resolve_conversation(services, body.conversation_id)
+    conversation_id = await _resolve_conversation(services, body.conversation_id, body.agent_id)
     response.headers["X-Conversation-Id"] = conversation_id
     message_id = uuid.uuid4().hex
     created_at = int(time.time())
@@ -105,18 +113,53 @@ async def chat_messages(
     return await _blocking(services, body.query, conversation_id, message_id, created_at)
 
 
-async def _resolve_conversation(services: AppServices, conversation_id: str) -> str:
+async def _resolve_conversation(services: AppServices, conversation_id: str, agent_id: str) -> str:
     """会话解析：空串自动创建；显式传入则校验存在（不存在 → 404）。
 
     纯内存校验（内存会话是流转事实来源；历史落库为只读审计，续聊不查 DB）。
+    agent_id 为用户显式助手选择：非空 → 目录校验（未知 404）+ 转换 AssistantTarget
+    绑定/切换；"generic"（保留字）→ 解除专家绑定走通用对话。
     """
     assert services.sessions is not None
     if not conversation_id.strip():
         record = await services.sessions.create_session()
-        return record.session_id
-    conversation_id = conversation_id.strip()
-    services.sessions.get_session(conversation_id)
-    return conversation_id
+        session_id = record.session_id
+    else:
+        session_id = conversation_id.strip()
+        services.sessions.get_session(session_id)
+    target = _resolve_target(services, agent_id)
+    if target is not None:
+        services.sessions.bind_assistant(session_id, target)
+    return session_id
+
+
+def _resolve_target(services: AppServices, agent_id: str) -> AssistantTarget | None:
+    """wire agent_id → AssistantTarget；空串 → None（沿用/不绑定）；未知 → 404。"""
+    if not agent_id.strip():
+        return None
+    agent_id = agent_id.strip()
+    if agent_id == GENERIC_ASSISTANT_ID:
+        return AssistantTarget(type=TargetType.GENERIC)
+    entry = services.assistant_catalog().resolve(agent_id)
+    if entry is None:
+        raise NotFoundError(f"未知助手：{agent_id}")
+    return AssistantTarget(type=TargetType.EXPERT, id=entry.id)
+
+
+def _assistant_meta(target: AssistantTarget | None) -> dict[str, object] | None:
+    """响应元数据中的 assistant 信息（type + id）；无绑定 → None。"""
+    if target is None:
+        return None
+    return {"type": target.type.value, "id": target.id}
+
+
+def _current_assistant_meta(
+    services: AppServices, conversation_id: str
+) -> dict[str, object] | None:
+    """当前会话绑定的 assistant 元数据（会话在 _resolve_conversation 已绑定）。"""
+    assert services.sessions is not None
+    session = services.sessions.get_session(conversation_id)
+    return _assistant_meta(session.assistant_target)
 
 
 async def _blocking(
@@ -137,10 +180,14 @@ async def _blocking(
             category=collector.error.category,
             retryable=collector.error.recoverable,
         )
+    metadata: dict[str, object] = {"usage": _compat_usage(collector.usage)}
+    assistant = _current_assistant_meta(services, conversation_id)
+    if assistant is not None:
+        metadata["assistant"] = assistant
     return ChatMessageResponse(
         message_id=message_id,
         answer="".join(collector.text_parts),
-        metadata={"usage": _compat_usage(collector.usage)},
+        metadata=metadata,
         conversation_id=conversation_id,
         created_at=created_at,
     )
@@ -155,6 +202,7 @@ async def _stream_sse(
 ) -> AsyncIterator[str]:
     """流式：内部事件转 `event` 判别帧，以 message_end 收尾；流尾落库。"""
     collector = _TurnCollector()
+    assistant = _current_assistant_meta(services, conversation_id)
     async for event in _run_turn_events(services, conversation_id, user_input):
         collector.absorb(event)
         frame = _map_stream_event(
@@ -162,6 +210,7 @@ async def _stream_sse(
             message_id=message_id,
             conversation_id=conversation_id,
             created_at=created_at,
+            assistant=assistant,
         )
         if frame is not None:
             yield _sse_frame(frame)
@@ -187,7 +236,7 @@ async def _persist_turn(
         thinking="".join(collector.thinking_parts) or None,
         status=MessageStatus.ERROR if collector.error is not None else MessageStatus.NORMAL,
         error=collector.error.message if collector.error is not None else None,
-        agent_id=session.agent_id,
+        agent_id=_history_agent_label(session.assistant_target),
         provider=collector.provider,
         model=collector.model,
         latency_ms=collector.duration_ms,
@@ -246,6 +295,7 @@ def _map_stream_event(
     message_id: str,
     conversation_id: str,
     created_at: int,
+    assistant: dict[str, object] | None = None,
 ) -> _StreamFrame | None:
     """内部 AgentEvent → 对外 SSE 帧（纯函数，便于单测）。
 
@@ -288,10 +338,13 @@ def _map_stream_event(
             message=event.message,
         )
     if isinstance(event, DoneEvent):
+        metadata: dict[str, object] = {"usage": _compat_usage(event.usage)}
+        if assistant is not None:
+            metadata["assistant"] = assistant
         return MessageEndEvent(
             message_id=message_id,
             conversation_id=conversation_id,
-            metadata={"usage": _compat_usage(event.usage)},
+            metadata=metadata,
             created_at=created_at,
         )
     return None

@@ -172,3 +172,84 @@ async def test_chat_messages_empty_query_rejected(
         json={"query": "", "response_mode": "blocking"},
     )
     assert response.status_code == 422
+
+
+# ---- 助手目录与显式选择 ----
+async def test_assistants_catalog_lists_expert_and_generic(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """GET /assistants：专家（registry）+ 内置通用对话。"""
+    _app, client = api_ctx
+    response = await client.get("/api/v1/assistants")
+    assert response.status_code == 200
+    data = response.json()
+    by_id = {entry["id"]: entry for entry in data}
+    assert set(by_id) == {"finder", "generic"}
+    assert by_id["finder"]["type"] == "expert"
+    assert by_id["finder"]["name"] == "客户发现"
+    assert by_id["finder"]["capabilities"] == ["research"]
+    assert by_id["generic"]["type"] == "generic"
+    assert by_id["generic"]["name"] == "通用对话"
+
+
+async def test_chat_binds_expert_by_agent_id(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """首轮显式选择专家 → 响应 metadata.assistant 携带 type+id。"""
+    _app, client = api_ctx
+    response = await client.post(
+        "/api/v1/chat-messages",
+        json={"query": "帮我找客户", "response_mode": "blocking", "agent_id": "finder"},
+    )
+    assert response.status_code == 200
+    payload = ChatMessageResponse.model_validate(response.json())
+    assert payload.metadata["assistant"] == {"type": "expert", "id": "finder"}
+
+
+async def test_chat_unknown_agent_returns_404(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """未知 agent_id → 404（目录校验失败）。"""
+    _app, client = api_ctx
+    response = await client.post(
+        "/api/v1/chat-messages",
+        json={"query": "hi", "response_mode": "blocking", "agent_id": "nope"},
+    )
+    assert response.status_code == 404
+
+
+async def test_chat_generic_agent_id_selects_generic(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """agent_id=generic（保留字）→ 通用对话目标。"""
+    _app, client = api_ctx
+    response = await client.post(
+        "/api/v1/chat-messages",
+        json={"query": "你好", "response_mode": "blocking", "agent_id": "generic"},
+    )
+    assert response.status_code == 200
+    payload = ChatMessageResponse.model_validate(response.json())
+    assert payload.metadata["assistant"] == {"type": "generic", "id": None}
+
+
+async def test_chat_rebind_switches_assistant(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """续聊携带新 agent_id → 切换绑定（专家 → 通用）。"""
+    _app, client = api_ctx
+    first = await client.post(
+        "/api/v1/chat-messages",
+        json={"query": "hi", "response_mode": "blocking", "agent_id": "finder"},
+    )
+    conversation_id = ChatMessageResponse.model_validate(first.json()).conversation_id
+    second = await client.post(
+        "/api/v1/chat-messages",
+        json={
+            "query": "hi",
+            "response_mode": "blocking",
+            "conversation_id": conversation_id,
+            "agent_id": "generic",
+        },
+    )
+    payload = ChatMessageResponse.model_validate(second.json())
+    assert payload.metadata["assistant"] == {"type": "generic", "id": None}

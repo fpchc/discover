@@ -5,6 +5,10 @@
   // 打开方式:  `code discover.code-workspace`  (或 VSCode -> File -> Open Workspace from File)
   "folders": [
     {
+      "name": "discover",
+      "path": "."
+    },
+    {
       "name": "backend (Python / FastAPI)",
       "path": "discover_backend"
     },

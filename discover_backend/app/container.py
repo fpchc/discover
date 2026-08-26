@@ -11,6 +11,7 @@ from collections.abc import Callable
 import anyio
 from fastapi import FastAPI, Request
 
+from app.catalog.assistant_catalog import AssistantCatalog
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
 from app.db.engine import Database
@@ -89,6 +90,11 @@ class AppServices:
         """常驻协程宿主：取消作用域进入/退出在同一任务，由 shutdown 跨任务取消。"""
         with scope:
             await reloader.run()
+
+    def assistant_catalog(self) -> AssistantCatalog:
+        """助手目录（复用注册表当前索引，热重载后即最新）。"""
+        assert self.registry is not None
+        return AssistantCatalog(self.registry)
 
     def get_runtime(self, session_id: str) -> Runtime:
         """获取（或创建）会话级运行时。创建后复用同一工具代理。"""

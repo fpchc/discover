@@ -9,6 +9,8 @@
  * 仍为后端内部事件，不外泄到正文。
  *
  * 历史接口（API.md §1）：会话列表 / 消息流 / 用量汇总均由后端提供，前端不落本地。
+ * 助手选择（API.md §6）：GET /assistants 取目录；请求体 agent_id 显式绑定；
+ * message_end / blocking 的 metadata.assistant 回显当前回合生效助手。
  */
 
 // ---- 历史接口（API.md §1） ----
@@ -79,6 +81,35 @@ export interface UploadedFile {
   created_at: string
 }
 
+// ---- 助手选择（API.md §6：显式选择取代 LLM 自动路由） ----
+
+/** 助手类型：expert（agents/ 专家，类 Claude Code 工具型）/ generic（内置通用对话） */
+export type AssistantType = 'expert' | 'generic'
+
+/** 助手目录项（GET /assistants；用户显式选择来源，API.md §6.1） */
+export interface AssistantRecord {
+  /** 即传给 /chat-messages 的 agent_id；generic 为保留字（通用对话） */
+  id: string
+  type: AssistantType
+  name: string
+  description: string
+  /** 能力标签（专家取其技能 ID，如 client-finder；通用为空） */
+  capabilities: string[]
+}
+
+/** 当前回合生效的助手（metadata.assistant；API.md §6.3，前端回显选择器用） */
+export interface AssistantInfo {
+  type: AssistantType
+  id: string | null
+}
+
+/** 回合收尾元数据（message_end / blocking 的 metadata；usage + assistant 共存） */
+export interface TurnMetadata {
+  usage?: UsageInfo
+  /** 缺失 = 新会话未绑定（相当于通用） */
+  assistant?: AssistantInfo
+}
+
 export type MessageRole = 'user' | 'assistant'
 
 /** 消息渲染态：流式中 / 完成 / 错误 */
@@ -116,6 +147,8 @@ export interface ChatRequest {
   query: string
   response_mode: 'streaming' | 'blocking'
   conversation_id: string
+  /** 显式选择的助手（API.md §6.2）；空串/缺省 = 首轮走通用、续聊沿用已绑定助手 */
+  agent_id?: string
 }
 
 /** blocking 模式响应（对齐后端 ChatMessageResponse） */
@@ -123,9 +156,7 @@ export interface BlockingChatResponse {
   message_id: string
   mode: 'chat'
   answer: string
-  metadata: {
-    usage?: UsageInfo
-  }
+  metadata: TurnMetadata
   conversation_id: string
   created_at: number
 }
@@ -145,12 +176,10 @@ export interface SseMessageFrame extends SseFrameBase {
   created_at: number
 }
 
-/** message_end → 收尾帧，含 usage；流结束，无 [DONE] */
+/** message_end → 收尾帧，含 usage / assistant；流结束，无 [DONE] */
 export interface SseMessageEndFrame extends SseFrameBase {
   event: 'message_end'
-  metadata: {
-    usage?: UsageInfo
-  }
+  metadata: TurnMetadata
   created_at: number
 }
 

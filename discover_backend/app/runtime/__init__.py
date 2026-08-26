@@ -2,12 +2,11 @@
 
 from app.runtime.builder import build_graph
 from app.runtime.runner import Runtime
-from app.runtime.state import GateStatus, GraphState, RouteDecision
+from app.runtime.state import GateStatus, GraphState
 
 __all__ = [
     "GateStatus",
     "GraphState",
-    "RouteDecision",
     "Runtime",
     "build_graph",
 ]

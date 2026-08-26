@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import anyio
+from app.catalog.models import AssistantTarget, TargetType
 from app.config.loader import LLMProvider, LLMRegistry, MCPRegistry, MCPServer
 from app.config.settings import Settings
 from app.db.engine import Database
@@ -27,7 +28,7 @@ from app.protocol.events import (
     ToolsReadyEvent,
 )
 from app.registry.registry import AgentRegistry
-from app.runtime.builder import route_from_route_agent
+from app.runtime.builder import route_from_resolve_assistant
 from app.runtime.runner import Runtime
 from app.runtime.state import GraphState
 from app.session.service import SessionService
@@ -102,43 +103,22 @@ def _write_agent(root: Path, skill_md: str = SKILL_MD) -> None:
 
 
 class FakeLLM:
-    """脚本化 LLM：路由调用返回目标，推理调用返回文本或工具调用。"""
+    """脚本化 LLM：推理返回文本或工具调用（无 LLM 路由分支）。"""
 
     def __init__(
         self,
         *,
-        routing_agent: str = "finder",
         reason_text: str = "你好",
         tool_call: tuple[str, dict[str, object]] | None = None,
         always_tool: bool = False,
     ) -> None:
-        self._routing_agent = routing_agent
         self._reason_text = reason_text
         self._tool_call = tool_call
         self._always_tool = always_tool
-        self.routing_calls = 0
         self.reason_calls = 0
 
     async def stream_chat(self, *, provider: LLMProvider, api_key: str, request: object) -> object:
         del provider, api_key
-        tools = request.tools
-        is_routing = any(tool.function.name in ("select_agent", "select_skill") for tool in tools)
-        if is_routing:
-            self.routing_calls += 1
-            tool = next(
-                tool.function.name
-                for tool in tools
-                if tool.function.name in ("select_agent", "select_skill")
-            )
-            if tool == "select_agent":
-                args = json.dumps(
-                    {"agent_id": self._routing_agent, "confidence": 0.9, "reason": "匹配"}
-                )
-            else:
-                args = json.dumps({"skill_id": "research", "reason": "匹配"})
-            yield ToolCallsChunk(tool_calls=[ToolCall(index=0, id="r1", name=tool, arguments=args)])
-            yield FinishChunk(reason="tool_calls")
-            return
         self.reason_calls += 1
         if self._always_tool:
             yield ToolCallsChunk(
@@ -239,6 +219,7 @@ async def _runtime(
     fake_llm: FakeLLM,
     skill_md: str = SKILL_MD,
     max_turns: int = 40,
+    bind: bool = True,
 ) -> tuple[Runtime, SessionService, _FakeScriptExecutor, str]:
     _write_agent(tmp_path, skill_md=skill_md)
     settings = Settings(
@@ -255,6 +236,10 @@ async def _runtime(
     )
     sessions = SessionService(settings, _DATABASE, LocalStorage(tmp_path / "storage"))
     record = await sessions.create_session()
+    if bind:
+        sessions.bind_assistant(
+            record.session_id, AssistantTarget(type=TargetType.EXPERT, id="finder")
+        )
     registry = AgentRegistry(settings, _mcp_registry())
     await registry.refresh()
     providers = ProviderRegistry(LLMRegistry(providers=[_provider()]))
@@ -285,20 +270,23 @@ async def _collect(emitter: QueueEmitter) -> list[AgentEvent]:
     return events
 
 
-# ---- 路由辅助 ----
-def test_route_from_route_agent() -> None:
-    assert route_from_route_agent(GraphState(active_agent="finder")) == "route_skill"
-    assert route_from_route_agent(GraphState()) == "generic_chat"
+# ---- 解析辅助 ----
+def test_route_from_resolve_assistant() -> None:
+    expert = AssistantTarget(type=TargetType.EXPERT, id="finder")
+    assert route_from_resolve_assistant(GraphState(active_target=expert)) == "resolve_skill"
+    assert route_from_resolve_assistant(GraphState()) == "generic_chat"
+    generic = AssistantTarget(type=TargetType.GENERIC)
+    assert route_from_resolve_assistant(GraphState(active_target=generic)) == "generic_chat"
 
 
-# ---- 端到端：路由 + 装配 + 推理 ----
-async def test_run_turn_routes_and_replies(tmp_path: Path) -> None:
+# ---- 端到端：解析 + 装配 + 推理 ----
+async def test_run_turn_resolves_bound_assistant(tmp_path: Path) -> None:
     fake_llm = FakeLLM()
     runtime, _sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
     emitter = QueueEmitter(Settings(_env_file=None))
     final = await runtime.run_turn(session_id=session_id, user_input="帮我找客户", emitter=emitter)
     events = await _collect(emitter)
-    assert final.active_agent == "finder"
+    assert final.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
     assert final.active_skill == "research"
     assert final.turn >= 1
     assert any(isinstance(e, AgentSelectedEvent) for e in events)
@@ -308,30 +296,67 @@ async def test_run_turn_routes_and_replies(tmp_path: Path) -> None:
     assert any(m.role == "assistant" and "你好" in (m.content or "") for m in final.messages)
 
 
-async def test_reentry_skips_first_route(tmp_path: Path) -> None:
+async def test_binding_persists_across_turns(tmp_path: Path) -> None:
     fake_llm = FakeLLM()
     runtime, _sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
     first_emitter = QueueEmitter(Settings(_env_file=None))
     await runtime.run_turn(session_id=session_id, user_input="帮我找客户", emitter=first_emitter)
-    await _collect(first_emitter)
-    routing_after_first = fake_llm.routing_calls
+    first_events = await _collect(first_emitter)
+    selected_count = sum(isinstance(e, AgentSelectedEvent) for e in first_events)
+    reason_after_first = fake_llm.reason_calls
     second_emitter = QueueEmitter(Settings(_env_file=None))
     final = await runtime.run_turn(session_id=session_id, user_input="继续", emitter=second_emitter)
-    await _collect(second_emitter)
-    # 第二轮不重做一级/二级路由
-    assert fake_llm.routing_calls == routing_after_first
-    assert final.active_agent == "finder"
+    second_events = await _collect(second_emitter)
+    # 第二轮沿用绑定：不再发 AgentSelectedEvent、不重复装配，仅推理
+    assert sum(isinstance(e, AgentSelectedEvent) for e in second_events) == 0
+    assert fake_llm.reason_calls == reason_after_first + 1
+    assert selected_count == 1
+    assert final.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
+    assert final.active_skill == "research"
 
 
-async def test_no_match_goes_generic_chat(tmp_path: Path) -> None:
-    fake_llm = FakeLLM(routing_agent="")
-    runtime, _sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+async def test_unbound_goes_generic_chat(tmp_path: Path) -> None:
+    fake_llm = FakeLLM()
+    runtime, _sessions, _script, session_id = await _runtime(
+        tmp_path, fake_llm=fake_llm, bind=False
+    )
     emitter = QueueEmitter(Settings(_env_file=None))
     final = await runtime.run_turn(session_id=session_id, user_input="随便聊聊", emitter=emitter)
     events = await _collect(emitter)
-    assert final.active_agent is None
+    assert final.active_target is None
     assert any(m.role == "assistant" and "你好" in (m.content or "") for m in final.messages)
     assert not any(isinstance(e, AgentSelectedEvent) for e in events)
+
+
+async def test_switch_target_reassembles(tmp_path: Path) -> None:
+    fake_llm = FakeLLM()
+    runtime, sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+    first_emitter = QueueEmitter(Settings(_env_file=None))
+    first = await runtime.run_turn(
+        session_id=session_id, user_input="帮我找客户", emitter=first_emitter
+    )
+    await _collect(first_emitter)
+    assert first.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
+    # 切换为通用对话
+    sessions.bind_assistant(session_id, AssistantTarget(type=TargetType.GENERIC))
+    second_emitter = QueueEmitter(Settings(_env_file=None))
+    second = await runtime.run_turn(
+        session_id=session_id, user_input="随便聊聊", emitter=second_emitter
+    )
+    second_events = await _collect(second_emitter)
+    assert second.active_target == AssistantTarget(type=TargetType.GENERIC)
+    assert second.active_skill is None
+    assert not any(isinstance(e, AgentSelectedEvent) for e in second_events)
+    # 切回专家：重装配
+    sessions.bind_assistant(session_id, AssistantTarget(type=TargetType.EXPERT, id="finder"))
+    third_emitter = QueueEmitter(Settings(_env_file=None))
+    third = await runtime.run_turn(
+        session_id=session_id, user_input="帮我找客户", emitter=third_emitter
+    )
+    third_events = await _collect(third_emitter)
+    assert third.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
+    assert third.active_skill == "research"
+    assert any(isinstance(e, AgentSelectedEvent) for e in third_events)
 
 
 # ---- 工具流 ----

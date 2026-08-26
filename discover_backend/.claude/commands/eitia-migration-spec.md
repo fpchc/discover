@@ -14,7 +14,7 @@
 | 维度 | 原形态 | 目标形态 |
 |------|--------|---------|
 | 定位 | 单技能包 | 智能体（下辖一个技能） |
-| 目录位置 | `eitia-client-finder/` | `agents/eitia/` |
+| 目录位置 | `eitia-client-finder/` | `agents/discover/` |
 | 清单结构 | 一个 `SKILL.md` | `AGENT.md` + `skills/client-finder/SKILL.md` |
 | 七大类场景 | 曾考虑做成七个技能 | 合并为一个技能内的路由分支（工作流正文描述） |
 
@@ -25,7 +25,7 @@
 ## 2. 目录结构重组
 
 ```
-agents/eitia/
+agents/discover/
 ├── AGENT.md                          智能体清单
 ├── skills/
 │   └── client-finder/                唯一技能（P1）
@@ -173,7 +173,7 @@ P1 报告在数据支撑上显著弱于原版。需在报告模板与正文中�
 ## 9. 验收清单
 
 **加载期**
-- [ ] `agents/eitia/` 目录结构符合智能体包规范
+- [ ] `agents/discover/` 目录结构符合智能体包规范
 - [ ] `AGENT.md` 与 `SKILL.md` 可被注册表成功加载
 - [ ] 脚本中无绝对路径（grep 验证）
 - [ ] 脚本声明、参考文档声明、门禁声明全部指向存在的文件

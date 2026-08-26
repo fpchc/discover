@@ -8,7 +8,6 @@
 
 ## 0. 项目定位
 
-* 独立前端项目，**模仿 ChatGPT 页面**的单页对话应用（单用户、无鉴权演示）。
 * 框架层采用 **Nuxt 4（SPA 模式 `ssr: false`）**：Nuxt 承担构建 / dev server / 路由 / 模块装配唯一入口，
   渲染始终发生在浏览器端，部署保持 nginx 静态托管（见第 1、4 节）。
 * 后端为 `discover_backend`（多智能体承载平台），对话走 `POST /api/v1/chat-messages`。

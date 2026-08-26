@@ -9,6 +9,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
+from app.catalog.models import AssistantTarget
 from app.llm.models import ChatMessage
 from app.session.models import ArtifactRecord
 from app.tools.broker import ToolCallRequest
@@ -32,14 +33,6 @@ class GateStatus(BaseModel):
     turn: int = 0
 
 
-class RouteDecision(BaseModel):
-    """LLM 结构化路由输出。"""
-
-    target: str
-    confidence: float = 1.0
-    reason: str = ""
-
-
 class GraphState(BaseModel):
     """图运行时状态。跨边界传递，工作区用字符串路径。"""
 
@@ -48,9 +41,9 @@ class GraphState(BaseModel):
     session_id: str = ""
     workspace_path: str = ""
     input: str = ""
-    active_agent: str | None = None
+    active_target: AssistantTarget | None = None
     active_skill: str | None = None
-    route_reason: str | None = None
+    resolve_reason: str | None = None
     loaded_references: set[str] = Field(default_factory=set)
     exposed_tools: list[str] = Field(default_factory=list)
     gate_status: dict[str, GateStatus] = Field(default_factory=dict)

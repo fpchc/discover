@@ -5,15 +5,18 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatWindow from '@/components/layout/ChatWindow.vue'
 import { useChatStream } from '@/composables/useChatStream'
 import { CHAT_QUERY_MAX } from '@/config/env'
+import { useAssistantsStore } from '@/stores/assistants'
 import { useChatStore } from '@/stores/chat'
 import { useConversationsStore } from '@/stores/conversations'
 
 const chat = useChatStore()
 const conversations = useConversationsStore()
+const assistants = useAssistantsStore()
 const chatStream = useChatStream()
 
 onMounted(() => {
   void chatStream.loadList()
+  void chatStream.loadAssistants()
 })
 
 /** 移动端侧边栏抽屉开关（<768px 生效） */
@@ -41,6 +44,7 @@ function handleRetry(): void {
 function handleNew(): void {
   chatStream.cancel()
   chat.reset()
+  assistants.resetForNewConversation()
   sidebarOpen.value = false
   sidebarCollapsed.value = false
 }
@@ -58,6 +62,7 @@ function handleDelete(id: string): void {
   conversations.remove(id)
   if (id === chat.conversationId) {
     chat.reset()
+    assistants.resetForNewConversation()
   }
 }
 
@@ -107,9 +112,13 @@ function handleSuggestion(text: string): void {
         :sidebar-collapsed="sidebarCollapsed"
         :usage-summary="chat.usageSummary"
         :history-loading="chat.loadingHistory"
+        :assistants="assistants.catalog"
+        :selected-assistant-id="assistants.selectedId"
+        :assistant-loading="assistants.loading"
         @toggle-sidebar="handleToggleSidebar"
         @retry="handleRetry"
         @suggestion="handleSuggestion"
+        @assistant-change="assistants.select"
       />
       <div class="chat-view__input">
         <ChatInput

@@ -1,4 +1,5 @@
 import { ElMessage } from 'element-plus'
+import { fetchAssistants } from '@/api/assistants'
 import { sendChatMessage, sendChatMessageBlocking } from '@/api/chat'
 import {
   type AppError,
@@ -10,13 +11,14 @@ import {
   TIMEOUT_ERROR,
 } from '@/api/errors'
 import { fetchConversations, fetchConversationUsage, fetchMessages } from '@/api/history'
-import type { ConversationRecord, SseStreamFrame, UsageInfo } from '@/api/types'
+import type { ConversationRecord, SseStreamFrame, TurnMetadata } from '@/api/types'
 import {
   CHAT_QUERY_MAX,
   CONVERSATION_TITLE_MAX,
   FEATURE_BLOCKING_FALLBACK,
   SSE_TIMEOUT_MS,
 } from '@/config/env'
+import { useAssistantsStore } from '@/stores/assistants'
 import { useChatStore } from '@/stores/chat'
 import { useConversationsStore } from '@/stores/conversations'
 import { mapMessageRecords } from '@/utils/history'
@@ -72,7 +74,7 @@ export interface ChatStreamHandlers {
   onThinkingStart: () => void
   onThinkingDelta: (delta: string) => void
   onThinkingEnd: (durationMs: number) => void
-  onEnd: (metadata: { usage?: UsageInfo }, conversationId: string) => void
+  onEnd: (metadata: TurnMetadata, conversationId: string) => void
   onError: (error: AppError) => void
 }
 
@@ -122,6 +124,7 @@ export async function consumeChatStream(
 export function useChatStream() {
   const chat = useChatStore()
   const conversations = useConversationsStore()
+  const assistants = useAssistantsStore()
 
   let controller: AbortController | null = null
   let userCancelled = false
@@ -168,6 +171,18 @@ export function useChatStream() {
     }
   }
 
+  /** 首次加载助手目录（聊天页入口）；失败静默，选择器降级为通用对话（空 agent_id 兜底） */
+  async function loadAssistants(): Promise<void> {
+    assistants.setLoading(true)
+    try {
+      assistants.setCatalog(await fetchAssistants())
+    } catch {
+      // 目录拉取失败：保持空目录，不阻断对话
+    } finally {
+      assistants.setLoading(false)
+    }
+  }
+
   /** 静默校准：回合结束后用后端权威数据覆盖乐观入列，不触发侧栏加载态 */
   async function reconcileList(): Promise<void> {
     try {
@@ -184,6 +199,9 @@ export function useChatStream() {
     chat.setConversationId(conversationId)
     chat.setMessages([])
     chat.setUsageSummary(null)
+    // 选择器对齐会话已绑定助手（会话列表来自后端 GET /conversations；未绑定 → 通用）
+    const record = conversations.items.find((item) => item.conversation_id === conversationId)
+    assistants.syncFromConversation(record?.agent_id ?? null)
     try {
       const records = await fetchMessages(conversationId)
       chat.setMessages(mapMessageRecords(records))
@@ -214,17 +232,20 @@ export function useChatStream() {
         const data = await sendChatMessageBlocking({
           query,
           conversationId: chat.conversationId,
+          agentId: assistants.selectedId,
           signal: localController.signal,
         })
         if (!isCurrent()) return
         registerConversation(data.conversation_id)
         chat.completeAssistant(data.metadata.usage)
+        assistants.syncFromAssistant(data.metadata.assistant)
         return
       }
 
       const response = await sendChatMessage({
         query,
         conversationId: chat.conversationId,
+        agentId: assistants.selectedId,
         signal: localController.signal,
       })
       if (!response.ok) {
@@ -252,6 +273,7 @@ export function useChatStream() {
           if (!isCurrent()) return
           if (conversationId !== '') registerConversation(conversationId)
           chat.completeAssistant(metadata.usage)
+          assistants.syncFromAssistant(metadata.assistant)
         },
         onError: (error) => {
           if (isCurrent()) chat.failAssistant(error.message)
@@ -306,5 +328,5 @@ export function useChatStream() {
     controller = null
   }
 
-  return { send, retry, stop, cancel, loadList, reconcileList, openConversation }
+  return { send, retry, stop, cancel, loadList, loadAssistants, reconcileList, openConversation }
 }

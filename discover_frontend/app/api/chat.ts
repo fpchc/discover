@@ -6,7 +6,22 @@ export interface SendChatMessageParams {
   query: string
   /** 空串 = 新建会话；续聊必带后端回传的会话 ID */
   conversationId: string
+  /** 当前选中的助手 id（API.md §6.2）；空串 = 不显式选择（首轮走通用 / 续聊沿用已绑定） */
+  agentId: string
   signal: AbortSignal
+}
+
+/** 组装对话请求体；agent_id 为空时省略（避免向后端传空串） */
+function buildChatRequest(
+  params: SendChatMessageParams,
+  responseMode: 'streaming' | 'blocking',
+): ChatRequest {
+  return {
+    query: params.query,
+    response_mode: responseMode,
+    conversation_id: params.conversationId,
+    ...(params.agentId !== '' ? { agent_id: params.agentId } : {}),
+  }
 }
 
 /**
@@ -15,15 +30,10 @@ export interface SendChatMessageParams {
  * 返回未消费的 Response，交由 useChatStream 读取帧。
  */
 export function sendChatMessage(params: SendChatMessageParams): Promise<Response> {
-  const request: ChatRequest = {
-    query: params.query,
-    response_mode: 'streaming',
-    conversation_id: params.conversationId,
-  }
   return fetch(`${API_BASE_URL}/chat-messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
+    body: JSON.stringify(buildChatRequest(params, 'streaming')),
     signal: params.signal,
   })
 }
@@ -36,13 +46,10 @@ export function sendChatMessage(params: SendChatMessageParams): Promise<Response
 export async function sendChatMessageBlocking(
   params: SendChatMessageParams,
 ): Promise<BlockingChatResponse> {
-  const request: ChatRequest = {
-    query: params.query,
-    response_mode: 'blocking',
-    conversation_id: params.conversationId,
-  }
-  const { data } = await httpClient.post<BlockingChatResponse>('/chat-messages', request, {
-    signal: params.signal,
-  })
+  const { data } = await httpClient.post<BlockingChatResponse>(
+    '/chat-messages',
+    buildChatRequest(params, 'blocking'),
+    { signal: params.signal },
+  )
   return data
 }

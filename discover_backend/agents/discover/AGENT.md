@@ -1,6 +1,8 @@
 ---
-agent_id: eitia
-display_name: EITIA 电子信息产业链客户发现
+kind: agent
+type: expert
+agent_id: discover
+display_name: 客户发现
 version: "1.4"
 description: 为电子信息产业链销售寻找潜在客户，输出八维量化评分与专业客户发现报告
 scope:

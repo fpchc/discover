@@ -13,7 +13,9 @@
 
 图**只提供执行环境**，不承载业务流程。业务流程知识在智能体与技能清单的正文里。
 
-因此拓扑刻意保持极简：两级路由 + 一个推理循环。新增智能体永远不需要改图。
+因此拓扑刻意保持极简：两级解析 + 一个推理循环。新增智能体永远不需要改图。
+
+> 「迁移后目标」：一级解析（resolve_assistant）读**用户显式选择**（会话绑定），不做 LLM 路由识别。
 
 **判断标准**：如果你想给图加节点来表达某个智能体的某个步骤，那就走错了——该步骤应该写进那个智能体的清单或做成脚本工具。
 
@@ -26,14 +28,14 @@
                       │
                       ▼
             ┌──────────────────┐
-            │  route_agent     │  一级路由：定位智能体
-            │  (LLM 结构化输出) │
+            │resolve_assistant │  解析用户选择：读会话显式绑定
+            │  (非 LLM 路由)    │
             └─────┬────────┬───┘
-         命中智能体│        │ 无命中 / 置信度不足
+        绑定专家   │        │ 未绑定 / 通用
                   ▼        ▼
       ┌──────────────┐  ┌──────────────┐
-      │ route_skill  │  │ generic_chat │
-      │ 二级路由：选技能│  │  通用对话     │
+      │ resolve_skill│  │ generic_chat │
+      │ 确定性选技能  │  │  通用对话     │
       └──────┬───────┘  └──────┬───────┘
              ▼                  │
       ┌──────────────┐          │
@@ -58,9 +60,9 @@
 
 | 起点 | 类型 | 目标 | 条件 |
 |------|------|------|------|
-| START | 固定 | route_agent | — |
-| route_agent | 条件 | route_skill / generic_chat | 智能体 ID 是否非空 |
-| route_skill | 固定 | assemble | — |
+| START | 固定 | resolve_assistant | — |
+| resolve_assistant | 条件 | resolve_skill / generic_chat | `active_target.type` 为 expert → resolve_skill；否则 generic_chat |
+| resolve_skill | 固定 | assemble | — |
 | assemble | 固定 | agent | — |
 | agent | 条件 | tool_node / END | 有工具调用 → tool_node；否则 END |
 | tool_node | 固定 | agent | — |
@@ -77,7 +79,7 @@
 | messages | 消息列表 | add_messages | LangGraph 标准累加器 |
 | session_id | 字符串 | — | 会话标识 |
 | workspace_path | 路径对象 | — | 工作区绝对路径 |
-| active_agent | 字符串或空 | — | 当前智能体 ID |
+| active_target | AssistantTarget 或空 | — | 当前助手选择（type + id；expert 时 id=智能体 ID） |
 | active_skill | 字符串或空 | — | 当前技能 ID |
 | route_reason | 字符串或空 | — | 路由理由 |
 | loaded_references | 字符串集合 | — | 已注入的参考文档路径，防重复 |
@@ -93,19 +95,22 @@
 
 ## 4. 节点职责
 
-### route_agent（一级路由）
+### resolve_assistant（一级解析：用户选择）
 
-1. 取智能体注册表索引（仅 ID、显示名、职责、适用边界）
-2. 结构化输出调用：输出 `{agent_id, confidence, reason}` 或 `{agent_id: null, ...}`
-3. 置信度低于阈值 → 视为无匹配
-4. 写 `active_agent` / `route_reason`，发智能体选定事件
-5. 已有 `active_agent` 的后续轮次跳过本节点（除非用户显式要求切换）
+1. 调 `AssistantResolver` 读**会话显式绑定**（`session.assistant_target`，用户选择）
+2. 绑定与 `active_target` 一致 → 沿用（跳过本节点）
+3. 绑定变更（切换）→ 清 `active_skill`、重置装配快照，重新进入
+4. 无绑定 / type=generic → 走 `generic_chat`；写 `active_target`，发智能体选定事件（`source=user`）
 
-### route_skill（二级路由）
+> 本节点**不做 LLM 路由**。选择来自用户，不是模型识别。
+
+### resolve_skill（二级解析：确定性选技能）
 
 1. 取当前智能体的技能索引（仅 ID、职责、适用边界、触发词）
-2. 结构化输出调用：输出 `{skill_id, reason}` 或使用默认技能
+2. `SkillResolver` 策略链解析：显式技能 → 默认技能 → 唯一技能 → 首个技能
 3. 写 `active_skill` / `route_reason`，发技能选定事件
+
+> 确定性策略，不做 LLM 识别。未来策略（权限 / 上下文感知）追加进策略链，不改核心流程。
 
 ### assemble（装配）
 
@@ -178,23 +183,24 @@
 
 ---
 
-## 8. 重入保护
+## 8. 重入保护与显式切换
 
-**会话内已确定智能体后，后续轮次不再做一级路由**，除非用户显式要求切换。
+**会话内已确定智能体后，后续轮次不再重复一级解析**。切换只能通过用户显式重选（会话绑定变更），不靠关键词。
 
-理由：重做一级路由会丢失已装配的上下文与工具，且用户预期是"一次进入某个智能体后持续对话"。二级技能路由可以在同一智能体内切换。
+理由：重做解析会丢失已装配的上下文与工具，且用户预期是"一次进入某个智能体后持续对话"。
 
-判定方式：`active_agent` 非空且用户消息不含切换意图 → 跳过 `route_agent`。
+判定方式：`session.assistant_target` 与 `active_target` 一致 → 沿用；不一致 → 按新绑定切换并重装配。
 
 ---
 
 ## 9. 自检清单
 
 - [ ] 图中无任何智能体名、技能名、工具名
+- [ ] 图中无 LLM 路由工具（`select_agent` / `select_skill`）
 - [ ] 节点函数全异步且返回类型显式标注
 - [ ] 单函数不超过 30 行，细节抽私有辅助函数
 - [ ] 推理循环有轮次上限
-- [ ] 后续轮次不重复一级路由
+- [ ] 后续轮次不重复一级解析（仅读会话绑定）
 - [ ] 思考内容不回填对话历史
 - [ ] 会话结束时 MCP 引用计数递减（异常路径亦然）
 - [ ] 无阻塞调用混入节点

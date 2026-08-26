@@ -136,7 +136,7 @@ function handleKeydown(event: KeyboardEvent): void {
       v-model="text"
       class="input__textarea"
       :maxlength="maxLength"
-      :placeholder="disabled ? '正在生成回复…' : '发送消息，和你的智能体团队对话'"
+      :placeholder="disabled ? '正在生成回复…' : '发送消息，和助手对话'"
       rows="1"
       @input="resize"
       @keydown="handleKeydown"

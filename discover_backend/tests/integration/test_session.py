@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from app.catalog.models import AssistantTarget, TargetType
 from app.config.settings import Settings
 from app.db.engine import Database
 from app.errors.base import SessionError, SessionNotFoundError
@@ -49,12 +50,13 @@ async def test_get_unknown_session_raises(tmp_path: Path) -> None:
         service.get_session("nope")
 
 
-async def test_bind_agent_updates_record(tmp_path: Path) -> None:
+async def test_bind_assistant_updates_record(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     record = await service.create_session()
-    updated = service.bind_agent(record.session_id, "finder")
-    assert updated.agent_id == "finder"
-    assert service.get_session(record.session_id).agent_id == "finder"
+    target = AssistantTarget(type=TargetType.EXPERT, id="finder")
+    updated = service.bind_assistant(record.session_id, target)
+    assert updated.assistant_target == target
+    assert service.get_session(record.session_id).assistant_target == target
 
 
 async def test_workspace_agent_keyed_shared_across_sessions(tmp_path: Path) -> None:

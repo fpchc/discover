@@ -162,10 +162,9 @@ class Settings(BaseSettings):
     storage_upload_file_size_limit_mb: int = 20
     storage_upload_allowed_extensions: str = "png,jpg,jpeg,gif,webp,pdf,docx,xlsx,csv,md,txt"
 
-    # ---- 推理与路由 ----
+    # ---- 推理 ----
     context_budget_tokens: int = 96000
     reasoning_max_turns: int = 40
-    routing_confidence_threshold: float = 0.6
 
     # ---- 装配（智能体清单） ----
     agent_body_max_chars: int = 2000

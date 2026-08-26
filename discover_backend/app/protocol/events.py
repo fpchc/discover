@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
+from app.catalog.models import SelectionSource
 from app.errors.base import ErrorCategory
 
 
@@ -26,13 +27,14 @@ class SessionCreatedEvent(AgentEvent):
 
 
 class AgentSelectedEvent(AgentEvent):
-    """智能体选定。"""
+    """智能体选定。source 记录选择来源（user/system/…），便于审计。"""
 
     type: Literal["agent_selected"] = "agent_selected"
     agent_id: str
     display_name: str
     reason: str
     confidence: float
+    source: SelectionSource = SelectionSource.USER
 
 
 class SkillSelectedEvent(AgentEvent):

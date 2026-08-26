@@ -1,7 +1,7 @@
 """Step 11 P1 端到端冒烟测试（不依赖 LLM/MCP 密钥；Docker 可选）。
 
 覆盖：
-- eitia 智能体包加载与装配（真实 agents/ 目录 + 真实 MCP 注册表）
+- discover 智能体包加载与装配（真实 agents/ 目录 + 真实 MCP 注册表）
 - 脚本 stdin/stdout 契约（score_calculator / dedup_manager / render_report --check-only
   与 gate_render_valid）
 - 报告渲染（jinja2 可用时全量渲染到工作区 output/）
@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from app.catalog.models import AssistantTarget, TargetType
 from app.config.loader import (
     LLMProvider,
     load_llm_providers,
@@ -33,8 +34,6 @@ from app.llm.stream_parser import (
     FinishChunk,
     PhaseSwitchChunk,
     TextChunk,
-    ToolCall,
-    ToolCallsChunk,
 )
 from app.protocol.emitter import QueueEmitter
 from app.protocol.events import (
@@ -55,7 +54,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS_DIR = ROOT / "agents"
 MCP_REGISTRY_PATH = ROOT / "config" / "mcp-servers.yaml"
 LLM_PROVIDERS_PATH = ROOT / "config" / "llm-providers.yaml"
-SKILL_DIR = AGENTS_DIR / "eitia" / "client-finder"
+SKILL_DIR = AGENTS_DIR / "discover" / "client-finder"
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 _SCORE_DIMS = (
     "purchase_scale",
@@ -84,7 +83,7 @@ def _settings(tmp_path: Path) -> Settings:
 _DATABASE = Database(Settings(_env_file=None))
 
 
-async def _eitia_registry(tmp_path: Path) -> AgentRegistry:
+async def _discover_registry(tmp_path: Path) -> AgentRegistry:
     settings = _settings(tmp_path)
     mcp = await load_mcp_servers(settings.mcp_registry_path)
     registry = AgentRegistry(settings, mcp)
@@ -123,21 +122,23 @@ def _run_script(
 
 
 # ---- 包加载 ----
-def test_eitia_package_loads(tmp_path: Path) -> None:
+def test_discover_package_loads(tmp_path: Path) -> None:
     import asyncio
 
     async def load() -> None:
-        registry = await _eitia_registry(tmp_path)
+        registry = await _discover_registry(tmp_path)
         snapshot = registry.snapshot
         assert snapshot.failures == [], [f.model_dump() for f in snapshot.failures]
-        pkg = registry.get_agent("eitia")
+        pkg = registry.get_agent("discover")
         assert pkg is not None
         assert pkg.skill_failures == [], [f.model_dump() for f in pkg.skill_failures]
+        assert pkg.manifest.kind == "agent"
+        assert pkg.manifest.type == "expert"
         assert set(pkg.skills) == {"client-finder"}
         skill = pkg.skills["client-finder"]
         # 门禁校验器注册为脚本工具（graph-runtime-spec §6）
         assert any(g.validator is not None for g in skill.gates)
-        plan = registry.assemble("eitia", None)
+        plan = registry.assemble("discover", None)
         assert plan.required_mcp_servers == ["alibaba_search"]
         assert {s.name for s in plan.scripts} >= {
             "score_calculator",
@@ -148,7 +149,7 @@ def test_eitia_package_loads(tmp_path: Path) -> None:
     asyncio.run(load())
 
 
-def test_eitia_scripts_have_no_absolute_path_literals() -> None:
+def test_discover_scripts_have_no_absolute_path_literals() -> None:
     hits = _find_absolute_path_literals(SCRIPTS_DIR)
     assert hits == []
 
@@ -280,31 +281,10 @@ def test_render_full_produces_html(tmp_path: Path) -> None:
 
 # ---- 端到端路由（假 LLM/MCP，无密钥） ----
 class _FakeLLM:
-    """脚本化 LLM：路由返回 eitia/client-finder，推理返回文本。"""
+    """脚本化 LLM：推理返回固定文本（助手由用户显式绑定，无 LLM 路由）。"""
 
     async def stream_chat(self, *, provider: LLMProvider, api_key: str, request: object) -> object:
-        del provider, api_key
-        tools = request.tools
-        routing_tool = next(
-            (
-                tool.function.name
-                for tool in tools
-                if tool.function.name in ("select_agent", "select_skill")
-            ),
-            None,
-        )
-        if routing_tool == "select_agent":
-            args = json.dumps({"agent_id": "eitia", "confidence": 0.9, "reason": "找客户"})
-        elif routing_tool == "select_skill":
-            args = json.dumps({"skill_id": "client-finder", "reason": "客户发现"})
-        else:
-            args = ""
-        if routing_tool is not None:
-            yield ToolCallsChunk(
-                tool_calls=[ToolCall(index=0, id="r1", name=routing_tool, arguments=args)]
-            )
-            yield FinishChunk(reason="tool_calls")
-            return
+        del provider, api_key, request
         yield PhaseSwitchChunk(to="text")
         yield TextChunk(text="好的，我帮你找电子信息产业链的潜在客户。")
         yield FinishChunk(reason="stop")
@@ -347,14 +327,17 @@ class _FakeScriptExecutor:
         return ScriptExecution(exit_code=0, stdout="ok")
 
 
-async def test_route_eitia_end_to_end(tmp_path: Path) -> None:
+async def test_route_discover_end_to_end(tmp_path: Path) -> None:
     import anyio
 
     settings = _settings(tmp_path)
     sessions = SessionService(settings, _DATABASE, LocalStorage(tmp_path / "storage"))
     record = await sessions.create_session()
-    registry = await _eitia_registry(tmp_path)
-    # 真实提供方注册表：含 opus/sonnet → qwen-max 别名（eitia AGENT 模型偏好）
+    sessions.bind_assistant(
+        record.session_id, AssistantTarget(type=TargetType.EXPERT, id="discover")
+    )
+    registry = await _discover_registry(tmp_path)
+    # 真实提供方注册表：含 opus/sonnet → qwen-max 别名（discover AGENT 模型偏好）
     providers = ProviderRegistry(await load_llm_providers(LLM_PROVIDERS_PATH))
     runtime = Runtime(
         settings=settings,
@@ -379,7 +362,7 @@ async def test_route_eitia_end_to_end(tmp_path: Path) -> None:
                 events.append(await emitter.get())
         except TimeoutError:
             break
-    assert final.active_agent == "eitia"
+    assert final.active_target == AssistantTarget(type=TargetType.EXPERT, id="discover")
     assert final.active_skill == "client-finder"
     assert any(isinstance(e, AgentSelectedEvent) for e in events)
     assert any(isinstance(e, SkillSelectedEvent) for e in events)

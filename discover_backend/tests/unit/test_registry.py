@@ -157,6 +157,34 @@ async def test_load_valid_agent(tmp_path: Path) -> None:
     assert package.skill_failures == []
 
 
+async def test_manifest_kind_type_defaults_to_agent_expert(tmp_path: Path) -> None:
+    """未声明 kind/type 时默认 agent/expert（向后兼容既有清单）。"""
+    _write_agent(tmp_path)
+    snapshot = await _load(tmp_path, "alibaba_search")
+    package = snapshot.packages["finder"]
+    assert package.manifest.kind == "agent"
+    assert package.manifest.type == "expert"
+
+
+async def test_manifest_invalid_kind_or_type_rejected(tmp_path: Path) -> None:
+    """kind/type 超出当前支持（skill 等）→ 该智能体判无效，不影响其他。"""
+    for idx, extra in enumerate(({"kind": "skill"}, {"type": "basic"})):
+        case_dir = tmp_path / f"case{idx}"
+        case_dir.mkdir()
+        _write_agent(case_dir, agent_md=_agent_md(**extra))
+        snapshot = await _load(case_dir, "alibaba_search")
+        assert snapshot.packages == {}
+        assert snapshot.failures[0].agent_id == "finder"
+
+
+async def test_reserved_generic_agent_id_rejected(tmp_path: Path) -> None:
+    """保留字 generic 被目录接口内置通用项占用，专家包不得使用。"""
+    _write_agent(tmp_path, name="generic", agent_md=_agent_md(agent_id="generic"))
+    snapshot = await _load(tmp_path, "alibaba_search")
+    assert snapshot.packages == {}
+    assert "保留字" in snapshot.failures[0].reason
+
+
 async def test_agent_id_must_equal_dir_name(tmp_path: Path) -> None:
     _write_agent(tmp_path, name="wrong")
     snapshot = await _load(tmp_path, "alibaba_search")

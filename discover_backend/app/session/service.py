@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from app.catalog.models import AssistantTarget
 from app.config.settings import Settings
 from app.db.engine import Database
 from app.extensions.storage.base_storage import BaseStorage
@@ -44,8 +45,8 @@ class SessionService:
     def get_session(self, session_id: str) -> SessionRecord:
         return self._store.get(session_id)
 
-    def bind_agent(self, session_id: str, agent_id: str) -> SessionRecord:
-        return self._store.bind_agent(session_id, agent_id)
+    def bind_assistant(self, session_id: str, target: AssistantTarget) -> SessionRecord:
+        return self._store.bind_assistant(session_id, target)
 
     # ---- 工作区 ----
     async def workspace_for(self, agent_id: str) -> Workspace:

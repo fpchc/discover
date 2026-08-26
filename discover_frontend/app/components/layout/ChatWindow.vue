@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import type { ChatMessage, ConversationUsage } from '@/api/types'
+import type { AssistantRecord, ChatMessage, ConversationUsage } from '@/api/types'
+import AssistantPicker from '@/components/chat/AssistantPicker.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useTheme } from '@/composables/useTheme'
@@ -16,6 +17,12 @@ const props = defineProps<{
   usageSummary: ConversationUsage | null
   /** 历史消息加载中（切换会话时） */
   historyLoading: boolean
+  /** 助手目录（API.md §6.1；供头部选择器渲染选项） */
+  assistants: AssistantRecord[]
+  /** 当前选择的助手 id（专家 id / 'generic'） */
+  selectedAssistantId: string
+  /** 助手目录加载中 */
+  assistantLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +30,8 @@ const emit = defineEmits<{
   retry: []
   /** 空态建议卡片 → 立即发送 */
   suggestion: [text: string]
+  /** 助手选择器变更 → 下一次 /chat-messages 生效 */
+  'assistant-change': [id: string]
 }>()
 
 const theme = useTheme()
@@ -34,12 +43,12 @@ const usageLabel = computed<string>(() => {
   return `${usage.message_count} 回合 · ${usage.total_tokens.toLocaleString()} tokens`
 })
 
-/** 空态建议卡片（面向多智能体平台） */
+/** 空态建议卡片（显式选择助手后即用，不依赖 LLM 自动路由） */
 const suggestions: ReadonlyArray<{ title: string; desc: string; text: string }> = [
   {
     title: '演示一次客户探索',
-    desc: '让多智能体团队跑通完整协作流程',
-    text: '让多智能体团队演示一次完整的客户探索流程',
+    desc: '让客户发现助手跑通完整探索流程',
+    text: '演示一次完整的客户探索流程',
   },
   {
     title: '拆解并规划需求',
@@ -105,10 +114,14 @@ onMounted(scrollToBottom)
       <span class="window__title">{{ title || '新对话' }}</span>
 
       <div class="window__actions">
-        <span class="window__model">
-          <AppIcon name="sparkle" :size="13" />
-          多智能体
-        </span>
+        <AssistantPicker
+          class="window__picker"
+          :catalog="assistants"
+          :selected-id="selectedAssistantId"
+          :loading="assistantLoading"
+          :disabled="isStreaming"
+          @change="emit('assistant-change', $event)"
+        />
         <span v-if="usageLabel !== ''" class="window__usage" :title="usageLabel">
           {{ usageLabel }}
         </span>
@@ -140,7 +153,7 @@ onMounted(scrollToBottom)
           <h1 class="window__welcome">
             今天，想<span class="window__welcome-accent">探索</span>什么？
           </h1>
-          <p class="window__hint">输入问题，或从下面的建议开始，与多智能体团队一起协作</p>
+          <p class="window__hint">先选一位助手，再输入问题开始探索</p>
           <div class="window__suggestions">
             <button
               v-for="suggestion in suggestions"
@@ -224,21 +237,8 @@ onMounted(scrollToBottom)
   align-items: center;
   gap: 6px;
 }
-.window__model {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-2);
-  font-size: 12px;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.window__model :deep(svg) {
-  color: var(--brand-2);
+.window__picker {
+  flex-shrink: 0;
 }
 .window__usage {
   font-size: 12px;
@@ -399,9 +399,6 @@ onMounted(scrollToBottom)
 @media (max-width: 767px) {
   .window__btn--mobile {
     display: inline-flex;
-  }
-  .window__model {
-    display: none;
   }
   .window__welcome {
     font-size: 24px;

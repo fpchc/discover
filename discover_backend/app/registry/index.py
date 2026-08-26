@@ -13,10 +13,11 @@ from app.registry.manifests import Scope
 
 
 class AgentIndexEntry(BaseModel):
-    """一级路由输入：只含身份与适用边界，不含技能细节。"""
+    """一级索引项：身份 + 类型 + 适用边界，不含技能细节。"""
 
     agent_id: str
     display_name: str
+    type: str = "expert"
     description: str
     scope: Scope
     default_skill: str | None = None
@@ -45,6 +46,7 @@ class AgentIndex(BaseModel):
             agents[agent_id] = AgentIndexEntry(
                 agent_id=agent_id,
                 display_name=package.manifest.display_name,
+                type=package.manifest.type,
                 description=package.manifest.description,
                 scope=package.manifest.scope,
                 default_skill=package.manifest.default_skill,

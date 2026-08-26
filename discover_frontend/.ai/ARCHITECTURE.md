@@ -14,11 +14,11 @@ discover_frontend/
 │   ├── pages/index.vue       对话页（文件路由，底层 vue-router）
 │   ├── components/
 │   │   ├── layout/           AppSidebar / ChatWindow（空态 + 光晕 + 主题切换）
-│   │   ├── chat/             ChatInput / MessageBubble（头像 + 渐变气泡 + 思考卡）
+│   │   ├── chat/             AssistantPicker（助手选择）/ ChatInput / MessageBubble（头像 + 渐变气泡 + 思考卡）
 │   │   └── common/           AppIcon（手写内联 SVG，无图标依赖）
 │   ├── composables/          useChatStream / useMarkdown / useFileUpload / useNetworkStatus / useTheme
-│   ├── stores/               chat / conversations
-│   ├── api/                  client / chat / history / files / types / errors
+│   ├── stores/               assistants / chat / conversations
+│   ├── api/                  client / chat / history / files / assistants / types / errors
 │   ├── utils/                sse / history / logger
 │   ├── config/env.ts         环境配置唯一入口（类型化 VITE_*，禁止直读 import.meta.env）
 │   ├── styles/               theme.css（双主题令牌）/ main.css（全局 + Markdown 正文）
@@ -38,6 +38,7 @@ discover_frontend/
 | 流式编排 | `useChatStream` composable 驱动 store | store 只做状态与变更，HTTP/SSE/取消/超时/retry 全在编排层；turn token 作废旧流防幽灵增量 |
 | Markdown | markdown-it + highlight.js + DOMPurify | 安全红线：渲染结果必须 sanitize |
 | 错误映射 | `api/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
+| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 模型不再自动路由（`select_agent`/`select_skill` 已移除）；用户显式选专家 / 通用对话，选择随下一次发送生效（API.md §6） |
 | 历史数据源 | 后端历史接口（`GET /conversations`、`/conversations/{id}/messages`、`/conversations/{id}/usage`，见 `.claude/feature/API.md`） | 会话列表 / 消息 / 用量以后端为唯一事实源，前端不持久化；新会话乐观入列，回合结束后 `loadList` 校准 |
 | 文件上传 | `useFileUpload` composable + ChatInput 附件（`GET|POST /files/upload`、`GET /files/{id}/preview`） | 上传前本地校验扩展名 / 大小；图片内联缩略、其余新窗口 / `a[download]` |
 | 环境 | VITE_* 收容 `env/`，经脚本 `--dotenv ./env/.env.{development,test,production}` 注入 process.env 流入 `import.meta.env` | Nuxt 不采纳 `vite.envDir`；配置驱动、无硬编码、无密钥模板提交 |
@@ -58,6 +59,11 @@ discover_frontend/
 * **`message_end.metadata.usage` = 5 键**：`{prompt_tokens, completion_tokens, total_tokens, cached_read_tokens, cached_write_tokens}`（API.md §3）。
 * **历史 / 文件接口**（API.md §1 / §2）：会话列表、消息流、用量汇总由后端提供；产物下载接口
   `/sessions/{sid}/artifacts/{aid}` 已移除，预览 / 下载改走 `GET /api/v1/files/{file_id}/preview`（§3 / §4）。
+* **助手选择**（API.md §6）：`GET /assistants` 返回 `{id,type,name,description,capabilities}`（expert + generic，
+  generic 为保留字）；请求体可选 `agent_id`（首轮绑定 / 续聊沿用 / `"generic"` 切回通用 / 未知 id → 404）；
+  `message_end` 与 blocking 的 `metadata.assistant` 回显当前回合生效助手
+  （`{"type":"expert","id":"discover"}` / `{"type":"generic","id":null}` / 缺失 = 新会话未绑定）。
+  `select_agent` / `select_skill` 已移除，模型不再决定进哪个助手。
 
 ## 已知限制
 
@@ -77,6 +83,10 @@ discover_frontend/
 会话侧边栏（新建 / 切换 / 删除，列表来自后端 `GET /conversations`）、历史消息加载（`GET /conversations/{id}/messages` 映射渲染）、
 文件上传（本地校验 → 上传 → 预览 / 下载 / 删除）、<768px 响应式抽屉。
 历史数据源切换（2026-08-26）：会话列表与消息快照的 localStorage 持久化已移除，改由后端历史接口提供。
+
+**显式助手选择（2026-08-26）**：聊天页头部「助手选择器」拉取 `GET /assistants` 目录，用户显式选专家 / 通用对话，
+每次发消息带 `agent_id`（首轮绑定 / 续聊切换），回合结束按 `metadata.assistant` 回显选择器；
+打开历史会话按 `ConversationRecord.agent_id` 对齐选择器；旧「多智能体自动路由」文案与徽标已移除。
 
 **框架迁移（2026-08-26）**：由 Vue 3 + Vite 迁移至 **Nuxt 4（SPA `ssr:false`）**——`app/` 目录结构、
 文件路由、`@pinia/nuxt` + `@element-plus/nuxt` 模块装配、`nuxt typecheck` 类型检查基线、

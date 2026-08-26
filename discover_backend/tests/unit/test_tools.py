@@ -67,8 +67,8 @@ def test_mcp_qualified_name_converts_hyphen() -> None:
 
 def test_script_qualified_name() -> None:
     assert (
-        script_qualified_name("eitia", "client_finder", "score")
-        == "eitia.client_finder.script.score"
+        script_qualified_name("discover", "client_finder", "score")
+        == "discover.client_finder.script.score"
     )
 
 

@@ -1,6 +1,6 @@
 # 多智能体承载平台架构快照
 
-> P1 状态（2026-08）：12 步构建完成，eitia 智能体已迁移接入。对话接口为
+> P1 状态（2026-08）：12 步构建完成，discover 智能体已迁移接入。对话接口为
 > 对话接口 `POST /chat-messages`（会话自动创建）；审批机制、`/models`、`/agents`、
 > 会话删除接口已按用户决策移除。脚本执行已去容器化（2026-08-21 用户决策）：
 > 宿主 subprocess 本地直跑，Docker 不再是前置条件。持久化已入 PostgreSQL
@@ -37,7 +37,8 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 |------|------|------|
 | 包根名 | `app`（仓库根单层包，去除 src/ 包裹与 platform_engine 层；api/ 仅路由） | 用户决策 2026-08 |
 | 业务流程载体 | 图只提供执行环境，流程知识写在智能体/技能清单正文 | graph-runtime-spec §1 |
-| 两级路由 | 一级 `route_agent` → 二级 `route_skill`；会话内 `active_agent` 非空则跳过一级（重入保护） | graph-runtime-spec §9 |
+| 助手选择 | 用户**显式选择**（`GET /assistants` 目录 + `chat-messages.agent_id`），非 LLM 路由；会话绑定 `assistant_target(type+id)`；图节点 `resolve_assistant`（读会话绑定）→ `resolve_skill`（SkillResolver 确定性策略链）；未绑定走通用对话 | 用户决策 2026-08，graph-runtime-spec §4 |
+| 助手类型体系 | 目录聚合专家（`agents/` 包，`kind: agent` + `type: expert`，类 Claude Code）+ 内置通用对话（`generic` 保留字）；简单技能属未来 `kind: skill`，**非 agent 类型** | 用户决策 2026-08 |
 | 技能耦合面 | 唯一耦合面是 `AGENT.md` / `SKILL.md` frontmatter | agent-package-spec |
 | 工具命名空间 | MCP = `server.tool`；脚本 = `agent.skill.script.name`；元工具无前缀 | tool-broker-spec |
 | 工具暴露 | 三级：Tier0 元工具 / Tier1 核心 / Tier2 懒加载 | tool-broker-spec |
@@ -76,7 +77,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 ## 主流程
 
 `POST /chat-messages` → `conversation_id` 空串自动创建会话（续聊带上即复用）→
-`response_mode=streaming` 开 SSE / `blocking` 返回 JSON → 图执行（一级路由 → 二级路由 →
+`response_mode=streaming` 开 SSE / `blocking` 返回 JSON → 图执行（解析助手 → 解析技能 →
 装配 → 推理 ⇄ 工具）→ 收尾 emit done → 流尾显式取消 emitter。会话 ID 经响应头
 `X-Conversation-Id` 与消息体返回。
 

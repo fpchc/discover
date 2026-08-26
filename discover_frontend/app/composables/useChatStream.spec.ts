@@ -1,8 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fetchAssistants } from '@/api/assistants'
 import { sendChatMessage, sendChatMessageBlocking } from '@/api/chat'
 import { fetchConversations, fetchConversationUsage, fetchMessages } from '@/api/history'
-import type { UsageInfo } from '@/api/types'
+import type { AssistantInfo, UsageInfo } from '@/api/types'
+import { GENERIC_ASSISTANT_ID, useAssistantsStore } from '@/stores/assistants'
 import { useChatStore } from '@/stores/chat'
 import { consumeChatStream, useChatStream } from './useChatStream'
 
@@ -15,6 +17,10 @@ vi.mock('@/api/history', () => ({
   fetchConversations: vi.fn(),
   fetchConversationUsage: vi.fn(),
   fetchMessages: vi.fn(),
+}))
+
+vi.mock('@/api/assistants', () => ({
+  fetchAssistants: vi.fn(),
 }))
 
 function frame(event: object): string {
@@ -250,6 +256,28 @@ function sseResponse(conversationId: string, withHeader = true): Response {
   })
 }
 
+/** 含 metadata.assistant 的 message_end 帧流式 Response（回显路径） */
+function assistantEchoSse(assistant: AssistantInfo): Response {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            event: 'message_end',
+            message_id: 'm1',
+            conversation_id: 'cid-a',
+            metadata: { usage: { total_tokens: 3 }, assistant },
+            created_at: 1,
+          })}\n\n`,
+        ),
+      )
+      controller.close()
+    },
+  })
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
 describe('useChatStream 连续对话（conversation_id 贯穿）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -258,6 +286,7 @@ describe('useChatStream 连续对话（conversation_id 贯穿）', () => {
     vi.mocked(fetchConversations).mockReset()
     vi.mocked(fetchConversationUsage).mockReset()
     vi.mocked(fetchMessages).mockReset()
+    vi.mocked(fetchAssistants).mockReset()
     vi.mocked(fetchConversations).mockResolvedValue([])
     vi.mocked(fetchMessages).mockResolvedValue([])
   })
@@ -302,5 +331,64 @@ describe('useChatStream 连续对话（conversation_id 贯穿）', () => {
       2,
       expect.objectContaining({ conversationId: 'cid-2' }),
     )
+  })
+
+  it('每次发送带上当前选择的 agent_id', async () => {
+    const assistants = useAssistantsStore()
+    const stream = useChatStream()
+
+    assistants.select('discover')
+    vi.mocked(sendChatMessage).mockResolvedValue(
+      assistantEchoSse({ type: 'expert', id: 'discover' }),
+    )
+
+    await stream.send('帮我找客户')
+
+    expect(sendChatMessage).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'discover' }))
+  })
+
+  it('回合结束按 metadata.assistant 回显选择器（专家 / 通用）', async () => {
+    const assistants = useAssistantsStore()
+    const stream = useChatStream()
+
+    assistants.select('discover')
+    vi.mocked(sendChatMessage).mockResolvedValue(
+      assistantEchoSse({ type: 'expert', id: 'discover' }),
+    )
+    await stream.send('帮我找客户')
+    expect(assistants.selectedId).toBe('discover')
+
+    assistants.select(GENERIC_ASSISTANT_ID)
+    vi.mocked(sendChatMessage).mockResolvedValue(assistantEchoSse({ type: 'generic', id: null }))
+    await stream.send('你好')
+    expect(assistants.selectedId).toBe(GENERIC_ASSISTANT_ID)
+  })
+
+  it('loadAssistants 拉取目录并落到默认通用', async () => {
+    const assistants = useAssistantsStore()
+    const stream = useChatStream()
+
+    vi.mocked(fetchAssistants).mockResolvedValue([
+      {
+        id: 'discover',
+        type: 'expert',
+        name: '客户发现',
+        description: '寻找潜在客户',
+        capabilities: [],
+      },
+      {
+        id: 'generic',
+        type: 'generic',
+        name: '通用对话',
+        description: '日常问答',
+        capabilities: [],
+      },
+    ])
+
+    await stream.loadAssistants()
+
+    expect(assistants.catalog).toHaveLength(2)
+    expect(assistants.selectedId).toBe(GENERIC_ASSISTANT_ID)
+    expect(assistants.loading).toBe(false)
   })
 })

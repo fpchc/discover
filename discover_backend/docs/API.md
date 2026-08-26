@@ -1,4 +1,4 @@
-# 平台 API 文档（历史记录 + 文件系统）
+# 平台 API 文档（助手选择 + 历史记录 + 文件系统）
 
 > 供前端实现功能对照。所有接口前缀 `/api/v1`；除特殊说明外请求/响应均为
 > JSON（`Content-Type: application/json`）。`created_at`/`updated_at` 为
@@ -11,6 +11,7 @@
 - [3. 对话接口变更（usage 追加字段）](#3-对话接口变更usage-追加字段)
 - [4. 已移除接口](#4-已移除接口)
 - [5. 字段速查表](#5-字段速查表)
+- [6. 助手选择（新增：显式选择取代 LLM 自动路由）](#6-助手选择新增显式选择取代-llm-自动路由)
 
 ---
 
@@ -258,3 +259,105 @@
 | `ConversationRecord` 必填 | `conversation_id`, `name`, `status`, `dialogue_count`, `created_at`, `updated_at` |
 | `MessageRecord` 必填 | `message_id`, `conversation_id`, `query`, `status`, `latency_ms`, token 五字段, `created_at`, `updated_at` |
 | 分页 | `limit`（1–200，默认 50）、`offset`（默认 0） |
+
+---
+
+## 6. 助手选择（新增：显式选择取代 LLM 自动路由）
+
+> 平台不再让模型自动识别智能体。前端需在聊天页提供「助手选择器」：用户显式选中
+> 某个**专家**或**通用对话**，经 `agent_id` 绑定到会话，模型只在该助手内工作。
+> 这是「智能体多了会误路由」的解法——选择权交给用户，不交给模型。
+
+### 6.1 助手目录
+
+`GET /api/v1/assistants` — 用户可选的助手清单（聚合：专家 + 内置通用对话）。
+
+**响应 200**：
+
+```json
+[
+  {
+    "id": "discover",
+    "type": "expert",
+    "name": "客户发现",
+    "description": "为电子信息产业链销售寻找潜在客户，输出八维量化评分与专业客户发现报告",
+    "capabilities": ["client-finder"]
+  },
+  {
+    "id": "generic",
+    "type": "generic",
+    "name": "通用对话",
+    "description": "日常问答与通用助手，不绑定专家能力",
+    "capabilities": []
+  }
+]
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 助手标识，即传给 `/chat-messages` 的 `agent_id` |
+| `type` | `"expert"` \| `"generic"` | 专家（agents/ 包，类 Claude Code 的工具型）/ 通用对话 |
+| `name` | string | 展示名（选择器直接展示） |
+| `description` | string | 一句话职责（选择器副标题） |
+| `capabilities` | string[] | 能力标签（专家取其技能 ID，如 `client-finder`；通用为空） |
+
+**类型体系**：当前两类——`expert`（复杂工具包）/ `generic`（内置通用对话）。未来的
+「简单技能」（如天气问答的纯 prompt 型）**不属本接口的 agent 类型**，届时另行扩展，
+前端无需为它预判结构。
+
+> 前端在聊天页加载时拉取一次即可；热重载后内容可能变化（如新增专家），建议每次进入页面刷新。
+
+### 6.2 对话请求显式选择
+
+`POST /api/v1/chat-messages` 请求体新增**可选**字段 `agent_id`：
+
+```json
+{
+  "query": "帮我找高速背板连接器的潜在客户",
+  "response_mode": "streaming",
+  "conversation_id": "",
+  "agent_id": "discover"
+}
+```
+
+`agent_id` 语义：
+
+| 场景 | 传值 | 行为 |
+|---|---|---|
+| 首轮（`conversation_id` 空） | 某个专家 id（如 `discover`） | 创建会话并绑定该专家 |
+| 首轮 | 不传 / 空串 | 创建会话，走通用对话 |
+| 续聊 | 不传 / 空串 | 沿用会话已绑定的助手 |
+| 续聊（切换助手） | 新的专家 id 或 `"generic"` | 重新绑定 / 切回通用对话 |
+| 任意 | 未知 id | **404** `{detail: "未知助手：<id>"}` |
+
+**`"generic"` 是保留字**（对应目录里的通用对话项），用于把会话从专家切回通用对话。
+
+前端建议：用户选中助手后**每次发消息都带上当前选中的 `agent_id`**（首轮用于绑定，
+续聊用于切换）；选择器上「通用对话」对应 `agent_id="generic"`。选助手**不需要单独的
+接口**——它随下一次 `/chat-messages` 生效。
+
+### 6.3 响应中的 `metadata.assistant`
+
+blocking 响应与 SSE `message_end` 帧的 `metadata` 新增 `assistant` 字段，反映**当前回合生效的助手**：
+
+```json
+{
+  "usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_read_tokens": 0, "cached_write_tokens": 0 },
+  "assistant": { "type": "expert", "id": "discover" }
+}
+```
+
+| `assistant` 取值 | 含义 |
+|---|---|
+| `{"type":"expert","id":"discover"}` | 已绑定专家 |
+| `{"type":"generic","id":null}` | 通用对话 |
+| 键不出现 | 新会话未绑定（相当于通用） |
+
+前端可用它回显选择器状态；`assistant` 键缺失时选择器为空态（默认通用）。
+
+### 6.4 移除的旧机制
+
+- LLM 自动路由工具（`select_agent` / `select_skill`）已移除：模型不再决定进入哪个助手。
+- 聊天页不再需要「让模型猜你要哪个智能体」的提示文案；改为用户显式选择。

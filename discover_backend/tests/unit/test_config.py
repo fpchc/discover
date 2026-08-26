@@ -43,7 +43,6 @@ def test_settings_defaults() -> None:
     assert settings.agents_root_dir == Path("agents")
     assert settings.agent_workspace_root_dir == Path("workspaces")
     assert settings.reasoning_max_turns == 40
-    assert settings.routing_confidence_threshold == 0.6
     assert settings.typewriter_frame_interval_ms == 30
 
 

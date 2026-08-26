@@ -10,6 +10,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from app.catalog.models import AssistantTarget
+
 
 def utc_now() -> datetime:
     """时区感知的当前 UTC 时间（会话各时间戳统一入口）。"""
@@ -24,12 +26,17 @@ class SessionStatus(StrEnum):
 
 
 class SessionRecord(BaseModel):
-    """会话记录。会话 ID 由服务端生成（uuid4），不可猜测。"""
+    """会话记录。会话 ID 由服务端生成（uuid4），不可猜测。
+
+    绑定的是「助手目标」（assistant_target：type + id），而非裸 agent_id——
+    未来通用 / 简单技能都是独立目标，随状态自然增长（skill_id 预留显式技能选择）。
+    """
 
     session_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-    agent_id: str | None = None
+    assistant_target: AssistantTarget | None = None
+    skill_id: str | None = None
     status: SessionStatus = SessionStatus.ACTIVE
 
 

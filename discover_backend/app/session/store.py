@@ -6,6 +6,7 @@
 
 import uuid
 
+from app.catalog.models import AssistantTarget
 from app.errors.base import SessionNotFoundError
 from app.session.models import SessionRecord, utc_now
 
@@ -28,9 +29,9 @@ class SessionStore:
         except KeyError as exc:
             raise SessionNotFoundError(f"未知会话：{session_id}") from exc
 
-    def bind_agent(self, session_id: str, agent_id: str) -> SessionRecord:
-        """会话内绑定智能体（一级路由命中后调用，防重入一级路由）。"""
+    def bind_assistant(self, session_id: str, target: AssistantTarget) -> SessionRecord:
+        """会话内绑定助手目标（用户显式选择；切换同样走此方法）。"""
         current = self.get(session_id)
-        updated = current.model_copy(update={"agent_id": agent_id, "updated_at": utc_now()})
+        updated = current.model_copy(update={"assistant_target": target, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated

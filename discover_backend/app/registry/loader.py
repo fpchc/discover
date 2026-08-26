@@ -14,6 +14,7 @@ import anyio
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
+from app.catalog.models import GENERIC_ASSISTANT_ID
 from app.config.loader import MCPRegistry
 from app.config.settings import Settings
 from app.errors.base import ConfigError, RegistryValidationError
@@ -189,6 +190,8 @@ class AgentLoader:
     def _validate_agent(self, manifest: AgentManifest, agent_dir: Path) -> None:
         if manifest.agent_id != agent_dir.name:
             raise RegistryValidationError(f"智能体 ID 必须等于目录名：{agent_dir.name}")
+        if manifest.agent_id == GENERIC_ASSISTANT_ID:
+            raise RegistryValidationError(f"智能体 ID 为保留字：{manifest.agent_id!r}")
         if not _ID_PATTERN.fullmatch(manifest.agent_id):
             raise RegistryValidationError(f"非法智能体 ID：{manifest.agent_id!r}")
         if not (manifest.scope.applies and manifest.scope.does_not_apply):

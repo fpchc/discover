@@ -14,6 +14,8 @@ class ChatMessageRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     response_mode: Literal["streaming", "blocking"] = "streaming"
     conversation_id: str = ""
+    # 用户显式助手选择：空 = 沿用/不绑定；"generic" = 通用对话；其余 = 专家 id
+    agent_id: str = Field(default="", max_length=100)
 
 
 class ChatMessageResponse(BaseModel):

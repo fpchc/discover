@@ -13,6 +13,7 @@ from types import TracebackType
 
 from fastapi import FastAPI
 
+from app.api.routes_assistants import router as assistants_router
 from app.api.routes_chat import router as chat_router
 from app.api.routes_files import router as files_router
 from app.api.routes_history import router as history_router
@@ -55,6 +56,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(chat_router, prefix=prefix)
     app.include_router(files_router, prefix=prefix)
     app.include_router(history_router, prefix=prefix)
+    app.include_router(assistants_router, prefix=prefix)
 
 
 def _register_middleware(app: FastAPI, settings: Settings) -> None:

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
+from app.catalog.models import SelectionSource, TargetType
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
 from app.db.engine import Database
@@ -24,8 +25,6 @@ from app.llm.models import (
     ChatRequest,
     ChatToolCall,
     ChatToolCallFunction,
-    ChatToolSpec,
-    ToolFunction,
 )
 from app.llm.providers import ProviderRegistry
 from app.llm.stream_parser import (
@@ -54,7 +53,9 @@ from app.protocol.events import (
 from app.protocol.sanitize import sanitize_tool_args, truncate
 from app.registry.registry import AgentRegistry
 from app.runtime.builder import build_graph
-from app.runtime.state import GateStatus, GraphState, RouteDecision
+from app.runtime.resolver.assistant_resolver import AssistantResolver, ExplicitSelectionResolver
+from app.runtime.resolver.skill_resolver import SkillResolutionContext, SkillResolver
+from app.runtime.state import GateStatus, GraphState
 from app.session.models import ArtifactRecord
 from app.session.service import (
     SessionService,
@@ -64,43 +65,7 @@ from app.tools.broker import ToolBroker, ToolCallRequest
 from app.tools.mcp_manager import MCPManager
 from app.tools.script_executor import ScriptExecutor
 
-_ROUTE_AGENT_TOOL = ChatToolSpec(
-    function=ToolFunction(
-        name="select_agent",
-        description="从候选智能体中选择最匹配的一个；若无匹配，agent_id 填空字符串",
-        parameters={
-            "type": "object",
-            "properties": {
-                "agent_id": {"type": "string"},
-                "confidence": {"type": "number", "description": "0~1 的匹配置信度"},
-                "reason": {"type": "string"},
-            },
-            "required": ["agent_id", "confidence", "reason"],
-        },
-    )
-)
-
-_ROUTE_SKILL_TOOL = ChatToolSpec(
-    function=ToolFunction(
-        name="select_skill",
-        description="从候选技能中选择最匹配的一个",
-        parameters={
-            "type": "object",
-            "properties": {
-                "skill_id": {"type": "string"},
-                "reason": {"type": "string"},
-            },
-            "required": ["skill_id", "reason"],
-        },
-    )
-)
-
-_SWITCH_KEYWORDS = ("切换智能体", "换个智能体", "换一个智能体", "切换到其他")
 _GATE_MARKER = ".script.gate_"
-
-
-def _wants_switch(text: str) -> bool:
-    return any(keyword in text for keyword in _SWITCH_KEYWORDS)
 
 
 def _parse_args(raw: str) -> dict[str, object]:
@@ -157,6 +122,8 @@ class Runtime:
             script_executor=script_executor,
             history_store=HistoryStore(db),
         )
+        self._assistant_resolver: AssistantResolver = ExplicitSelectionResolver()
+        self._skill_resolver = SkillResolver()
         self._emitter: QueueEmitter | None = None
         self._assembled_skill: str | None = None
         self._last_state = GraphState()
@@ -203,87 +170,75 @@ class Runtime:
         if self._emitter is not None:
             await self._emitter.emit(event)
 
-    # ---- 节点：一级路由 ----
-    async def route_agent(self, state: GraphState) -> dict[str, object]:
-        """一级路由（graph-runtime-spec §9 重入保护）。"""
-        if state.active_agent and not _wants_switch(state.input):
-            return {"route_reason": "沿用已装配智能体"}
-        index = self._registry.index()
-        candidates = list(index.agents.values())
-        if not candidates:
-            return {"active_agent": None, "route_reason": "平台暂无可用智能体"}
-        decision = await self._route_llm(
-            candidates_text="\n".join(
-                f"- {a.agent_id}（{a.display_name}）：{a.description}，适用：{a.scope.applies}"
-                for a in candidates
-            ),
-            user_input=state.input,
-            tool=_ROUTE_AGENT_TOOL,
-            target_key="agent_id",
-            instruction="从候选智能体中选出与用户需求最匹配的一个，返回其 agent_id、置信度与理由。",
-        )
-        if decision is None or decision.confidence < self._settings.routing_confidence_threshold:
-            return {"active_agent": None, "route_reason": "未匹配到可用智能体"}
-        agent = index.agents.get(decision.target)
+    # ---- 节点：一级解析（用户显式选择，非 LLM 路由） ----
+    async def resolve_assistant(self, state: GraphState) -> dict[str, object]:
+        """解析助手：读会话显式绑定（graph-runtime-spec §4/§8）。
+
+        绑定变更（含首次）→ 清旧装配快照、重发选定事件；绑定沿用 → 直接跳过。
+        """
+        session = self._sessions.get_session(state.session_id)
+        target = self._assistant_resolver.resolve(session)
+        if state.active_target is not None and state.active_target == target:
+            return {"resolve_reason": "沿用已装配助手"}
+        # 绑定变更：清装配快照，确保 assemble 按新目标重建
+        self._assembled_skill = None
+        if target is None or target.type == TargetType.GENERIC:
+            return {"active_target": target, "active_skill": None, "resolve_reason": "通用对话"}
+        agent = self._registry.index().agents.get(target.id or "")
         if agent is None:
-            return {"active_agent": None, "route_reason": "未匹配到可用智能体"}
-        self._sessions.bind_agent(state.session_id, agent.agent_id)
+            return {
+                "active_target": None,
+                "active_skill": None,
+                "resolve_reason": "绑定的专家不可用",
+            }
         await self._emit(
             AgentSelectedEvent(
-                agent_id=agent.agent_id,
+                agent_id=target.id or "",
                 display_name=agent.display_name,
-                reason=decision.reason,
-                confidence=decision.confidence,
+                reason="用户显式选择",
+                confidence=1.0,
+                source=SelectionSource.USER,
             )
         )
-        return {"active_agent": agent.agent_id, "route_reason": decision.reason}
+        return {"active_target": target, "active_skill": None, "resolve_reason": "用户显式选择"}
 
-    # ---- 节点：二级路由 ----
-    async def route_skill(self, state: GraphState) -> dict[str, object]:
-        """二级路由：在选定智能体内选技能，可切换。"""
-        if not state.active_agent:
-            return {"route_reason": "无智能体"}
-        index = self._registry.index()
-        skills = index.skills_by_agent.get(state.active_agent, {})
-        if not skills:
-            return {"active_skill": None, "route_reason": "该智能体无可用技能"}
-        if state.active_skill and not _wants_switch(state.input):
-            return {"route_reason": "沿用已装配技能"}
-        decision = await self._route_llm(
-            candidates_text="\n".join(
-                f"- {s.skill_id}：{s.description}，适用：{s.scope.applies}" for s in skills.values()
-            ),
-            user_input=state.input,
-            tool=_ROUTE_SKILL_TOOL,
-            target_key="skill_id",
-            instruction="从候选技能中选出与用户需求最匹配的一个，返回其 skill_id 与理由。",
+    # ---- 节点：二级解析（确定性技能解析） ----
+    async def resolve_skill(self, state: GraphState) -> dict[str, object]:
+        """解析技能：SkillResolver 策略链（显式 → 默认 → 唯一 → 首个）。"""
+        if state.active_target is None or state.active_target.type != TargetType.EXPERT:
+            return {"resolve_reason": "无专家助手"}
+        if state.active_skill:
+            return {"resolve_reason": "沿用已装配技能"}
+        package = self._registry.get_agent(state.active_target.id or "")
+        skill_ids = tuple(package.skills.keys()) if package is not None else ()
+        if not skill_ids:
+            return {"active_skill": None, "resolve_reason": "该专家无可用技能"}
+        session = self._sessions.get_session(state.session_id)
+        context = SkillResolutionContext(
+            skill_ids=skill_ids,
+            default_skill=package.manifest.default_skill if package is not None else None,
+            explicit_skill=session.skill_id,
         )
-        skill_id: str | None = decision.target if decision else None
-        reason = decision.reason if decision else ""
-        if skill_id is None or skill_id not in skills:
-            package = self._registry.get_agent(state.active_agent)
-            if package is not None and package.manifest.default_skill:
-                skill_id = package.manifest.default_skill
-                reason = "使用默认技能"
-        if skill_id is None or skill_id not in skills:
-            skill_id = next(iter(skills))
-            reason = "使用首个可用技能"
-        await self._emit(SkillSelectedEvent(skill_id=skill_id, reason=reason))
-        return {"active_skill": skill_id, "route_reason": reason}
+        skill_id = self._skill_resolver.resolve(context)
+        if skill_id is None:
+            return {"active_skill": None, "resolve_reason": "技能解析失败"}
+        await self._emit(SkillSelectedEvent(skill_id=skill_id, reason="确定性解析"))
+        return {"active_skill": skill_id, "resolve_reason": "确定性解析"}
 
     # ---- 节点：装配 ----
     async def assemble(self, state: GraphState) -> dict[str, object]:
         """装配：注入系统上下文 + 激活工具代理（§4）。"""
-        if state.active_agent is None or state.active_skill is None:
+        if state.active_target is None or state.active_skill is None:
             raise ConfigError("缺少智能体或技能，无法装配")
         if self._assembled_skill == state.active_skill:
             return {}
-        package = self._registry.get_agent(state.active_agent)
+        agent_id = state.active_target.id or ""
+        package = self._registry.get_agent(agent_id)
         if package is None:
-            raise RegistryValidationError(f"未知智能体：{state.active_agent}")
-        plan = self._registry.assemble(state.active_agent, state.active_skill)
+            raise RegistryValidationError(f"未知智能体：{agent_id}")
+        plan = self._registry.assemble(agent_id, state.active_skill)
         skill_dir = package.root / state.active_skill
-        workspace = await self._sessions.workspace_for(state.active_agent)
+        workspace = await self._sessions.workspace_for(agent_id)
         activation = await self._broker.activate(
             plan=plan,
             skill_dir=skill_dir,
@@ -453,9 +408,9 @@ class Runtime:
             f"- {a.agent_id}（{a.display_name}）：{a.description}" for a in index.agents.values()
         )
         system = (
-            "你是多智能体平台助手。以下智能体可用：\n"
+            "你是多智能体平台助手。以下专家可用：\n"
             f"{agents_text or '（暂无）'}\n"
-            "若用户需求匹配某个智能体，请建议用户直接使用。"
+            "若用户需求匹配某个专家，请提示用户在上方助手列表中选择后使用。"
         )
         request = ChatRequest(
             messages=[ChatMessage(role="system", content=system), *state.messages],
@@ -489,8 +444,8 @@ class Runtime:
 
     def _resolve_provider(self, state: GraphState) -> LLMProvider:
         preference: str | None = None
-        if state.active_agent is not None:
-            package = self._registry.get_agent(state.active_agent)
+        if state.active_target is not None and state.active_target.type == TargetType.EXPERT:
+            package = self._registry.get_agent(state.active_target.id or "")
             if package is not None and package.manifest.model_preference:
                 preference = package.manifest.model_preference
         provider_id = preference or self._settings.default_provider_id
@@ -499,8 +454,8 @@ class Runtime:
     def _resolve_thinking(self, state: GraphState) -> bool:
         if not self._settings.thinking_enabled:
             return False
-        if state.active_agent is not None:
-            package = self._registry.get_agent(state.active_agent)
+        if state.active_target is not None and state.active_target.type == TargetType.EXPERT:
+            package = self._registry.get_agent(state.active_target.id or "")
             if package is not None and package.manifest.thinking_preference == "off":
                 return False
         return True
@@ -518,46 +473,3 @@ class Runtime:
                 break
             del result[candidates[0]]
         return result
-
-    async def _route_llm(
-        self,
-        *,
-        candidates_text: str,
-        user_input: str,
-        tool: ChatToolSpec,
-        target_key: str,
-        instruction: str,
-    ) -> RouteDecision | None:
-        provider = self._providers.resolve(self._settings.default_provider_id)
-        api_key = self._resolve_api_key(provider)
-        request = ChatRequest(
-            messages=[
-                ChatMessage(role="system", content=instruction),
-                ChatMessage(
-                    role="user",
-                    content=f"候选列表：\n{candidates_text}\n\n用户输入：{user_input}",
-                ),
-            ],
-            tools=[tool],
-            thinking=False,
-        )
-        collected: ToolCallsChunk | None = None
-        async for chunk in self._llm.stream_chat(
-            provider=provider, api_key=api_key, request=request
-        ):
-            if isinstance(chunk, ToolCallsChunk):
-                collected = chunk
-            elif isinstance(chunk, UsageChunk):
-                self._usage.add(chunk)
-        if collected is None or not collected.tool_calls:
-            return None
-        call = collected.tool_calls[0]
-        data = _parse_args(call.arguments)
-        target = data.get(target_key)
-        if not isinstance(target, str) or not target:
-            return None
-        confidence_raw = data.get("confidence", 1.0)
-        confidence = float(confidence_raw) if isinstance(confidence_raw, (int, float)) else 1.0
-        return RouteDecision(
-            target=target, confidence=confidence, reason=str(data.get("reason", ""))
-        )

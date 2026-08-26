@@ -67,8 +67,14 @@ class TemplateDeclaration(BaseModel):
 
 
 class AgentManifest(BaseModel):
-    """一级清单（AGENT.md）：智能体身份、全局约束、技能索引。"""
+    """一级清单（AGENT.md）：智能体身份、全局约束、技能索引。
 
+    kind 描述「清单是什么」：当前仅 agent（专家智能体包）；skill/workflow 属
+    未来独立 kind，不是 agent 类型。type 描述 agent 下的细分（expert）。
+    """
+
+    kind: Literal["agent"] = "agent"
+    type: Literal["expert"] = "expert"
     agent_id: str
     display_name: str
     version: str

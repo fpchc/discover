@@ -73,7 +73,7 @@ MCP 协议要求服务提供 `list_tools` 接口，返回该服务支持的全�
 
 ## 5. eitia 技能清单的依赖声明
 
-在 `agents/eitia/skills/client-finder/SKILL.md` 的 MCP 依赖段声明：
+在 `agents/discover/skills/client-finder/SKILL.md` 的 MCP 依赖段声明：
 
 | 字段 | 填写 |
 |------|------|
