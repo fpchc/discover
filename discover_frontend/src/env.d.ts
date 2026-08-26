@@ -13,10 +13,11 @@ interface ImportMetaEnv {
   readonly VITE_REQUEST_TIMEOUT_MS: string
   /** dev 代理目标后端（仅 vite dev 使用） */
   readonly VITE_PROXY_TARGET: string
-  /** 功能开关：思考过程 / 工具调用 / 产物链接 */
+  /** 功能开关：思考过程 / 工具调用 / 产物链接 / 文件上传 */
   readonly VITE_FEATURE_THINKING: string
   readonly VITE_FEATURE_TOOL_CALLS: string
   readonly VITE_FEATURE_ARTIFACTS: string
+  readonly VITE_FEATURE_FILES: string
 }
 
 interface ImportMeta {

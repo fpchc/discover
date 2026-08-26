@@ -236,3 +236,13 @@ class SessionNotFoundError(SessionError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, category=ErrorCategory.NOT_FOUND, retryable=False)
+
+
+class BadRequestError(SessionError):
+    """请求非法（上传/输入校验失败）。HTTP 400。
+
+    继承 SessionError 以便既有 `raises(SessionError)` 断言兼容。
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category=ErrorCategory.BAD_REQUEST, retryable=False)

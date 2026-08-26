@@ -1,13 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ChatMessage, MessageStatus, UsageInfo } from '@/api/types'
-import { loadFromStorage, removeFromStorage, saveToStorage } from '@/utils/persist'
-
-const SNAPSHOT_PREFIX = 'snap_'
-
-function snapshotKey(conversationId: string): string {
-  return `${SNAPSHOT_PREFIX}${conversationId}`
-}
+import type { ChatMessage, ConversationUsage, MessageStatus, UsageInfo } from '@/api/types'
 
 function localId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -16,14 +9,16 @@ function localId(prefix: string): string {
 /**
  * 对话状态（单一事实源）。流式增量只写这里，组件只做渲染。
  * 本层不做 HTTP / SSE；帧消费由 useChatStream 驱动，回调本 store。
- *
- * 会话消息快照：仅在消息完成（message_end / 停止后保留正文）时落盘，流式中断不落盘
- * （CLAUDE.md 第 10 节）；刷新后按会话恢复。
+ * 消息历史来自后端接口（API.md §1），本层不再落 localStorage 快照。
  */
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
   const conversationId = ref<string>('')
   const isStreaming = ref<boolean>(false)
+  /** 当前会话用量汇总（GET /conversations/{id}/usage；切换会话时由编排层写入） */
+  const usageSummary = ref<ConversationUsage | null>(null)
+  /** 历史消息加载中（切换会话时展示） */
+  const loadingHistory = ref<boolean>(false)
 
   function pushAssistantMessage(status: MessageStatus = 'streaming'): void {
     messages.value.push({
@@ -102,7 +97,6 @@ export const useChatStore = defineStore('chat', () => {
       current.usage = usage
     }
     isStreaming.value = false
-    saveSnapshot()
   }
 
   function failAssistant(message: string): void {
@@ -122,7 +116,6 @@ export const useChatStore = defineStore('chat', () => {
         messages.value.pop()
       } else {
         current.status = 'done'
-        saveSnapshot()
       }
     }
     isStreaming.value = false
@@ -132,35 +125,35 @@ export const useChatStore = defineStore('chat', () => {
     conversationId.value = id
   }
 
+  /** 整体替换消息列表（切换会话时由编排层写入后端历史）；替换即终止当前流式态 */
+  function setMessages(list: ChatMessage[]): void {
+    messages.value = list
+    isStreaming.value = false
+  }
+
+  function setUsageSummary(usage: ConversationUsage | null): void {
+    usageSummary.value = usage
+  }
+
+  function setLoadingHistory(value: boolean): void {
+    loadingHistory.value = value
+  }
+
   /** 新建会话 / 清空当前消息区 */
   function reset(): void {
     messages.value = []
     conversationId.value = ''
     isStreaming.value = false
-  }
-
-  /** 切换会话：按本地快照恢复已完成消息（无快照则空会话） */
-  function loadConversation(id: string): void {
-    conversationId.value = id
-    messages.value = loadFromStorage<ChatMessage[]>(snapshotKey(id), [])
-    isStreaming.value = false
-  }
-
-  /** 仅将已完成消息落盘为会话快照 */
-  function saveSnapshot(): void {
-    if (conversationId.value === '') return
-    const done = messages.value.filter((message) => message.status === 'done')
-    saveToStorage(snapshotKey(conversationId.value), done)
-  }
-
-  function clearSnapshot(conversationIdToClear: string): void {
-    removeFromStorage(snapshotKey(conversationIdToClear))
+    usageSummary.value = null
+    loadingHistory.value = false
   }
 
   return {
     messages,
     conversationId,
     isStreaming,
+    usageSummary,
+    loadingHistory,
     beginTurn,
     beginRetryTurn,
     appendDelta,
@@ -171,9 +164,9 @@ export const useChatStore = defineStore('chat', () => {
     failAssistant,
     abortTurn,
     setConversationId,
+    setMessages,
+    setUsageSummary,
+    setLoadingHistory,
     reset,
-    loadConversation,
-    saveSnapshot,
-    clearSnapshot,
   }
 })

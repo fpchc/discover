@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import type { ConversationMeta } from '@/api/types'
+import type { ConversationRecord } from '@/api/types'
 import AppIcon from '@/components/common/AppIcon.vue'
 
 defineProps<{
-  conversations: ConversationMeta[]
+  conversations: ConversationRecord[]
   activeId: string
+  /** 列表加载中（首次拉取后端 GET /conversations） */
+  loading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -51,7 +53,10 @@ function formatTime(iso: string): string {
     </el-button>
 
     <div class="sidebar__body">
-      <p v-if="conversations.length === 0" class="sidebar__empty">
+      <div v-if="loading" class="sidebar__skeleton">
+        <el-skeleton v-for="n in 4" :key="n" animated :rows="1" />
+      </div>
+      <p v-else-if="conversations.length === 0" class="sidebar__empty">
         暂无会话<br />点击「新建会话」开始探索
       </p>
       <ul v-else class="sidebar__list">
@@ -63,8 +68,10 @@ function formatTime(iso: string): string {
           @click="emit('select', item.conversation_id)"
         >
           <span class="sidebar__item-icon"><AppIcon name="chat" :size="15" /></span>
-          <span class="sidebar__item-title">{{ item.title }}</span>
-          <span class="sidebar__item-time">{{ formatTime(item.updated_at) }}</span>
+          <span class="sidebar__item-title">{{ item.name }}</span>
+          <span class="sidebar__item-time">
+            {{ item.dialogue_count }} · {{ formatTime(item.updated_at) }}
+          </span>
           <el-button
             class="sidebar__item-delete"
             link
@@ -160,6 +167,12 @@ function formatTime(iso: string): string {
   line-height: 1.7;
   text-align: center;
   color: var(--text-3);
+}
+.sidebar__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 12px;
 }
 .sidebar__list {
   list-style: none;

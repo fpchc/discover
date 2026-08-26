@@ -75,7 +75,11 @@ def test_text_delta_maps_to_message_frame() -> None:
 
 def test_done_maps_to_message_end_with_compat_usage() -> None:
     frame = _map(
-        DoneEvent(turns=2, duration_ms=500, usage={"input": 10, "output": 20, "total": 30})
+        DoneEvent(
+            turns=2,
+            duration_ms=500,
+            usage={"input": 10, "output": 20, "total": 30, "cached_read": 7, "cached_write": 3},
+        )
     )
     assert isinstance(frame, MessageEndEvent)
     assert frame.event == "message_end"
@@ -83,6 +87,8 @@ def test_done_maps_to_message_end_with_compat_usage() -> None:
         "prompt_tokens": 10,
         "completion_tokens": 20,
         "total_tokens": 30,
+        "cached_read_tokens": 7,
+        "cached_write_tokens": 3,
     }
 
 

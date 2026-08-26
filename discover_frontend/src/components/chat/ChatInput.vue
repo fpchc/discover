@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import { computed, ref } from 'vue'
+import type { UploadedFile } from '@/api/types'
 import AppIcon from '@/components/common/AppIcon.vue'
+import { useFileUpload } from '@/composables/useFileUpload'
+import { FEATURE_FILES } from '@/config/env'
 
 const props = defineProps<{
   /** 发送中：隐藏发送、显示「停止」 */
@@ -18,10 +21,39 @@ const emit = defineEmits<{
 const text = ref<string>('')
 const composing = ref<boolean>(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const { files, uploading, accept, addFiles, remove, filePreviewUrl } = useFileUpload()
 
 const canSend = computed<boolean>(
   () => !props.disabled && text.value.trim() !== '' && text.value.length <= props.maxLength,
 )
+
+const attachDisabled = computed<boolean>(() => props.disabled || uploading.value)
+
+function isImage(file: UploadedFile): boolean {
+  return file.media_type.startsWith('image/')
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function openPreview(file: UploadedFile): void {
+  window.open(filePreviewUrl(file.file_id), '_blank', 'noopener')
+}
+
+async function handleFileChange(event: Event): Promise<void> {
+  // 运行时边界：DOM 事件 target 收窄为 file input
+  const input = event.target as HTMLInputElement
+  const selected = input.files
+  if (selected === null || selected.length === 0) return
+  const list: File[] = [...selected]
+  input.value = ''
+  await addFiles(list)
+}
 
 function resize(): void {
   const el = textareaRef.value
@@ -54,6 +86,51 @@ function handleKeydown(event: KeyboardEvent): void {
 
 <template>
   <div class="input" :class="{ 'is-disabled': disabled }">
+    <div v-if="files.length > 0" class="input__files">
+      <div v-for="file in files" :key="file.file_id" class="input__file">
+        <img
+          v-if="isImage(file)"
+          class="input__file-thumb"
+          :src="filePreviewUrl(file.file_id)"
+          alt=""
+          loading="lazy"
+          @click="openPreview(file)"
+        />
+        <span v-else class="input__file-icon"><AppIcon name="file" :size="16" /></span>
+        <div class="input__file-meta">
+          <span class="input__file-name">{{ file.name }}</span>
+          <span class="input__file-size">{{ formatBytes(file.size_bytes) }}</span>
+        </div>
+        <a
+          class="input__file-action"
+          :href="filePreviewUrl(file.file_id)"
+          target="_blank"
+          rel="noopener"
+          title="预览"
+        >
+          <AppIcon name="external" :size="14" />
+        </a>
+        <a
+          class="input__file-action"
+          :href="filePreviewUrl(file.file_id)"
+          :download="file.name"
+          title="下载"
+        >
+          <AppIcon name="download" :size="14" />
+        </a>
+        <el-button
+          class="input__file-remove"
+          link
+          circle
+          size="small"
+          title="移除"
+          @click="remove(file.file_id)"
+        >
+          <AppIcon name="x" :size="13" />
+        </el-button>
+      </div>
+    </div>
+
     <textarea
       ref="textareaRef"
       v-model="text"
@@ -66,9 +143,28 @@ function handleKeydown(event: KeyboardEvent): void {
       @compositionstart="composing = true"
       @compositionend="composing = false"
     />
+    <input
+      ref="fileInputRef"
+      class="input__file-input"
+      type="file"
+      multiple
+      :accept="accept"
+      @change="handleFileChange"
+    />
     <div class="input__footer">
       <span class="input__hint">Enter 发送 · Shift+Enter 换行</span>
       <div class="input__side">
+        <el-button
+          v-if="FEATURE_FILES"
+          class="input__attach"
+          link
+          circle
+          :disabled="attachDisabled"
+          title="上传文件"
+          @click="fileInputRef?.click()"
+        >
+          <template #icon><AppIcon name="paperclip" :size="16" /></template>
+        </el-button>
         <span class="input__counter">{{ text.length }}/{{ maxLength }}</span>
         <el-button
           v-if="disabled"
@@ -129,6 +225,75 @@ function handleKeydown(event: KeyboardEvent): void {
 .input__textarea::placeholder {
   color: var(--text-3);
 }
+.input__file-input {
+  display: none;
+}
+
+/* ---- 已上传文件 ---- */
+.input__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.input__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.input__file-thumb {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  cursor: pointer;
+}
+.input__file-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--brand-2);
+}
+.input__file-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.input__file-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.input__file-size {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.input__file-action {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+  transition: color 0.15s ease;
+}
+.input__file-action:hover {
+  color: var(--text-1);
+}
+.input__file-remove {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.input__file-remove:hover {
+  color: var(--el-color-danger);
+}
+
 .input__footer {
   display: flex;
   align-items: center;
@@ -149,6 +314,12 @@ function handleKeydown(event: KeyboardEvent): void {
   font-size: 12px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+}
+.input__attach {
+  color: var(--text-3);
+}
+.input__attach:hover:not(.is-disabled) {
+  color: var(--text-1);
 }
 .input__send.el-button {
   width: 36px;
@@ -194,6 +365,9 @@ function handleKeydown(event: KeyboardEvent): void {
   .input {
     border-radius: 16px;
     padding: 10px 14px 8px;
+  }
+  .input__file-name {
+    max-width: 120px;
   }
 }
 </style>

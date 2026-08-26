@@ -20,6 +20,7 @@ from app.extensions.ext_llm import get_client, get_providers, resolve_api_key
 from app.extensions.ext_mcp import get_manager, get_registry
 from app.extensions.ext_storage import get_storage
 from app.extensions.storage.base_storage import BaseStorage
+from app.history.service import ConversationService
 from app.llm.client import LLMClient
 from app.llm.providers import ProviderRegistry
 from app.registry.hot_reload import HotReloader
@@ -42,6 +43,7 @@ class AppServices:
         self.db: Database | None = None
         self.storage: BaseStorage | None = None
         self.sessions: SessionService | None = None
+        self.history: ConversationService | None = None
         self.registry: AgentRegistry | None = None
         self.runtimes: dict[str, Runtime] = {}
         self._resolve_api_key: Callable[[LLMProvider], str] | None = None
@@ -59,6 +61,7 @@ class AppServices:
         self.mcp_manager = get_manager()
         self.script_executor = ScriptExecutor(self.settings)
         self.sessions = SessionService(self.settings, self.db, self.storage)
+        self.history = ConversationService(self.db)
         self.registry = AgentRegistry(self.settings, get_registry())
         await self.registry.refresh()
         reloader = HotReloader(self.registry, self.settings)

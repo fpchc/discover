@@ -21,6 +21,11 @@ const props = withDefaults(
       | 'menu'
       | 'chevron-down'
       | 'panel-left'
+      | 'paperclip'
+      | 'file'
+      | 'download'
+      | 'external'
+      | 'x'
     size?: number
   }>(),
   { size: 16 },
@@ -211,6 +216,94 @@ const dimension = computed<string>(() => `${props.size}px`)
     aria-hidden="true"
   >
     <path d="M6 9l6 6 6-6" />
+  </svg>
+
+  <!-- 附件（回形针） -->
+  <svg
+    v-else-if="name === 'paperclip'"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    :width="dimension"
+    :height="dimension"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21.4 11.1l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8.1-8.1" />
+  </svg>
+
+  <!-- 文件（文档） -->
+  <svg
+    v-else-if="name === 'file'"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    :width="dimension"
+    :height="dimension"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+  </svg>
+
+  <!-- 下载 -->
+  <svg
+    v-else-if="name === 'download'"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    :width="dimension"
+    :height="dimension"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <path d="M7 10l5 5 5-5M12 15V3" />
+  </svg>
+
+  <!-- 新窗口（外链） -->
+  <svg
+    v-else-if="name === 'external'"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    :width="dimension"
+    :height="dimension"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <path d="M15 3h6v6M10 14L21 3" />
+  </svg>
+
+  <!-- 关闭（叉） -->
+  <svg
+    v-else-if="name === 'x'"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    :width="dimension"
+    :height="dimension"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M18 6L6 18M6 6l12 12" />
   </svg>
 
   <!-- 侧栏面板（折叠 / 展开） -->

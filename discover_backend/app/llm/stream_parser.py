@@ -82,12 +82,18 @@ class ToolCallsChunk(SemanticChunk):
 
 
 class UsageChunk(SemanticChunk):
-    """用量统计。"""
+    """用量统计（防腐层标准形态：提供方私有字段统一为平台字段）。
+
+    cached_read_tokens 为缓存命中（读缓存）token，cached_write_tokens 为
+    缓存写入（建缓存）token；input_tokens 取 prompt_tokens 原值。
+    """
 
     kind: Literal["usage"] = "usage"
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    cached_read_tokens: int = 0
+    cached_write_tokens: int = 0
 
 
 SemanticChunkUnion = Annotated[
@@ -106,6 +112,16 @@ semantic_adapter: TypeAdapter[SemanticChunkUnion] = TypeAdapter(SemanticChunkUni
 
 def _int_value(value: object) -> int:
     return value if isinstance(value, int) else 0
+
+
+def _nested_int(usage: dict[str, object], path: list[str]) -> int:
+    """沿路径取嵌套整数值；任一环节非 dict 返回 0。"""
+    current: object = usage
+    for key in path:
+        if not isinstance(current, dict):
+            return 0
+        current = current.get(key)
+    return _int_value(current)
 
 
 class StreamParser:
@@ -206,7 +222,17 @@ class StreamParser:
             input_tokens=_int_value(usage.get("prompt_tokens")),
             output_tokens=_int_value(usage.get("completion_tokens")),
             total_tokens=_int_value(usage.get("total_tokens")),
+            cached_read_tokens=self._cached_read_tokens(usage),
+            cached_write_tokens=_int_value(usage.get("cache_creation_input_tokens")),
         )
+
+    @staticmethod
+    def _cached_read_tokens(usage: dict[str, object]) -> int:
+        """兼容三种提供方惯例：OpenAI / DeepSeek / Anthropic 风格。"""
+        openai = _nested_int(usage, ["prompt_tokens_details", "cached_tokens"])
+        deepseek = _int_value(usage.get("prompt_cache_hit_tokens"))
+        anthropic = _int_value(usage.get("cache_read_input_tokens"))
+        return openai or deepseek or anthropic
 
     def _assembled_tool_calls(self) -> list[ToolCall]:
         calls: list[ToolCall] = []

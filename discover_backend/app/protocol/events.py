@@ -139,12 +139,18 @@ class ErrorEvent(AgentEvent):
 
 
 class DoneEvent(AgentEvent):
-    """完成。"""
+    """完成。
+
+    usage 键：input/output/total/cached_read/cached_write（回合聚合）；
+    provider/model 为本回合生效的模型快照（供历史落库与计费消费）。
+    """
 
     type: Literal["done"] = "done"
     turns: int
     duration_ms: int
     usage: dict[str, int]
+    provider: str | None = None
+    model: str | None = None
 
 
 class HeartbeatEvent(AgentEvent):

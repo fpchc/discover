@@ -1,15 +1,20 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { ChatMessage } from '@/api/types'
 import { useChatStore } from './chat'
 
-function freshChatStore(): ReturnType<typeof useChatStore> {
-  setActivePinia(createPinia())
-  return useChatStore()
+function userMessage(id: string): ChatMessage {
+  return {
+    id,
+    role: 'user',
+    content: `内容-${id}`,
+    created_at: '2026-08-26T11:00:00',
+    status: 'done',
+  }
 }
 
 describe('chat store', () => {
   beforeEach(() => {
-    localStorage.clear()
     setActivePinia(createPinia())
   })
 
@@ -97,25 +102,6 @@ describe('chat store', () => {
     expect(last.thinkingDurationMs).toBe(2000)
   })
 
-  it('思考内容随已完成消息落盘快照', () => {
-    const chat = useChatStore()
-    chat.beginTurn('hi')
-    chat.startThinking()
-    chat.appendThinking('推理过程')
-    chat.endThinking(500)
-    chat.appendDelta('answer')
-    chat.setConversationId('cid-t')
-    chat.completeAssistant()
-
-    const fresh = freshChatStore()
-    fresh.loadConversation('cid-t')
-    const last = fresh.messages[1]
-    expect(last.thinking).toBe('推理过程')
-    expect(last.thinkingStatus).toBe('done')
-    expect(last.thinkingDurationMs).toBe(500)
-    expect(last.content).toBe('answer')
-  })
-
   it('beginRetryTurn 移除上一条失败助手消息', () => {
     const chat = useChatStore()
     chat.beginTurn('hi')
@@ -127,57 +113,50 @@ describe('chat store', () => {
     expect(chat.isStreaming).toBe(true)
   })
 
-  it('完成的对话落盘快照，新 store 实例可按会话恢复', () => {
+  it('setMessages 整体替换消息列表（后端历史写入）', () => {
     const chat = useChatStore()
     chat.beginTurn('hi')
-    chat.appendDelta('answer')
-    chat.setConversationId('cid-1')
-    chat.completeAssistant({ total_tokens: 5 })
-
-    const fresh = freshChatStore()
-    fresh.loadConversation('cid-1')
-    expect(fresh.messages).toHaveLength(2)
-    expect(fresh.messages[1].content).toBe('answer')
-    expect(fresh.messages[1].status).toBe('done')
-    expect(fresh.conversationId).toBe('cid-1')
+    chat.setMessages([userMessage('m1'), userMessage('m2')])
+    expect(chat.messages).toHaveLength(2)
+    expect(chat.messages[0].id).toBe('m1')
+    // 历史写入后非流式态
+    expect(chat.isStreaming).toBe(false)
   })
 
-  it('失败 / 流式中断消息不落盘', () => {
+  it('setUsageSummary / setLoadingHistory 状态写入', () => {
     const chat = useChatStore()
-    chat.beginTurn('hi')
-    chat.appendDelta('部分')
-    chat.setConversationId('cid-2')
-    chat.failAssistant('error')
-
-    const fresh = freshChatStore()
-    fresh.loadConversation('cid-2')
-    expect(fresh.messages).toHaveLength(0)
+    chat.setLoadingHistory(true)
+    chat.setUsageSummary({
+      message_count: 5,
+      prompt_tokens: 600,
+      completion_tokens: 400,
+      total_tokens: 1000,
+      cached_read_tokens: 200,
+      cached_write_tokens: 100,
+    })
+    expect(chat.loadingHistory).toBe(true)
+    expect(chat.usageSummary?.message_count).toBe(5)
+    expect(chat.usageSummary?.total_tokens).toBe(1000)
   })
 
-  it('reset 清空会话与消息，未删除快照', () => {
+  it('reset 清空消息 / 会话 / 用量 / 加载态', () => {
     const chat = useChatStore()
     chat.beginTurn('hi')
     chat.setConversationId('cid-1')
+    chat.setLoadingHistory(true)
+    chat.setUsageSummary({
+      message_count: 1,
+      prompt_tokens: 1,
+      completion_tokens: 1,
+      total_tokens: 2,
+      cached_read_tokens: 0,
+      cached_write_tokens: 0,
+    })
     chat.reset()
     expect(chat.messages).toHaveLength(0)
     expect(chat.conversationId).toBe('')
     expect(chat.isStreaming).toBe(false)
-
-    const fresh = freshChatStore()
-    fresh.loadConversation('cid-1')
-    expect(fresh.messages).toHaveLength(0)
-  })
-
-  it('clearSnapshot 删除指定会话快照', () => {
-    const chat = useChatStore()
-    chat.beginTurn('hi')
-    chat.appendDelta('a')
-    chat.setConversationId('cid-3')
-    chat.completeAssistant()
-    chat.clearSnapshot('cid-3')
-
-    const fresh = freshChatStore()
-    fresh.loadConversation('cid-3')
-    expect(fresh.messages).toHaveLength(0)
+    expect(chat.usageSummary).toBeNull()
+    expect(chat.loadingHistory).toBe(false)
   })
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
-import type { ChatMessage } from '@/api/types'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import type { ChatMessage, ConversationUsage } from '@/api/types'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useTheme } from '@/composables/useTheme'
@@ -12,6 +12,10 @@ const props = defineProps<{
   title: string
   /** 桌面侧栏是否已折叠（折叠时头部显示展开钮） */
   sidebarCollapsed: boolean
+  /** 当前会话用量汇总（GET /conversations/{id}/usage；新对话为 null） */
+  usageSummary: ConversationUsage | null
+  /** 历史消息加载中（切换会话时） */
+  historyLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +26,13 @@ const emit = defineEmits<{
 }>()
 
 const theme = useTheme()
+
+/** 头部轻量用量角标：`X 回合 · Y tokens`；无数据不显示 */
+const usageLabel = computed<string>(() => {
+  const usage = props.usageSummary
+  if (usage === null) return ''
+  return `${usage.message_count} 回合 · ${usage.total_tokens.toLocaleString()} tokens`
+})
 
 /** 空态建议卡片（面向多智能体平台） */
 const suggestions: ReadonlyArray<{ title: string; desc: string; text: string }> = [
@@ -98,6 +109,9 @@ onMounted(scrollToBottom)
           <AppIcon name="sparkle" :size="13" />
           多智能体
         </span>
+        <span v-if="usageLabel !== ''" class="window__usage" :title="usageLabel">
+          {{ usageLabel }}
+        </span>
         <el-button
           class="window__theme"
           link
@@ -112,32 +126,38 @@ onMounted(scrollToBottom)
     </header>
 
     <div v-if="messages.length === 0" class="window__empty">
-      <div class="aurora" aria-hidden="true">
-        <span class="aurora__blob aurora__blob--1" />
-        <span class="aurora__blob aurora__blob--2" />
-        <span class="aurora__blob aurora__blob--3" />
+      <div v-if="historyLoading" class="window__loading">
+        <el-icon class="is-loading"><AppIcon name="sparkle" :size="18" /></el-icon>
+        <span>正在加载会话…</span>
       </div>
-      <div class="window__hero">
-        <h1 class="window__welcome">
-          今天，想<span class="window__welcome-accent">探索</span>什么？
-        </h1>
-        <p class="window__hint">输入问题，或从下面的建议开始，与多智能体团队一起协作</p>
-        <div class="window__suggestions">
-          <button
-            v-for="suggestion in suggestions"
-            :key="suggestion.title"
-            type="button"
-            class="window__suggestion"
-            @click="emit('suggestion', suggestion.text)"
-          >
-            <span class="window__suggestion-icon"><AppIcon name="sparkle" :size="15" /></span>
-            <span class="window__suggestion-text">
-              <span class="window__suggestion-title">{{ suggestion.title }}</span>
-              <span class="window__suggestion-desc">{{ suggestion.desc }}</span>
-            </span>
-          </button>
+      <template v-else>
+        <div class="aurora" aria-hidden="true">
+          <span class="aurora__blob aurora__blob--1" />
+          <span class="aurora__blob aurora__blob--2" />
+          <span class="aurora__blob aurora__blob--3" />
         </div>
-      </div>
+        <div class="window__hero">
+          <h1 class="window__welcome">
+            今天，想<span class="window__welcome-accent">探索</span>什么？
+          </h1>
+          <p class="window__hint">输入问题，或从下面的建议开始，与多智能体团队一起协作</p>
+          <div class="window__suggestions">
+            <button
+              v-for="suggestion in suggestions"
+              :key="suggestion.title"
+              type="button"
+              class="window__suggestion"
+              @click="emit('suggestion', suggestion.text)"
+            >
+              <span class="window__suggestion-icon"><AppIcon name="sparkle" :size="15" /></span>
+              <span class="window__suggestion-text">
+                <span class="window__suggestion-title">{{ suggestion.title }}</span>
+                <span class="window__suggestion-desc">{{ suggestion.desc }}</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
 
     <div v-else ref="scrollRef" class="window__scroll">
@@ -160,6 +180,9 @@ onMounted(scrollToBottom)
   flex: 1;
   height: 100%;
   min-width: 0;
+  /* 允许在 flex 列布局中收缩：缺省 min-height:auto 会让 .window 按内容撑高，
+     把下方输入框挤出可视区（进入历史会话后复现），须显式归零 */
+  min-height: 0;
 }
 .window__header {
   display: flex;
@@ -217,6 +240,12 @@ onMounted(scrollToBottom)
 .window__model :deep(svg) {
   color: var(--brand-2);
 }
+.window__usage {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .window__theme {
   color: var(--text-2);
 }
@@ -232,6 +261,16 @@ onMounted(scrollToBottom)
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.window__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.window__loading :deep(svg) {
+  color: var(--brand-2);
 }
 .aurora {
   position: absolute;

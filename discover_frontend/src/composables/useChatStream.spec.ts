@@ -1,6 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { sendChatMessage, sendChatMessageBlocking } from '@/api/chat'
+import { fetchConversations, fetchConversationUsage, fetchMessages } from '@/api/history'
 import type { UsageInfo } from '@/api/types'
-import { consumeChatStream } from './useChatStream'
+import { useChatStore } from '@/stores/chat'
+import { consumeChatStream, useChatStream } from './useChatStream'
+
+vi.mock('@/api/chat', () => ({
+  sendChatMessage: vi.fn(),
+  sendChatMessageBlocking: vi.fn(),
+}))
+
+vi.mock('@/api/history', () => ({
+  fetchConversations: vi.fn(),
+  fetchConversationUsage: vi.fn(),
+  fetchMessages: vi.fn(),
+}))
 
 function frame(event: object): string {
   return `data: ${JSON.stringify(event)}`
@@ -201,5 +216,88 @@ describe('consumeChatStream', () => {
     })
 
     expect(errors).toEqual(['连接中断，已保留已接收内容'])
+  })
+})
+
+// ===================== 编排层：连续对话（conversation_id 贯穿） =====================
+
+/** message_end 收尾帧 SSE 体（含 conversation_id） */
+function messageEndSse(conversationId: string): string {
+  return `data: ${JSON.stringify({
+    event: 'message_end',
+    message_id: 'm1',
+    conversation_id: conversationId,
+    metadata: { usage: { total_tokens: 3 } },
+    created_at: 1,
+  })}\n\n`
+}
+
+/** 构造流式 Response：withHeader=false 时无 X-Conversation-Id（仅帧内回填路径） */
+function sseResponse(conversationId: string, withHeader = true): Response {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(messageEndSse(conversationId)))
+      controller.close()
+    },
+  })
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream',
+      ...(withHeader ? { 'X-Conversation-Id': conversationId } : {}),
+    },
+  })
+}
+
+describe('useChatStream 连续对话（conversation_id 贯穿）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(sendChatMessage).mockReset()
+    vi.mocked(sendChatMessageBlocking).mockReset()
+    vi.mocked(fetchConversations).mockReset()
+    vi.mocked(fetchConversationUsage).mockReset()
+    vi.mocked(fetchMessages).mockReset()
+    vi.mocked(fetchConversations).mockResolvedValue([])
+    vi.mocked(fetchMessages).mockResolvedValue([])
+  })
+
+  it('第二轮请求复用第一轮响应返回的 conversation_id（头 + 帧双路径）', async () => {
+    const chat = useChatStore()
+    const stream = useChatStream()
+
+    // 后端按请求中的会话 ID 回显：空串分配 cid-1，续聊沿用
+    vi.mocked(sendChatMessage).mockImplementation(async (params) =>
+      sseResponse(params.conversationId === '' ? 'cid-1' : params.conversationId),
+    )
+
+    await stream.send('你好')
+    expect(chat.conversationId).toBe('cid-1')
+    expect(sendChatMessage).toHaveBeenNthCalledWith(1, expect.objectContaining({ conversationId: '' }))
+
+    await stream.send('继续说')
+    expect(chat.conversationId).toBe('cid-1')
+    expect(sendChatMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ conversationId: 'cid-1' }),
+    )
+  })
+
+  it('无响应头时，帧内 conversation_id 兜底回填并支持续聊', async () => {
+    const chat = useChatStore()
+    const stream = useChatStream()
+
+    vi.mocked(sendChatMessage).mockImplementation(async (params) =>
+      sseResponse(params.conversationId === '' ? 'cid-2' : params.conversationId, false),
+    )
+
+    await stream.send('你好')
+    expect(chat.conversationId).toBe('cid-2')
+
+    await stream.send('继续说')
+    expect(sendChatMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ conversationId: 'cid-2' }),
+    )
   })
 })

@@ -10,7 +10,9 @@
 
 * 独立前端项目，**模仿 ChatGPT 页面**的单页对话应用（单用户、无鉴权演示）。
 * 后端为 `discover_backend`（多智能体承载平台），对话走 `POST /api/v1/chat-messages`。
-* 前端**只消费已有 API**，不新增后端接口；会话历史由后端持有，前端仅本地持久化会话元数据。
+* 前端**只消费已有 API**，不新增后端接口；会话列表 / 消息历史 / 用量由后端历史接口提供
+  （`GET /conversations`、`GET /conversations/{id}/messages`、`GET /conversations/{id}/usage`），
+  文件走 `GET|POST /files/upload` 与 `GET /files/{id}/preview`；前端不做本地持久化（见第 10 节）。
 
 ## 1. 技术栈（固定，不可替换，不可新增未列出的同类库）
 
@@ -77,8 +79,9 @@
 
 * 任何进入 DOM 的模型输出 HTML（Markdown 渲染结果、事件 `result_summary` 等）**必须经 `DOMPurify.sanitize`**。
 * **禁止** `v-html` 直接绑定未经清洗的内容。
-* 产物下载：`a[download]` 指向 `GET /api/v1/sessions/{sid}/artifacts/{aid}`，由后端
-  `Content-Disposition: attachment` 强制下载，前端禁止将产物内容作为 HTML 内联渲染。
+* 文件预览 / 下载：`a[download]` 指向 `GET /api/v1/files/{file_id}/preview`（旧产物下载接口
+  `/sessions/{sid}/artifacts/{aid}` 已移除）。后端以 `Content-Disposition: inline` 返回，前端加
+  `download` 属性才触发下载；预览仅限图片缩略 / 新窗口打开，禁止将文件内容作为 HTML 内联渲染。
 * 渲染标记语言（如 markdown 内嵌链接）注意 `javascript:` 等协议，由 DOMPurify 默认策略拦截，不得放开 `ALLOWED_URI_REGEXP` 之外的协议。
 
 ## 7. 组件规范
@@ -110,10 +113,12 @@
 
 ## 10. 本地持久化
 
-* 会话列表存 `localStorage`，key 前缀 `disf_`；记录 `{conversation_id, title, created_at, updated_at}`。
-* `title` 取会话首条用户消息（截断）；仅存元数据，**不存消息全文**（后端持有历史）。
-* 当前会话的本地消息快照（可选 v1）：刷新后恢复已完成的对话，流式中断的不落盘。
-* 写入失败（隐私模式 / 配额满）降级为内存态，不阻塞对话，`console.warn` 提示。
+* 会话列表 / 消息历史 / 用量汇总**均由后端历史接口持有**（`GET /conversations`、
+  `GET /conversations/{id}/messages`、`GET /conversations/{id}/usage`，契约见 `.claude/feature/API.md`）；
+  前端不做会话数据本地持久化（会话列表唯一事实源在后端）。
+* 仅 UI 状态（如明暗主题 `disf_theme`）走 localStorage，`disf_` 前缀见 `useTheme`。
+* 回合粒度持久化由后端完成：流式中断未到 `message_end` 不回写后端，刷新后该半条不恢复。
+* 删除会话为前端本地移除（后端无删除接口），刷新后后端会再次带回。
 
 ## 11. 禁止扫描 / 读取路径
 

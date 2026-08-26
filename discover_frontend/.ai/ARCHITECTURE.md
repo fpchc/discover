@@ -20,10 +20,10 @@ discover_frontend/
 │   │   ├── layout/             AppSidebar / ChatWindow（空态 + 光晕 + 主题切换）
 │   │   ├── chat/               ChatInput / MessageBubble（头像 + 渐变气泡 + 思考卡）
 │   │   └── common/             AppIcon（手写内联 SVG，无图标依赖）
-│   ├── composables/            useChatStream / useMarkdown / useNetworkStatus / useTheme
+│   ├── composables/            useChatStream / useMarkdown / useFileUpload / useNetworkStatus / useTheme
 │   ├── stores/                 chat / conversations
-│   ├── api/                    client / chat / types / errors
-│   ├── utils/                  sse / persist / logger
+│   ├── api/                    client / chat / history / files / types / errors
+│   ├── utils/                  sse / history / logger
 │   └── styles/                 theme.css（双主题令牌）/ main.css（全局 + Markdown 正文）
 ├── public/theme-init.js        首屏防主题闪白（CSP 兼容经典脚本，读取 disf_theme）
 └── 根配置                      package.json / vite.config.ts / vitest.config.ts / tsconfig×3 / biome.json
@@ -38,7 +38,8 @@ discover_frontend/
 | 流式编排 | `useChatStream` composable 驱动 store | store 只做状态与变更，HTTP/SSE/取消/超时/retry 全在编排层；turn token 作废旧流防幽灵增量 |
 | Markdown | markdown-it + highlight.js + DOMPurify | 安全红线：渲染结果必须 sanitize |
 | 错误映射 | `api/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
-| 消息快照 | localStorage `disf_snap_<cid>` | 仅已完成消息落盘（中断不落），刷新 / 切换按会话恢复 |
+| 历史数据源 | 后端历史接口（`GET /conversations`、`/conversations/{id}/messages`、`/conversations/{id}/usage`，见 `.claude/feature/API.md`） | 会话列表 / 消息 / 用量以后端为唯一事实源，前端不持久化；新会话乐观入列，回合结束后 `loadList` 校准 |
+| 文件上传 | `useFileUpload` composable + ChatInput 附件（`GET|POST /files/upload`、`GET /files/{id}/preview`） | 上传前本地校验扩展名 / 大小；图片内联缩略、其余新窗口 / `a[download]`；后端暂不把文件挂到消息 |
 | 环境 | VITE_* 收容 `env/`，`envDir: ./env` | 三环境模板、配置驱动、无硬编码 |
 | 视觉体系 | 品牌渐变（靛蓝→紫→淡紫）+ 明暗双主题（`useTheme` 维护 `html.dark`，记忆 `disf_theme`）+ 空态建议卡片 + 光晕动效 | 仿主流 AI 产品观感；EP 变量映射到主题令牌保持一致；`theme-init.js` 首屏防闪白（生产 CSP 放行自托管经典脚本） |
 | 代码块 | highlight.js 统一 `github-dark`，`pre.codeblock` 深色外壳 + `::before` 语言标签 | 明暗主题一致（GitHub/Vercel 风格）；markdown-it highlight 返回以 `<pre` 开头避免二次包裹 |
@@ -54,7 +55,10 @@ discover_frontend/
   前端渲染为可折叠思考分区（ThinkingBlock），由 `VITE_FEATURE_THINKING` 开关控制显示。工具走 `tool_call_*`、
   产物走 `artifact_ready` 仍为后端**内部**事件，不进入对外正文；ToolCallCard / ArtifactLink 保持不在 v1。
 * **HTTP 错误体**：PlatformError `{error:{category,message}}` / FastAPI `{detail}`。
-* **`created_at` 为 epoch 秒**；`message_end.metadata.usage` = `{prompt_tokens, completion_tokens, total_tokens}`。
+* **SSE 帧 `created_at` 为 epoch 秒**；历史接口记录 `created_at` 为 ISO 8601（pydantic 序列化）。
+* **`message_end.metadata.usage` = 5 键**：`{prompt_tokens, completion_tokens, total_tokens, cached_read_tokens, cached_write_tokens}`（API.md §3）。
+* **历史 / 文件接口**（API.md §1 / §2）：会话列表、消息流、用量汇总由后端提供；产物下载接口
+  `/sessions/{sid}/artifacts/{aid}` 已移除，预览 / 下载改走 `GET /api/v1/files/{file_id}/preview`（§3 / §4）。
 
 ## 已知限制
 
@@ -67,8 +71,10 @@ discover_frontend/
 对话全流程可用：发送（Enter/Shift+Enter、长度校验）、流式打字机、思考过程展示（`thinking_*` 帧 →
 可折叠思考分区，多段思考合并、结束后显示耗时）、会话自动创建与续聊
 （`X-Conversation-Id` 优先 / 帧内 id 兜底）、停止生成（保留已收内容）、错误态与可读文案、
-阻塞模式兜底重试、Markdown 渲染（sanitize + 高亮、代码块深色外壳）、复制、用量展示、会话侧边栏
-（新建 / 切换 / 删除 / 本地持久化 + 消息快照）、<768px 响应式抽屉、跨标签 storage 同步。
+阻塞模式兜底重试、Markdown 渲染（sanitize + 高亮、代码块深色外壳）、复制、用量展示（单条 + 会话级汇总角标）、
+会话侧边栏（新建 / 切换 / 删除，列表来自后端 `GET /conversations`）、历史消息加载（`GET /conversations/{id}/messages` 映射渲染）、
+文件上传（本地校验 → 上传 → 预览 / 下载 / 删除）、<768px 响应式抽屉。
+历史数据源切换（2026-08-26）：会话列表与消息快照的 localStorage 持久化已移除，改由后端历史接口提供。
 
 **视觉重构（2026-08-25）**：页面按主流 AI 产品观感重写——明暗双主题 + 一键切换（默认跟随系统、
 记忆偏好、首屏防闪白）、品牌渐变（靛蓝→紫→淡紫，去高饱和粉）、空态欢迎区（大标题 + 4 张建议

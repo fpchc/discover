@@ -11,6 +11,7 @@ SSE 帧与 blocking 响应均为跨边界 DTO（CLAUDE.md §3）：一律经 pyd
 from typing import Annotated
 
 import httpx
+import pytest
 from app.schemas import (
     ChatMessageResponse,
     ErrorStreamEvent,
@@ -56,9 +57,25 @@ query = (
 )
 
 
+async def _local_server_up() -> bool:
+    """探测本地 8000 服务（绕过系统代理，防 HTTP_PROXY 拦截 localhost 致 502）。"""
+    transport = httpx.AsyncHTTPTransport(trust_env=False)
+    try:
+        async with httpx.AsyncClient(transport=transport, timeout=1.0) as probe:
+            await probe.get(f"{_LOCAL_BASE_URL}/")
+        return True
+    except httpx.HTTPError:
+        return False
+
+
 async def test_chat_messages_streaming_auto_creates_conversation() -> None:
     """真接口流式打字机：调用本地服务，正文按帧到达追加输出到控制台。"""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=5.0)) as client:
+    if not await _local_server_up():
+        pytest.skip("本地服务未启动（127.0.0.1:8000）")
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(300.0, connect=5.0),
+        trust_env=False,  # 绕过系统代理直连本地
+    ) as client:
         answers: list[str] = []
         events: set[str] = set()
         saw_done = False
@@ -112,6 +129,8 @@ async def test_chat_messages_blocking_returns_json(
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
+        "cached_read_tokens": 0,
+        "cached_write_tokens": 0,
     }
     assert response.headers["x-conversation-id"] == payload.conversation_id
 

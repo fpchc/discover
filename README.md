@@ -44,7 +44,8 @@ docker compose -f docker-compose.prod.yml down -v   # 连同卷一并清除
 
 - **postgres**（prod / test）：本地数据库，`DB_*` 环境变量指向该服务（compose 内 `postgres` 服务名）；
   dev 不内置 postgres，`DB_*` 由热挂载的 `discover_backend/.env` 提供。
-- **backend**：镜像启动先 `alembic upgrade head` 应用迁移，再起 uvicorn；运行时可写目录
+- **backend**：镜像启动只拉起 uvicorn，不执行数据库迁移——迁移由部署侧手动运行
+  `uv run alembic upgrade head`（`DB_HOST` 可能指向远程库，避免容器自动改库）；运行时可写目录
   `storage/` / `logs/` / `workspaces/` 在 dev 直接落在宿主机 `discover_backend/`，在 prod/test 用命名卷持久化。
 - **frontend**：
   - dev：源码热挂载 + Vite dev server，`/api` 反代到 `http://backend:8000`（免 CORS）；

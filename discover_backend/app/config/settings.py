@@ -155,6 +155,12 @@ class Settings(BaseSettings):
 
     # ---- 会话与产物 ----
     artifact_max_size_bytes: int = 100 * 1024 * 1024
+    # 会话标题：首回合取首条 query 截断的最大长度
+    conversation_name_max_chars: int = 50
+
+    # ---- 文件上传（/files API） ----
+    storage_upload_file_size_limit_mb: int = 20
+    storage_upload_allowed_extensions: str = "png,jpg,jpeg,gif,webp,pdf,docx,xlsx,csv,md,txt"
 
     # ---- 推理与路由 ----
     context_budget_tokens: int = 96000

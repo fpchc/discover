@@ -1,43 +1,40 @@
-"""会话门面（L1）：把工作区、注册表、产物管理编排为会话生命周期操作。
+"""会话门面（L1）：把工作区、注册表、文件服务编排为会话生命周期操作。
 
 接入层（L4）只面向 SessionService，不直接触碰文件系统与数据库内部。
-产物下载返回归属校验后的句柄（存储键 + 记录）；下载路由在同一模块内唯一生成。
+文件注册表多消费方共享、不强绑定会话/智能体（用户决策）；预览路由按
+file_id 生成（/files/{file_id}/preview）。
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from app.config.settings import Settings
 from app.db.engine import Database
-from app.errors.base import SessionError
 from app.extensions.storage.base_storage import BaseStorage
-from app.session.artifacts import ArtifactManager, record_to_dto
+from app.schemas.files import FileResponse
+from app.session.files import FileService
 from app.session.models import ArtifactRecord, SessionRecord
 from app.session.store import SessionStore
-from app.session.workspace import Workspace, WorkspaceManager, _is_within
+from app.session.workspace import Workspace, WorkspaceManager
 
 
-@dataclass(frozen=True)
-class ArtifactDownload:
-    """产物下载句柄：存储键 + 归属记录（纯内部运行句柄）。"""
+def file_preview_path(record: ArtifactRecord) -> str:
+    """文件预览路由（相对路径；接入层按同一模式挂载，不硬编码主机）。
 
-    # pragma: 简化 — 内部运行句柄，不跨边界，无需 pydantic
-    storage_key: str
-    record: ArtifactRecord
-
-
-def artifact_download_path(record: ArtifactRecord) -> str:
-    """产物下载路由（相对路径；接入层按同一模式挂载，不硬编码主机）。"""
-    return f"/sessions/{record.session_id}/artifacts/{record.artifact_id}"
+    注册表全局可预览（凭 file_id，uuid4 hex 不可猜测），无会话归属段。
+    """
+    return f"/files/{record.artifact_id}/preview"
 
 
 class SessionService:
-    """会话生命周期唯一入口：创建 / 查询 / 绑定 / 清理 / 产物。"""
+    """会话生命周期唯一入口：创建 / 查询 / 绑定 / 清理 / 文件。"""
 
     def __init__(self, settings: Settings, db: Database, storage: BaseStorage) -> None:
         self._store = SessionStore()
         self._workspaces = WorkspaceManager(settings)
-        self._artifacts = ArtifactManager(settings, db, storage)
+        self._files = FileService(settings, db, storage)
 
     # ---- 会话生命周期 ----
     async def create_session(self) -> SessionRecord:
@@ -55,30 +52,30 @@ class SessionService:
         """返回（必要时创建）智能体工作区（按 agent 键控，跨会话共享）。"""
         return await self._workspaces.create(agent_id)
 
-    # ---- 产物 ----
+    # ---- 工具产物登记 ----
     async def register_artifact(
         self,
         *,
-        session_id: str,
-        agent_id: str,
         source_path: Path,
         filename: str,
     ) -> ArtifactRecord:
-        """登记会话产物（源文件须位于该智能体工作区内）。"""
-        self._store.get(session_id)
-        workspace = await self._workspaces.create(agent_id)
-        if not _is_within(workspace.root, source_path):
-            raise SessionError(f"产物不在智能体工作区内：{source_path}")
-        return await self._artifacts.register(
-            session_id=session_id,
-            agent_id=agent_id,
-            source_path=source_path,
-            filename=filename,
-        )
+        """登记工具产物（源文件须为普通文件；注册表全局共享）。"""
+        return await self._files.register(source_path=source_path, filename=filename)
 
-    async def resolve_download(self, session_id: str, artifact_id: str) -> ArtifactDownload | None:
-        """按会话归属解析产物下载句柄；归属不符返回 None（不可枚举）。"""
-        row = await self._artifacts.get(session_id, artifact_id)
-        if row is None:
-            return None
-        return ArtifactDownload(storage_key=row.storage_key, record=record_to_dto(row))
+    # ---- 文件上传 / 预览 ----
+    async def upload_file(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        mimetype: str,
+    ) -> FileResponse:
+        """上传文件（用户上传，字节入存储层，used=false 待消费）。"""
+        return await self._files.upload(filename=filename, content=content, mimetype=mimetype)
+
+    async def resolve_preview(self, file_id: str) -> tuple[AsyncIterator[bytes], str, str]:
+        """解析文件预览：字节流 + media_type + 原始文件名；不存在抛 404。
+
+        预览即标记 used（best-effort，供后续清理）。
+        """
+        return await self._files.get_content_stream_by_id(file_id)

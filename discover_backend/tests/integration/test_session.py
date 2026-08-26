@@ -9,7 +9,7 @@ from app.db.engine import Database
 from app.errors.base import SessionError, SessionNotFoundError
 from app.extensions.storage.local_storage import LocalStorage
 from app.session.models import ArtifactRecord, SessionStatus
-from app.session.service import SessionService, artifact_download_path
+from app.session.service import SessionService, file_preview_path
 
 # 测试共享同一数据库引擎（连接池有界；假脚本场景不触 DB，产物场景才连接）。
 _DATABASE = Database(Settings(_env_file=None))
@@ -79,57 +79,40 @@ async def test_workspace_rejects_traversal_ids(tmp_path: Path, bad_id: str) -> N
         await service.workspace_for(bad_id)
 
 
-async def test_register_artifact_and_download_ownership(tmp_path: Path) -> None:
+async def test_register_artifact_and_preview(tmp_path: Path) -> None:
     service, storage = _service(tmp_path)
-    owner = await service.create_session()
-    other = await service.create_session()
     ws = await service.workspace_for("finder")
     src = ws.root / "报告.docx"
     src.write_bytes(b"hello")
-    record = await service.register_artifact(
-        session_id=owner.session_id,
-        agent_id="finder",
-        source_path=src,
-        filename="报告.docx",
-    )
+    record = await service.register_artifact(source_path=src, filename="报告.docx")
     assert record.size_bytes == 5
     assert record.media_type.startswith("application/vnd")
     assert not src.exists()  # 源文件已清入存储层
-    download = await service.resolve_download(owner.session_id, record.artifact_id)
-    assert download is not None
-    assert await storage.exists(download.storage_key)
-    assert await storage.load_once(download.storage_key) == b"hello"
-    # 归属不符 → 视为不存在（不可枚举）
-    assert await service.resolve_download(other.session_id, record.artifact_id) is None
+    row = await service._files.get(record.artifact_id)
+    assert row is not None
+    assert await storage.exists(row.storage_key)
+    assert await storage.load_once(row.storage_key) == b"hello"
+    stream, mime, name = await service.resolve_preview(record.artifact_id)
+    assert mime.startswith("application/vnd")
+    assert name == "报告.docx"
+    assert b"".join([chunk async for chunk in stream]) == b"hello"
 
 
-async def test_register_artifact_rejects_outside_workspace(tmp_path: Path) -> None:
+async def test_register_artifact_rejects_non_regular_source(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
-    record = await service.create_session()
-    outside = tmp_path / "outside.txt"
-    outside.write_text("x", encoding="utf-8")
+    directory = tmp_path / "adir"
+    directory.mkdir()
     with pytest.raises(SessionError):
-        await service.register_artifact(
-            session_id=record.session_id,
-            agent_id="finder",
-            source_path=outside,
-            filename="outside.txt",
-        )
+        await service.register_artifact(source_path=directory, filename="x.txt")
 
 
 async def test_register_artifact_rejects_oversize(tmp_path: Path) -> None:
     service, _ = _service(tmp_path, artifact_max_size_bytes=10)
-    record = await service.create_session()
     ws = await service.workspace_for("finder")
     src = ws.root / "big.txt"
     src.write_text("x" * 20, encoding="utf-8")
     with pytest.raises(SessionError):
-        await service.register_artifact(
-            session_id=record.session_id,
-            agent_id="finder",
-            source_path=src,
-            filename="big.txt",
-        )
+        await service.register_artifact(source_path=src, filename="big.txt")
 
 
 @pytest.mark.parametrize(
@@ -138,39 +121,43 @@ async def test_register_artifact_rejects_oversize(tmp_path: Path) -> None:
 )
 async def test_register_artifact_rejects_bad_filenames(tmp_path: Path, bad: str) -> None:
     service, _ = _service(tmp_path)
-    record = await service.create_session()
     ws = await service.workspace_for("finder")
     src = ws.root / "src.bin"
     src.write_bytes(b"x")
     with pytest.raises(SessionError):
-        await service.register_artifact(
-            session_id=record.session_id,
-            agent_id="finder",
-            source_path=src,
-            filename=bad,
-        )
+        await service.register_artifact(source_path=src, filename=bad)
 
 
-async def test_register_artifact_unknown_session(tmp_path: Path) -> None:
-    service, _ = _service(tmp_path)
-    src = tmp_path / "x.txt"
-    src.write_text("x", encoding="utf-8")
-    with pytest.raises(SessionNotFoundError):
-        await service.register_artifact(
-            session_id="nope",
-            agent_id="finder",
-            source_path=src,
-            filename="x.txt",
-        )
-
-
-def test_artifact_download_path() -> None:
+def test_file_preview_path() -> None:
     record = ArtifactRecord(
         artifact_id="abc123",
-        session_id="sess",
-        agent_id="finder",
         filename="f.txt",
         media_type="text/plain",
         size_bytes=1,
     )
-    assert artifact_download_path(record) == "/sessions/sess/artifacts/abc123"
+    assert file_preview_path(record) == "/files/abc123/preview"
+
+
+async def test_upload_file_creates_record(tmp_path: Path) -> None:
+    service, storage = _service(tmp_path)
+    resp = await service.upload_file(filename="pic.png", content=b"\x89PNG", mimetype="image/png")
+    assert resp.file_id
+    assert resp.name == "pic.png"
+    assert resp.size_bytes == 4
+    row = await service._files.get(resp.file_id)
+    assert row is not None and row.used is False  # 上传未消费，used=false
+    assert await storage.load_once(row.storage_key) == b"\x89PNG"
+
+
+async def test_upload_rejects_disallowed_extension(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path, storage_upload_allowed_extensions="png,jpg")
+    with pytest.raises(SessionError):
+        await service.upload_file(
+            filename="evil.exe", content=b"MZ", mimetype="application/octet-stream"
+        )
+
+
+async def test_upload_rejects_oversize(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path, storage_upload_file_size_limit_mb=0)
+    with pytest.raises(SessionError):
+        await service.upload_file(filename="a.txt", content=b"x", mimetype="text/plain")

@@ -35,6 +35,7 @@ from app.llm.stream_parser import (
     ToolCallsChunk,
     UsageChunk,
 )
+from app.llm.usage import UsageAggregator
 from app.protocol.emitter import QueueEmitter
 from app.protocol.events import (
     AgentEvent,
@@ -57,7 +58,7 @@ from app.runtime.state import GateStatus, GraphState, RouteDecision
 from app.session.models import ArtifactRecord
 from app.session.service import (
     SessionService,
-    artifact_download_path,
+    file_preview_path,
 )
 from app.tools.broker import ToolBroker, ToolCallRequest
 from app.tools.mcp_manager import MCPManager
@@ -159,6 +160,7 @@ class Runtime:
         self._emitter: QueueEmitter | None = None
         self._assembled_skill: str | None = None
         self._last_state = GraphState()
+        self._usage = UsageAggregator()
         self._graph: CompiledStateGraph[GraphState] | None = None
         self._turn_started = 0.0
 
@@ -173,6 +175,7 @@ class Runtime:
         """执行一轮：沿用上轮状态，追加用户消息，跑图并落回 last_state。"""
         self._emitter = emitter
         self._turn_started = time.perf_counter()
+        self._usage = UsageAggregator()  # 回合级 usage 归零（修复多调用覆盖）
         user_message = ChatMessage(role="user", content=user_input)
         base = self._last_state
         state = base.model_copy(
@@ -328,7 +331,6 @@ class Runtime:
         text_parts: list[str] = []
         pending: list[ToolCallRequest] = []
         tool_calls_accum: list[ToolCall] = []
-        usage: dict[str, int] = {}
         thinking_open = False
         start = time.perf_counter()
         async for chunk in self._llm.stream_chat(
@@ -353,11 +355,7 @@ class Runtime:
                     for c in chunk.tool_calls
                 ]
             elif isinstance(chunk, UsageChunk):
-                usage = {
-                    "input": chunk.input_tokens,
-                    "output": chunk.output_tokens,
-                    "total": chunk.total_tokens,
-                }
+                self._usage.add(chunk)
         if thinking_open:
             await self._emit(
                 ThinkingEndedEvent(duration_ms=int((time.perf_counter() - start) * 1000))
@@ -368,7 +366,6 @@ class Runtime:
                 "messages": [
                     ChatMessage(role="system", content="已达轮次上限，请基于现有信息给出结论")
                 ],
-                "usage": usage,
                 # 清空待执行工具调用，保证 agent ⇄ tool_node 循环终止，
                 # 否则上轮遗留的 pending_calls 会让条件边再次进入 tool_node 死循环
                 "pending_calls": [],
@@ -379,7 +376,7 @@ class Runtime:
             content=text or None,
             tool_calls=[_to_chat_tool_call(c) for c in tool_calls_accum] or None,
         )
-        return {"turn": turn, "messages": [assistant], "pending_calls": pending, "usage": usage}
+        return {"turn": turn, "messages": [assistant], "pending_calls": pending}
 
     # ---- 节点：工具执行 ----
     async def tool_node(self, state: GraphState) -> dict[str, object]:
@@ -427,8 +424,6 @@ class Runtime:
                 )
             for rel in result.produced_files:
                 record = await self._sessions.register_artifact(
-                    session_id=state.session_id,
-                    agent_id=state.active_agent or "",
                     source_path=workspace / rel,
                     filename=Path(rel).name,
                 )
@@ -438,7 +433,7 @@ class Runtime:
                         filename=record.filename,
                         media_type=record.media_type,
                         size_bytes=record.size_bytes,
-                        download_url=artifact_download_path(record),
+                        download_url=file_preview_path(record),
                     )
                 )
                 artifacts.append(record)
@@ -473,16 +468,21 @@ class Runtime:
             if isinstance(chunk, TextChunk):
                 self._emit_sync_guard().text_delta(chunk.text)
                 text_parts.append(chunk.text)
+            elif isinstance(chunk, UsageChunk):
+                self._usage.add(chunk)
         assistant = ChatMessage(role="assistant", content="".join(text_parts))
         return {"messages": [assistant]}
 
     # ---- 节点：收尾 ----
     async def finish(self, state: GraphState) -> dict[str, object]:
+        provider = self._resolve_provider(state)
         await self._emit(
             DoneEvent(
                 turns=state.turn,
                 duration_ms=int((time.perf_counter() - self._turn_started) * 1000),
-                usage=state.usage,
+                usage=self._usage.snapshot(),
+                provider=provider.id,
+                model=provider.model,
             )
         )
         return {}
@@ -547,6 +547,8 @@ class Runtime:
         ):
             if isinstance(chunk, ToolCallsChunk):
                 collected = chunk
+            elif isinstance(chunk, UsageChunk):
+                self._usage.add(chunk)
         if collected is None or not collected.tool_calls:
             return None
         call = collected.tool_calls[0]

@@ -50,6 +50,7 @@ export const CONVERSATION_TITLE_MAX: number = parsePositiveInt(
 export const FEATURE_THINKING: boolean = parseBool(import.meta.env.VITE_FEATURE_THINKING, true)
 export const FEATURE_TOOL_CALLS: boolean = parseBool(import.meta.env.VITE_FEATURE_TOOL_CALLS, true)
 export const FEATURE_ARTIFACTS: boolean = parseBool(import.meta.env.VITE_FEATURE_ARTIFACTS, true)
+export const FEATURE_FILES: boolean = parseBool(import.meta.env.VITE_FEATURE_FILES, true)
 
 /** 阻塞兜底开关（流式失败后可切 blocking 模式重试，F6） */
 export const FEATURE_BLOCKING_FALLBACK: boolean = parseBool(

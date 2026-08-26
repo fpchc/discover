@@ -20,7 +20,7 @@
 |------|------|
 | SQLAlchemy 声明式基类 + 命名约定 + UTC 时间 | `app/db/base.py` |
 | 异步引擎 + 会话工厂（NullPool 即开即关） | `app/db/engine.py` |
-| ORM 模型（upload_files / dedup_clues） | `app/db/models.py` |
+| ORM 模型（conversations / messages / upload_files / dedup_clues） | `app/db/models.py` |
 
 ## 存储层（L0，extensions/storage，Blob Engine）
 
@@ -36,6 +36,8 @@
 | 职责 | 路径 |
 |------|------|
 | 去重历史注入/回写（dedup_clues 表，脚本纯计算契约） | `app/history/repo.py` |
+| 对话历史落库/读取（ConversationService，DB 降级内部消化，舱壁） | `app/history/service.py` |
+| 历史记录 DTO（ConversationRecord / MessageRecord / TurnRecord / TurnUsage） | `app/history/models.py` |
 
 ## LLM 层（L1）
 
@@ -54,8 +56,8 @@
 | 会话/产物模型 | `app/session/models.py` |
 | 会话存储 | `app/session/store.py` |
 | workspace 创建/路径校验/防穿越（按 agent 键控） | `app/session/workspace.py` |
-| 产物登记（字节入存储层、元数据入库、下载归属） | `app/session/artifacts.py` |
-| 会话服务门面 | `app/session/service.py` |
+| 文件服务（register 磁盘产物 / upload 字节上传 / 预览 / used 标记；多消费方注册表） | `app/session/files.py` |
+| 会话服务门面（含文件上传/预览） | `app/session/service.py` |
 
 ## 工具层（L1/L2）
 
@@ -120,8 +122,10 @@
 | 全局异常中间件（领域异常 → 统一 JSON，泛型兜底 500 + traceback） | `app/middleware/exceptions.py` |
 | 请求日志中间件（request_id / X-Request-Id / trace_id / 耗时 / client_ip） | `app/middleware/request_logging.py` |
 | 请求/响应模型 | `app/schemas/chat.py` |
+| 文件 API DTO（FileResponse / UploadConfig） | `app/schemas/files.py` |
 | 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/routes_chat.py` |
-| 产物下载（归属校验 + 安全头，controller） | `app/api/routes_artifacts.py` |
+| 文件路由（/files/upload 配置、上传、{id}/preview 流式预览，controller） | `app/api/routes_files.py` |
+| 历史读取（/conversations、/messages、/usage，controller） | `app/api/routes_history.py` |
 
 ## 数据与配置（非代码）
 

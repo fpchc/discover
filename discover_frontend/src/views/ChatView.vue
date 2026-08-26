@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatWindow from '@/components/layout/ChatWindow.vue'
@@ -12,6 +12,10 @@ const chat = useChatStore()
 const conversations = useConversationsStore()
 const chatStream = useChatStream()
 
+onMounted(() => {
+  void chatStream.loadList()
+})
+
 /** 移动端侧边栏抽屉开关（<768px 生效） */
 const sidebarOpen = ref<boolean>(false)
 /** 桌面端侧栏折叠（≥768px 生效） */
@@ -19,7 +23,7 @@ const sidebarCollapsed = ref<boolean>(false)
 
 const activeTitle = computed<string>(() => {
   const current = conversations.items.find((item) => item.conversation_id === chat.conversationId)
-  return current?.title ?? ''
+  return current?.name ?? ''
 })
 
 function handleSend(text: string): void {
@@ -46,13 +50,11 @@ function handleSelect(id: string): void {
     sidebarOpen.value = false
     return
   }
-  chatStream.cancel()
-  chat.loadConversation(id)
+  void chatStream.openConversation(id)
   sidebarOpen.value = false
 }
 
 function handleDelete(id: string): void {
-  chat.clearSnapshot(id)
   conversations.remove(id)
   if (id === chat.conversationId) {
     chat.reset()
@@ -88,6 +90,7 @@ function handleSuggestion(text: string): void {
       <AppSidebar
         :conversations="conversations.items"
         :active-id="chat.conversationId"
+        :loading="conversations.loading"
         @new="handleNew"
         @select="handleSelect"
         @delete="handleDelete"
@@ -102,6 +105,8 @@ function handleSuggestion(text: string): void {
         :is-streaming="chat.isStreaming"
         :title="activeTitle"
         :sidebar-collapsed="sidebarCollapsed"
+        :usage-summary="chat.usageSummary"
+        :history-loading="chat.loadingHistory"
         @toggle-sidebar="handleToggleSidebar"
         @retry="handleRetry"
         @suggestion="handleSuggestion"
@@ -179,6 +184,8 @@ function handleSuggestion(text: string): void {
   min-width: 0;
 }
 .chat-view__input {
+  /* 输入区为固定工具栏，永不参与 flex 收缩 */
+  flex-shrink: 0;
   padding: 4px 24px 14px;
   max-width: 860px;
   width: 100%;

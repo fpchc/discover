@@ -4,11 +4,12 @@
 > 对话接口 `POST /chat-messages`（会话自动创建）；审批机制、`/models`、`/agents`、
 > 会话删除接口已按用户决策移除。脚本执行已去容器化（2026-08-21 用户决策）：
 > 宿主 subprocess 本地直跑，Docker 不再是前置条件。持久化已入 PostgreSQL
-> （SQLAlchemy async + Alembic）；产物走 Blob Engine（字节入存储层、元数据入库）；
-> 去重历史入 `dedup_clues` 表（脚本纯计算）；技能包三级结构
-> `agents/{agent}/{skill}`（无 skills/ 壳与 shared/），工作区 `workspaces/{agent}`
-> 按 agent 键控、跨会话共享。全套测试 132 通过。
-> 随代码演进持续同步；一次性任务报告不写入本文件。
+> （SQLAlchemy async + Alembic）；对话历史落库（conversations 会话头 + messages
+> 回合明细，usage 含缓存 token 聚合）；产物/文件走 Blob Engine（字节入存储层、
+> 元数据入库，upload_files 为多消费方共享注册表）；去重历史入 `dedup_clues` 表
+> （脚本纯计算）；技能包三级结构 `agents/{agent}/{skill}`（无 skills/ 壳与 shared/），
+> 工作区 `workspaces/{agent}` 按 agent 键控、跨会话共享。全套测试 179 通过
+> （2 跳过：本地 8000 真服务用例）。随代码演进持续同步；一次性任务报告不写入本文件。
 
 ## 分层与依赖方向
 
@@ -48,7 +49,9 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 报告数据端归一化 | LLM 产出的报告 JSON 形状不稳定（平铺字符串 / 错位字段名 / list 当 HTML 直出 / cover·appendix 缺字段 / 顶层非对象），在 `render_report` 渲染前经 `normalize_report` 统一转成模板 `eitia-cfr.html` 期望的 V5 结构化形态：字符串→结构化、list/dict→HTML 片段；缺失内容用「P1 数据受限」显式占位，消除 `[{'...'}]` repr 泄漏与大片空白。模板为唯一契约，对已结构化数据幂等，`main()` 与 `render()` 均先归一化。**全文件安全检查**：`_load_json_file` 拦截顶层非对象 JSON（argv/stdin 文件路径）；`normalize_report` 对非 dict 入参返回空对象；保证 cover/appendix 为 dict、appendix.version 缺省 V1；`main()` 输出文件名 `.get()` 兜底——渲染成功后文件名不再因缺字段抛 KeyError 丢弃整份报告（实测修复 2026-08-24）。配套单测 `tests/unit/test_report_normalize.py` | 用户决策 2026-08-24，归一化收敛于渲染前单点，不向模板扩散 if-elif（OCP） |
 | 脚本失败诊断 | 脚本契约错误信息走 stdout JSON，broker 失败时透出 stdout 错误载荷（回落 stderr 尾部、再回落退出码占位），避免模型只见「退出码非 0」 | 实测修复 2026-08-23 |
 | 持久化 | PostgreSQL + SQLAlchemy(async) + Alembic；迁移唯一通道（改模型 → `autogenerate` → `upgrade`）；引擎连接按会话即开即关（NullPool） | 用户决策 2026-08，CLAUDE.md §1 |
-| 文件存储 | Blob Engine：字节入存储层（`BaseStorage` + `LocalStorage`，UUID 扁平 `{uuid}.{ext}`），元数据 100% 入 `upload_files` 表；下载按 session 归属校验后流式回传 | 用户决策 2026-08 |
+| 对话历史落库 | conversations 会话头 + messages 回合明细（query/answer/thinking 一行，usage 聚合到回合）；`ConversationService.record_turn` 回合结束单次落库，**DB 降级内部消化**（舱壁：失败记日志返回 bool，路由无 try/except、无 DB 感知）；首回合会话行由 record_turn 内部 upsert（name=截断首条 query，续聊保留）；读取接口 `GET /conversations`、`/messages`、`/usage` | 用户决策 2026-08，评审采纳 |
+| usage 防腐层 | `StreamParser` 把三种提供方缓存字段统一为平台标准（OpenAI `prompt_tokens_details.cached_tokens` / DeepSeek `prompt_cache_hit_tokens` / Anthropic `cache_read_input_tokens`+`cache_creation_input_tokens` → cached_read/cached_write）；`UsageAggregator` 回合聚合，Runner 各 LLM 调用点只调 `add()`，修复「后一次覆盖前一次」；DoneEvent 事件驱动携带聚合 usage + provider/model，消费方（路由/未来计费）只监听事件 | 评审采纳 |
+| 文件系统 | `upload_files` 多消费方共享注册表（agent 产物 / 用户上传 / 知识库），**删 session/agent 强绑定**，`created_by_role` 宽松消费方标识，`used`/`used_at` 强制标注使用状态供清理；`/files` API：`GET /files/upload`（上传限制配置）、`POST /files/upload`（字节上传，校验大小+扩展名）、`GET /files/{file_id}/preview`（按 record id 流式 inline 预览，预览即标记 used）；`FileService`（register 磁盘产物 / upload 字节上传 / get_content_stream_by_id 预览） | 用户决策 2026-08 |
 | 去重历史 | 结构化状态入 PG `dedup_clues`，脚本改纯计算：平台注入 `history`、add 模式经 `_upsert` 回写（声明 `history_store: true`） | 用户决策 2026-08 |
 | 目录结构 | 技能包三级 `agents/{agent}/{skill}`（去掉 skills/ 壳与 shared/）；工作区 `workspaces/{agent}` 按 agent 键控、跨会话共享，会话删除不再清工作区 | 用户决策 2026-08 |
 | DB 连接地址 | 默认 URL 用 `127.0.0.1` 而非 `localhost`（Windows + Docker 下 localhost 先解析 IPv6 `::1`，回环转发超时 ~21s） | 实测修复 |
@@ -60,6 +63,15 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 配置 | `pydantic-settings` 唯一入口，无硬编码 URL/密钥/阈值；env 白名单透传 | CLAUDE.md §5 |
 | 生命周期 | 类式异步上下文管理器（`__aenter__` / `__aexit__`），禁用 `@asynccontextmanager` | CLAUDE.md §4 |
 | 基础设施扩展化 | 外部能力（logging/db/storage/redis/mcp/llm）以扩展模块统一加载：`app/extensions/ext_*.py` 各暴露 `is_enabled()` / `init_app(app)` / `startup(app)` / `shutdown(app)`，`EXTENSIONS` 有序元组 + `initialize_extensions` 加载器按序启停（logging 最先）；配置开关 `{module}_enabled`（扩展经 `active_settings()` 读当前应用配置）；共享日志内核在 `app/kernel/logging.py`（脱敏/trace/模块级别）；跨切面 HTTP 关注点（全局异常 + 请求日志）落中间件（`app/middleware/`），替代内联 `@app.exception_handler`；领域服务（session/registry/runtime）留容器层经扩展访问器取客户端，容器瘦身为编排器 | 用户决策 2026-08，可插拔 / 统一加载 |
+
+## 技术债（演进方向）
+
+1. **messages 单行拍平**：query/answer/thinking 同行耦合「一问一答」范式；工具调用明细
+   （ToolCalls/结果）不持久化。演进方向：role-based 消息流（message_id, conversation_id,
+   role, content, parent_id）或事件溯源，以支持多 Agent 协作 / 系统主动触达 / 多工具分发。
+2. **SessionStore 纯内存态**：内存是会话流转的唯一事实来源，DB 仅为只读审计 —— 单机 P1
+   妥协。演进方向：对齐 LangGraph Checkpointer / Redis 持久化，消除「双写/脑裂」并支持
+   水平扩展（多 Pod 路由到新节点不丢状态）。
 
 ## 主流程
 

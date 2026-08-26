@@ -1,81 +1,51 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ConversationMeta } from '@/api/types'
-import { getPrefixedKey, loadFromStorage, removeFromStorage, saveToStorage } from '@/utils/persist'
+import type { ConversationRecord } from '@/api/types'
 
-const STORAGE_KEY = 'conversations'
-const STORAGE_EVENT_KEY = getPrefixedKey(STORAGE_KEY)
-
-function sortByUpdatedAt(items: ConversationMeta[]): ConversationMeta[] {
+function sortByUpdatedAt(items: ConversationRecord[]): ConversationRecord[] {
   return [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 }
 
-// 跨标签页 storage 事件仅需注册一次（store 为单例）；标志防测试多 pinia 实例重复挂载
-let storageListenerAttached = false
-
-/** 会话列表 + 本地持久化（仅元数据，消息全文由后端持有） */
+/**
+ * 会话列表状态（后端 GET /conversations 为唯一事实源，见 API.md §1）。
+ * 本层只做纯状态变更，不发起 HTTP；拉取 / 校准由 useChatStream.loadList 编排。
+ * 删除为前端本地移除（后端无删除接口）。
+ */
 export const useConversationsStore = defineStore('conversations', () => {
-  const items = ref<ConversationMeta[]>(
-    sortByUpdatedAt(loadFromStorage<ConversationMeta[]>(STORAGE_KEY, [])),
-  )
+  const items = ref<ConversationRecord[]>([])
+  const loading = ref<boolean>(false)
 
-  function touchNow(): string {
-    return new Date().toISOString()
+  /** 以后端权威列表整体替换（含加载中标志，由编排层驱动） */
+  function setLoading(value: boolean): void {
+    loading.value = value
   }
 
-  function persist(): void {
-    saveToStorage(STORAGE_KEY, items.value)
+  function replaceAll(records: ConversationRecord[]): void {
+    items.value = sortByUpdatedAt(records)
   }
 
-  function reload(): void {
-    items.value = sortByUpdatedAt(loadFromStorage<ConversationMeta[]>(STORAGE_KEY, []))
-  }
-
-  function add(item: ConversationMeta): void {
+  /** 新会话乐观入列（首轮 message_end 后由 loadList 校准后端权威值） */
+  function add(record: ConversationRecord): void {
     items.value = sortByUpdatedAt([
-      item,
-      ...items.value.filter((existing) => existing.conversation_id !== item.conversation_id),
+      record,
+      ...items.value.filter((item) => item.conversation_id !== record.conversation_id),
     ])
-    persist()
   }
 
-  /** 续聊：刷新 updated_at 并置顶 */
+  /** 续聊：本地置顶；真实 updated_at / dialogue_count 由 loadList 校准 */
   function touch(conversationId: string): void {
-    const now = touchNow()
+    const now = new Date().toISOString()
     items.value = sortByUpdatedAt(
       items.value.map((item) =>
         item.conversation_id === conversationId ? { ...item, updated_at: now } : item,
       ),
     )
-    persist()
   }
 
+  /** 删除（仅前端本地移除；后端无删除接口，刷新后会话仍由后端带回） */
   function remove(conversationId: string): void {
     items.value = items.value.filter((item) => item.conversation_id !== conversationId)
-    persist()
   }
 
-  function rename(conversationId: string, title: string): void {
-    const now = touchNow()
-    items.value = sortByUpdatedAt(
-      items.value.map((item) =>
-        item.conversation_id === conversationId ? { ...item, title, updated_at: now } : item,
-      ),
-    )
-    persist()
-  }
-
-  function clear(): void {
-    items.value = []
-    removeFromStorage(STORAGE_KEY)
-  }
-
-  if (typeof window !== 'undefined' && !storageListenerAttached) {
-    storageListenerAttached = true
-    window.addEventListener('storage', (event) => {
-      if (event.key === STORAGE_EVENT_KEY) reload()
-    })
-  }
-
-  return { items, add, touch, remove, rename, clear, reload }
+  return { items, loading, setLoading, replaceAll, add, touch, remove }
 })

@@ -26,6 +26,7 @@ from app.llm.stream_parser import (
     ToolCallsChunk,
     UsageChunk,
 )
+from app.llm.usage import UsageAggregator
 
 
 def _provider() -> LLMProvider:
@@ -85,6 +86,67 @@ def test_parser_usage_chunk() -> None:
     usage = next(chunk for chunk in chunks if isinstance(chunk, UsageChunk))
     assert usage.total_tokens == 15
     assert usage.input_tokens == 10
+    assert usage.cached_read_tokens == 0
+    assert usage.cached_write_tokens == 0
+
+
+def test_parser_usage_cached_tokens_openai_style() -> None:
+    parser = StreamParser(thinking_field="reasoning_content")
+    chunks = parser.feed(
+        '{"usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,'
+        ' "prompt_tokens_details": {"cached_tokens": 80}}}'
+    )
+    usage = next(chunk for chunk in chunks if isinstance(chunk, UsageChunk))
+    assert usage.input_tokens == 100
+    assert usage.cached_read_tokens == 80
+    assert usage.cached_write_tokens == 0
+
+
+def test_parser_usage_cached_tokens_deepseek_style() -> None:
+    parser = StreamParser(thinking_field="reasoning_content")
+    chunks = parser.feed(
+        '{"usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,'
+        ' "prompt_cache_hit_tokens": 60, "prompt_cache_miss_tokens": 40}}'
+    )
+    usage = next(chunk for chunk in chunks if isinstance(chunk, UsageChunk))
+    assert usage.cached_read_tokens == 60
+    assert usage.cached_write_tokens == 0
+
+
+def test_parser_usage_cached_tokens_anthropic_style() -> None:
+    parser = StreamParser(thinking_field="reasoning_content")
+    chunks = parser.feed(
+        '{"usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,'
+        ' "cache_read_input_tokens": 70, "cache_creation_input_tokens": 30}}'
+    )
+    usage = next(chunk for chunk in chunks if isinstance(chunk, UsageChunk))
+    assert usage.cached_read_tokens == 70
+    assert usage.cached_write_tokens == 30
+
+
+def test_usage_aggregator_add_and_snapshot() -> None:
+    aggregator = UsageAggregator()
+    aggregator.add(
+        UsageChunk(input_tokens=100, output_tokens=20, total_tokens=120, cached_read_tokens=80)
+    )
+    aggregator.add(UsageChunk(input_tokens=50, output_tokens=10, total_tokens=60))
+    assert aggregator.snapshot() == {
+        "input": 150,
+        "output": 30,
+        "total": 180,
+        "cached_read": 80,
+        "cached_write": 0,
+    }
+
+
+def test_usage_aggregator_empty_snapshot() -> None:
+    assert UsageAggregator().snapshot() == {
+        "input": 0,
+        "output": 0,
+        "total": 0,
+        "cached_read": 0,
+        "cached_write": 0,
+    }
 
 
 def test_provider_registry_resolve_and_alias() -> None:

@@ -1,3 +1,4 @@
+import { ElMessage } from 'element-plus'
 import { sendChatMessage, sendChatMessageBlocking } from '@/api/chat'
 import {
   type AppError,
@@ -8,7 +9,8 @@ import {
   STREAM_INTERRUPTED,
   TIMEOUT_ERROR,
 } from '@/api/errors'
-import type { SseStreamFrame, UsageInfo } from '@/api/types'
+import { fetchConversations, fetchConversationUsage, fetchMessages } from '@/api/history'
+import type { ConversationRecord, SseStreamFrame, UsageInfo } from '@/api/types'
 import {
   CHAT_QUERY_MAX,
   CONVERSATION_TITLE_MAX,
@@ -17,6 +19,7 @@ import {
 } from '@/config/env'
 import { useChatStore } from '@/stores/chat'
 import { useConversationsStore } from '@/stores/conversations'
+import { mapMessageRecords } from '@/utils/history'
 import { createSseParser, parseFrameJson } from '@/utils/sse'
 
 // ===================== 纯读取层：ReadableStream → 判别联合帧 =====================
@@ -129,18 +132,72 @@ export function useChatStream() {
     return error instanceof DOMException && error.name === 'AbortError'
   }
 
+  /** 新会话乐观入列（name 取首条 query 截断）；回合结束后由 reconcileList 校准后端权威值 */
   function registerConversation(conversationId: string): void {
     const isNew = chat.conversationId === ''
     chat.setConversationId(conversationId)
     if (isNew) {
-      conversations.add({
+      const now = new Date().toISOString()
+      const optimistic: ConversationRecord = {
         conversation_id: conversationId,
-        title: lastQuery.slice(0, CONVERSATION_TITLE_MAX),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+        agent_id: null,
+        model_provider: null,
+        model_id: null,
+        name: lastQuery.slice(0, CONVERSATION_TITLE_MAX),
+        summary: null,
+        status: 'active',
+        dialogue_count: 1,
+        created_at: now,
+        updated_at: now,
+      }
+      conversations.add(optimistic)
     } else {
       conversations.touch(conversationId)
+    }
+  }
+
+  /** 首次加载会话列表（侧栏骨架态）；失败静默保留现状 */
+  async function loadList(): Promise<void> {
+    conversations.setLoading(true)
+    try {
+      conversations.replaceAll(await fetchConversations())
+    } catch {
+      // 首次拉取失败：保持空列表，不阻断对话
+    } finally {
+      conversations.setLoading(false)
+    }
+  }
+
+  /** 静默校准：回合结束后用后端权威数据覆盖乐观入列，不触发侧栏加载态 */
+  async function reconcileList(): Promise<void> {
+    try {
+      conversations.replaceAll(await fetchConversations())
+    } catch {
+      // 校准失败保留乐观值
+    }
+  }
+
+  /** 切换会话：作废旧流 → 拉取后端历史消息（必取）+ 用量汇总（尽力而为）→ 写入 store */
+  async function openConversation(conversationId: string): Promise<void> {
+    cancel()
+    chat.setLoadingHistory(true)
+    chat.setConversationId(conversationId)
+    chat.setMessages([])
+    chat.setUsageSummary(null)
+    try {
+      const records = await fetchMessages(conversationId)
+      chat.setMessages(mapMessageRecords(records))
+    } catch (error) {
+      ElMessage.error(mapHttpError(error).message)
+      return
+    } finally {
+      chat.setLoadingHistory(false)
+    }
+    // 用量汇总失败不阻断历史展示
+    try {
+      chat.setUsageSummary(await fetchConversationUsage(conversationId))
+    } catch {
+      chat.setUsageSummary(null)
     }
   }
 
@@ -223,6 +280,8 @@ export function useChatStream() {
     lastQuery = trimmed
     chat.beginTurn(trimmed)
     await runTurn(trimmed, 'streaming')
+    // 回合结束（message_end / 失败）后用后端权威列表校准乐观入列与 touch
+    void reconcileList()
   }
 
   /** 失败重试：优先走 blocking 兜底（受功能开关控制），不再追加用户消息 */
@@ -247,5 +306,5 @@ export function useChatStream() {
     controller = null
   }
 
-  return { send, retry, stop, cancel }
+  return { send, retry, stop, cancel, loadList, reconcileList, openConversation }
 }

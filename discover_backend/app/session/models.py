@@ -34,11 +34,13 @@ class SessionRecord(BaseModel):
 
 
 class ArtifactRecord(BaseModel):
-    """产物记录（跨边界 DTO）。字节在存储层，元数据据此对外暴露。"""
+    """产物记录（跨边界 DTO）。字节在存储层，元数据据此对外暴露。
+
+    文件注册表多消费方共享、不强绑定会话/智能体（用户决策），故 DTO 不含
+    session_id/agent_id。
+    """
 
     artifact_id: str
-    session_id: str
-    agent_id: str
     filename: str
     media_type: str
     size_bytes: int
