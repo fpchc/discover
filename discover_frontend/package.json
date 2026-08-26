@@ -10,12 +10,12 @@
   },
   "packageManager": "pnpm@11.16.0",
   "scripts": {
-    "dev": "vite",
-    "dev:test": "vite --mode test",
-    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
-    "build:test": "vue-tsc --noEmit -p tsconfig.app.json && vite build --mode test",
+    "dev": "nuxt dev --dotenv ./env/.env.development",
+    "dev:test": "nuxt dev --dotenv ./env/.env.test",
+    "build": "nuxt typecheck && nuxt generate --dotenv ./env/.env.production",
+    "build:test": "nuxt typecheck && nuxt generate --dotenv ./env/.env.test",
     "preview": "vite preview --port 4173",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "nuxt typecheck",
     "lint": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write --unsafe .",
     "format": "biome format --write .",
@@ -25,26 +25,30 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@element-plus/nuxt": "^1.1.5",
+    "@pinia/nuxt": "^1.0.2",
     "axios": "^1.8.4",
     "dompurify": "^3.2.4",
     "element-plus": "^2.9.7",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.0",
-    "pinia": "^3.0.2",
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "nuxt": "^4.5.2",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.13"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.13.10",
-    "@vitejs/plugin-vue": "^5.2.1",
-    "@vitest/coverage-v8": "^3.1.1",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vitest/coverage-v8": "^4.1.11",
     "@vue/test-utils": "^2.4.6",
+    "dayjs": "^1.11.23",
     "happy-dom": "^18.0.1",
+    "lodash-unified": "^1.0.3",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5",
-    "vitest": "^3.1.1",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
     "vue-tsc": "^3.0.1"
   }
 }

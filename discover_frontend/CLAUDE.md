@@ -9,6 +9,8 @@
 ## 0. 项目定位
 
 * 独立前端项目，**模仿 ChatGPT 页面**的单页对话应用（单用户、无鉴权演示）。
+* 框架层采用 **Nuxt 4（SPA 模式 `ssr: false`）**：Nuxt 承担构建 / dev server / 路由 / 模块装配唯一入口，
+  渲染始终发生在浏览器端，部署保持 nginx 静态托管（见第 1、4 节）。
 * 后端为 `discover_backend`（多智能体承载平台），对话走 `POST /api/v1/chat-messages`。
 * 前端**只消费已有 API**，不新增后端接口；会话列表 / 消息历史 / 用量由后端历史接口提供
   （`GET /conversations`、`GET /conversations/{id}/messages`、`GET /conversations/{id}/usage`），
@@ -19,18 +21,24 @@
 | 技术 | 约束 |
 |---|---|
 | **Vue 3.5+** | `<script setup lang="ts">` + Composition API，禁止 Options API 混用 |
-| **TypeScript（strict）** | 见第 2 节；`vue-tsc --noEmit` 作为类型检查基线 |
-| **Vite** | 构建 / dev server / 环境变量（`VITE_*`）唯一入口 |
-| **Element Plus** | 全部 UI 组件来源（按钮、输入框、对话框、空态等）；禁止用私有样式重造既有组件 |
-| **Pinia** | 跨组件共享状态唯一通道（第 3 节） |
-| **Vue Router 4** | 单页路由（预留，当前仅一屏对话） |
-| **Axios** | 普通 HTTP（blocking 模式）唯一出口，统一实例在 `src/api/client.ts` |
+| **TypeScript（strict）** | 见第 2 节；`nuxt typecheck`（基于 vue-tsc）作为类型检查基线 |
+| **Nuxt 4** | 构建 / dev server / 路由 / 模块装配唯一入口（底层基于 Vite，`vite:` 配置经 `nuxt.config.ts` 透传）；**`ssr: false`（SPA 模式）固定**，渲染始终在浏览器端 |
+| **Nitro** | Nuxt 内置服务引擎；本项目 SPA 模式下仅承担 dev 代理（`nitro.devProxy`）与静态产物（`.output/`） |
+| **Element Plus** | 全部 UI 组件来源（按钮、输入框、对话框、空态等）；经 **`@element-plus/nuxt`** 模块装配（SPA 下按需）；禁止用私有样式重造既有组件 |
+| **Pinia** | 跨组件共享状态唯一通道（第 3 节）；经 **`@pinia/nuxt`** 模块装配 |
+| **Nuxt 文件路由** | `app/pages/` 目录约定（底层基于 vue-router）；**禁止手写 `createRouter` / 路由表** |
+| **Axios** | 普通 HTTP（blocking 模式）唯一出口，统一实例在 `app/api/client.ts` |
 | **fetch + ReadableStream** | SSE 唯一实现方式。`POST` 无法用 `EventSource`，禁止 `EventSource` |
 | **markdown-it** | Markdown 渲染唯一实现，配 `highlight.js` 代码高亮 |
 | **DOMPurify** | HTML 清洗唯一实现，渲染红线见第 6 节 |
 | **Biome** | lint / format 单一规则源（Rust 原生，替代 ESLint + Prettier） |
-| **Vitest + @vue/test-utils** | 单测框架（SSE 解析、persist、store 等纯逻辑） |
-| **vue-tsc** | 类型检查基线（第 12 节） |
+| **Vitest + @vue/test-utils** | 单测框架（SSE 解析、历史映射、store 等纯逻辑） |
+
+以下两条为**可判定硬约束，逃逸机制（`// pragma`）不适用**：
+* **`ssr: false` 固定**。切换 SSR 属架构变更，必须先评估第 5 节 SSE / 第 6 节 DOMPurify /
+  `navigator` / `window` 守卫，不得以 `// pragma` 轻率绕过。
+* 未列入本表的同类库（含 Nuxt 模块）一律不得新增；AppIcon 保持手写 SVG，不引入
+  `@element-plus/icons-vue`。
 
 包管理器 `pnpm`；Node `>= 20`（建议 22 LTS）。未列出的同类库（状态管理、HTTP、Markdown、UI、Lint/Format、测试框架）一律不得新增。
 
@@ -38,7 +46,9 @@
 
 * **全量显式标注**：所有函数、props、emits、store state/getter/action 的入参与返回必须显式类型；
   禁止依赖 IDE / 默认值推断。
-* **禁止 `any` 规避检查**：与后端契约对齐的类型集中定义于 `src/api/types.ts`（映射后端 pydantic 模型），
+* **业务代码显式 import**：允许 Nuxt 模块的自动导入（`@element-plus/nuxt` 的组件 / 样式 / 方法），
+  但业务代码一律显式 import，禁止依赖 Nuxt 对 `composables/` / `utils/` 名称的隐式自动导入绑定，避免歧义。
+* **禁止 `any` 规避检查**：与后端契约对齐的类型集中定义于 `app/api/types.ts`（映射后端 pydantic 模型），
   禁止在组件内散落重复定义。仅在与无类型第三方库的边界允许 `any`，需 `// pragma: 简化 — <原因>`。
 * **禁止裸 `as` 断言**绕过检查：仅 `JSON.parse` 等运行时边界允许，且必须带类型收窄说明注释。
 * **`!` 非空断言**：仅当在运行时用上游逻辑保证非空时允许，并注释依据；禁止用来掩盖未初始化缺陷。
@@ -46,21 +56,29 @@
 
 ## 3. 状态与数据流
 
-* 跨组件共享状态一律 Pinia store（`stores/conversations.ts`、`stores/chat.ts`）；禁止组件间互引状态 / 全局事件总线。
+* 跨组件共享状态一律 Pinia store（`app/stores/conversations.ts`、`app/stores/chat.ts`），由
+  `@pinia/nuxt` 模块装配；禁止组件间互引状态 / 全局事件总线。
 * **props 单向数据流**：子组件通过 `defineProps` 收数据、`defineEmits` 上报事件，禁止直接改写 props。
 * 流式对话过程中，消息增量必须写入 Pinia（单一事实源），组件只做渲染，禁止组件持有对话副本。
 * 组件为纯展示时用 `v-model` 由父组件托管；禁止在子组件内 `watch` 后修改共享状态造成环路。
+* **SPA 无 SSR 水合**：Pinia 状态仅存于客户端；禁止引入 `useAsyncData` / `useFetch` 做数据预取，
+  数据拉取保持现有编排（`onMounted` + `useChatStream`）不变。
 
 ## 4. API 与网络
 
-* 所有 HTTP 出口统一走 `src/api/`（`client.ts` 的 axios 实例 + `chat.ts` 的对话封装），禁止组件内裸 `fetch` / 裸 axios。
-* **SSE 必须用 `fetch` + `ReadableStream`**（POST 语义），解析逻辑集中在 `composables/useChatStream.ts`，禁止散落重复实现。
+* 所有 HTTP 出口统一走 `app/api/`（`client.ts` 的 axios 实例 + `chat.ts` 的对话封装），禁止组件内裸 `fetch` / 裸 axios。
+* **SSE 必须用 `fetch` + `ReadableStream`**（POST 语义），解析逻辑集中在 `app/composables/useChatStream.ts`，禁止散落重复实现。
 * 统一错误映射：HTTP 状态码 + SSE `error` 帧 `{status, code, message}` → 前端可读文案，集中一处维护。
 * 请求体契约对齐后端：`{query, response_mode, conversation_id}`；`conversation_id` 空串 = 新建会话，
   续聊必带后端回传的会话 ID；会话 ID 取响应头 `X-Conversation-Id`（优先级）或响应体。
 * **配置驱动**：API base URL、超时、功能开关、`query` 长度上限一律进环境变量（`VITE_*`），
   代码禁止硬编码 URL / 密钥 / 超时 / 阈值；环境文件统一收容于 `env/`（vite `envDir: ./env`），
   仓库只提交无密钥模板（`env/.env.example` 及 `env/.env.development` / `.env.test` / `.env.production`）。
+* **Nuxt 装配**：Nuxt 不采纳 `vite.envDir`（实测未将 `env/` 注入 `import.meta.env`）；`env/` 的环境由各
+  命令 `--dotenv ./env/.env.{development,test,production}` 注入 process.env 后流入 `import.meta.env`
+  （package.json script 已内置，进程内已有同名变量优先）；dev 代理走 `nitro.devProxy`
+  （目标读 `VITE_PROXY_TARGET`），替代 `vite.config.ts` 的 `server.proxy`。
+  仍保持配置驱动、无密钥模板提交；禁止改为在根目录明文提交 `.env`。
 
 ## 5. 流式（SSE）处理
 
@@ -74,6 +92,8 @@
 * 取消 / 停止：`AbortController` 关联 `fetch`，取消后同步复位 Pinia 中的流式状态，禁止残留半条消息态。
 * 断线 / 超时：按 `VITE_SSE_TIMEOUT_MS` 兜底；流中断未到 `message_end` 视为异常，提示重试并保留已收内容。
 * 消息去重 / 排序：以 `message_id` 标识当前消息，`seq`（后端内部事件序号）仅用于开发调试，不参与 UI 排序。
+* **客户端作用域**：SSE 与全部浏览器 API（`fetch` + `ReadableStream`、`AbortController`、`navigator`、
+  `window`）仅允许在客户端作用域执行；当前 `ssr: false` 天然满足，未来切换 SSR 时以此为准绳（见第 1 节硬约束）。
 
 ## 6. 安全红线（不可逃逸）
 
@@ -87,7 +107,8 @@
 ## 7. 组件规范
 
 * 单文件组件 ≤ 300 行，职责单一；主编排组件（如 `ChatView.vue`）超行需 `// pragma: 简化 — 编排页`。
-* 可复用逻辑抽 `composables/`（`useChatStream` / `useMarkdown`），禁止组件内复制粘贴逻辑。
+* 组件统一落位 `app/components/`（`layout/` / `chat/` / `common/`），遵循 Nuxt 4 目录约定。
+* 可复用逻辑抽 `app/composables/`（`useChatStream` / `useMarkdown`），禁止组件内复制粘贴逻辑。
 * UI 一律 Element Plus；自定义视觉只做样式扩展（CSS 变量 / SCSS），不改组件行为。
 * 弹层 / 提示统一 `ElMessage` / `ElMessageBox`，禁止散落 `window.alert`。
 
@@ -123,7 +144,7 @@
 ## 11. 禁止扫描 / 读取路径
 
 * 敏感文件：`.env`、`*.pem`、`*.key`
-* 构建产物：`node_modules/`、`dist/`、`coverage/`、`.vite/`、`__pycache__/`
+* 构建产物：`node_modules/`、`dist/`、`.nuxt/`、`.output/`、`coverage/`、`.vite/`、`__pycache__/`
 * `.gitignore` 忽略的全部内容
 * 历史参考：`.claude/feature/` —— 仅用户明确提及时才读取
 
@@ -131,12 +152,15 @@
 
 改动 TS / Vue 代码后，未全部通过不得交付：
 
-- [ ] `pnpm vue-tsc --noEmit` 通过，无 `any`、无裸 `as` / 无依据 `!`
+- [ ] `pnpm typecheck`（`nuxt typecheck`，基于 vue-tsc）通过，无 `any`、无裸 `as` / 无依据 `!`
 - [ ] `pnpm lint`（Biome，lint + format 单一规则源）通过
 - [ ] 无未经 `DOMPurify` 清洗的 `v-html`（第 6 节）
 - [ ] 无硬编码 URL / 超时 / 阈值 / 密钥（第 4 节）
-- [ ] SSE 解析仅存在于 `useChatStream.ts` 一处
+- [ ] SSE 解析仅存在于 `app/composables/useChatStream.ts` 一处
 - [ ] 跨组件共享状态均走 Pinia，无组件互改状态
+- [ ] 无手写 `createRouter` / 路由表（全部走 `app/pages/` 文件路由，第 1 节）
+- [ ] 未引入技术栈表之外的库 / Nuxt 模块（第 1 节硬约束）
+- [ ] `ssr: false` 未被改动；`.nuxt/`、`.output/` 未提交（第 1、11 节）
 - [ ] 偏离设计原则（第 8 节）处均有 `// pragma: 简化 — <原因>`
 - [ ] 未扫描 / 读取第 11 节禁止路径（`.env`、`node_modules/`、`.claude/feature/` 等）
 - [ ] 代码结构变化时已更新 `.ai/ARCHITECTURE.md` 与 `.ai/MODULE_MAP.md`

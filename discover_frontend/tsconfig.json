@@ -1,4 +1,8 @@
 {
-  "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    // Nuxt 默认开启 noUncheckedIndexedAccess，本项目既有代码基线未启用（spec 依赖下标 undefined 安全），
+    // 与迁移前一致，避免大面积无依据 `!` 断言
+    "noUncheckedIndexedAccess": false
+  }
 }

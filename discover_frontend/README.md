@@ -5,7 +5,7 @@ ChatGPT 风格单页对话应用，消费 `discover_backend` 多智能体平台�
 
 ## 技术栈
 
-Vue 3.5 · TypeScript(strict) · Vite · Element Plus · Pinia · Vue Router 4 · Axios · markdown-it + highlight.js + DOMPurify · **Biome**（lint+format 单一规则源）· Vitest
+Vue 3.5 · TypeScript(strict) · Nuxt 4（SPA，`ssr:false`）· Element Plus · Pinia · Axios · markdown-it + highlight.js + DOMPurify · **Biome**（lint+format 单一规则源）· Vitest
 
 ## 快速开始
 
@@ -15,13 +15,13 @@ Vue 3.5 · TypeScript(strict) · Vite · Element Plus · Pinia · Vue Router 4 �
 
 ## 三环境架构
 
-环境文件统一收容于 `env/`（`vite envDir: ./env`），本地覆盖用 `env/.env.development.local`（gitignore）：
+环境文件统一收容于 `env/`（经 `--dotenv ./env/.env.{development,test,production}` 加载，注入 process.env 流入 `import.meta.env`），本地覆盖用 `env/.env.development.local`（gitignore）：
 
 | 环境 | 启动方式 | 说明 |
 |---|---|---|
-| **dev** | `pnpm dev` / `docker compose up --build` | vite 热更新，`/api` 走 vite 代理（免 CORS） |
+| **dev** | `pnpm dev` / `docker compose up --build` | nuxt dev 热更新，`/api` 走 nitro.devProxy 代理（免 CORS） |
 | **test** | `pnpm dev:test` 或 `docker compose -f docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代（8081） |
-| **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f docker-compose.prod.yml up --build -d` | 构建产物 + nginx 反代（8080） |
+| **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f docker-compose.prod.yml up --build -d` | nuxt generate 静态产物 + nginx 反代（8080） |
 
 > 根级 compose 为全栈编排（postgres + 后端 + 前端）；`docker compose up frontend` 也会连带启动其依赖（后端 / postgres）。
 > 反代目标经 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://backend:8000`，compose 服务名）。
@@ -30,9 +30,9 @@ Vue 3.5 · TypeScript(strict) · Vite · Element Plus · Pinia · Vue Router 4 �
 
 ```bash
 pnpm lint        # Biome：lint + format 单一规则源
-pnpm typecheck   # vue-tsc --noEmit（app + node）
+pnpm typecheck   # nuxt typecheck（vue-tsc，基于 .nuxt/tsconfig.json）
 pnpm test:run    # vitest（happy-dom）
-pnpm build:test  # vue-tsc + vite build --mode test
+pnpm build:test  # nuxt typecheck + nuxt generate --dotenv ./env/.env.test
 ```
 
 CI（`.github/workflows/ci.yml`）将以上四项**并行**执行。
@@ -74,5 +74,6 @@ docker compose -f docker-compose.test.yml up --build -d
 
 - **Biome × Vue**：Biome 暂不识别 `<script setup>` 模板绑定，`biome.json` 对 `.vue` 关闭
   `noUnusedVariables` / `noUnusedImports`（避免误删模板引用变量）；TS 文件仍启用。
-- Element Plus 全量引入（element chunk 约 900 kB），后续可切 `unplugin-vue-components` 按需引入。
+- Element Plus 经 `@element-plus/nuxt` 按需引入；其 Vite `optimizeDeps.include` 需 `dayjs` / `lodash-unified`
+  可解析，故列为 devDependencies 直装。
 - `pnpm-workspace.yaml` 非 Monorepo 声明，是 pnpm 11 的设置文件（`allowBuilds.esbuild`），删除会导致依赖安装报 `ERR_PNPM_IGNORED_BUILDS`。

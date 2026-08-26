@@ -12,7 +12,9 @@
       "**/*.mjs",
       "!!**/node_modules",
       "!!**/dist",
-      "!!**/coverage"
+      "!!**/coverage",
+      "!!**/.nuxt",
+      "!!**/.output"
     ],
     "ignoreUnknown": true
   },
@@ -51,6 +53,16 @@
           "correctness": {
             "noUnusedVariables": "off",
             "noUnusedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["app/pages/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useVueMultiWordComponentNames": "off"
           }
         }
       }

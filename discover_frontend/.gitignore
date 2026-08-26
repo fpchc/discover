@@ -2,6 +2,9 @@
 node_modules/
 dist/
 dist-ssr/
+.nuxt/
+.output/
+.data/
 *.local
 
 # ---- 类型检查 / 静态分析 / 测试 ----

@@ -7,18 +7,18 @@ export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@': fileURLToPath(new URL('./app', import.meta.url)),
     },
   },
   test: {
     environment: 'happy-dom',
-    include: ['src/**/*.spec.ts'],
+    include: ['app/**/*.spec.ts'],
     globals: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.spec.ts', 'src/main.ts'],
+      include: ['app/**/*.ts'],
+      exclude: ['app/**/*.spec.ts'],
     },
   },
 })

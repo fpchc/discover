@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendChatMessage, sendChatMessageBlocking } from '@/api/chat'
 import { fetchConversations, fetchConversationUsage, fetchMessages } from '@/api/history'
 import type { UsageInfo } from '@/api/types'
@@ -273,7 +273,10 @@ describe('useChatStream 连续对话（conversation_id 贯穿）', () => {
 
     await stream.send('你好')
     expect(chat.conversationId).toBe('cid-1')
-    expect(sendChatMessage).toHaveBeenNthCalledWith(1, expect.objectContaining({ conversationId: '' }))
+    expect(sendChatMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ conversationId: '' }),
+    )
 
     await stream.send('继续说')
     expect(chat.conversationId).toBe('cid-1')

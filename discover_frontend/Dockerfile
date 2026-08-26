@@ -18,7 +18,7 @@ FROM base AS build
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-# 构建期环境：VITE_* 在构建时烘焙进产物；ENV 优先级高于 env/ 下的 .env 文件
+# 构建期环境：VITE_* 在构建时烘焙进产物；ENV（process.env）优先级高于 --dotenv 加载的 env/ 文件
 ARG VITE_APP_ENV=production
 ARG VITE_API_BASE_URL=/api/v1
 # 流式请求整体超时（ms）：长思考/工具调用流超过 5 分钟会误判超时，默认放宽到 15 分钟
@@ -26,6 +26,7 @@ ARG VITE_SSE_TIMEOUT_MS=900000
 ENV VITE_APP_ENV=$VITE_APP_ENV \
     VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_SSE_TIMEOUT_MS=$VITE_SSE_TIMEOUT_MS
+# pnpm build = nuxt typecheck + nuxt generate（SPA 静态产物输出到 .output/public）
 RUN pnpm build
 
 # 阶段四 runtime：nginx 静态服务 + 后端反代（SSE 优化）
@@ -34,7 +35,7 @@ FROM nginx:1.27-alpine AS runtime
 # 将 ${BACKEND_PROXY_PASS} 替换为后端地址
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY security-headers.conf /etc/nginx/security-headers.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/.output/public /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
