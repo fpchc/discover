@@ -2,7 +2,7 @@
 
 文件落在 storage_root_dir/{uuid}.{ext}。所有文件 I/O 走 anyio 线程池，
 避免阻塞事件循环（CLAUDE.md §4）。P1 本地存储；S3/OSS/COS 为后续扩展点，
-通过 BaseStorage 同一接口切换。
+经 BaseStorage 同一接口切换。
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import anyio
 
-from app.storage.base import BaseStorage
+from app.extensions.storage.base_storage import BaseStorage
 
 _CHUNK_SIZE = 64 * 1024
 

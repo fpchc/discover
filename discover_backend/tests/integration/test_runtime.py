@@ -7,6 +7,7 @@ import anyio
 from app.config.loader import LLMProvider, LLMRegistry, MCPRegistry, MCPServer
 from app.config.settings import Settings
 from app.db.engine import Database
+from app.extensions.storage.local_storage import LocalStorage
 from app.llm.providers import ProviderRegistry
 from app.llm.stream_parser import (
     FinishChunk,
@@ -30,7 +31,6 @@ from app.runtime.builder import route_from_route_agent
 from app.runtime.runner import Runtime
 from app.runtime.state import GraphState
 from app.session.service import SessionService
-from app.storage.local import LocalStorage
 from app.tools.mcp_client import MCPCallResult, MCPToolInfo
 from app.tools.script_executor import ScriptExecution
 

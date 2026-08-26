@@ -1,7 +1,9 @@
 """Step 7 工具层测试。"""
 
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 import anyio
@@ -592,6 +594,100 @@ async def test_truncation_and_log(tmp_path: Path) -> None:
     assert results[0].content.startswith("x" * 5000)
     assert results[0].log_path is not None
     assert await anyio.to_thread.run_sync(Path(results[0].log_path).is_file)
+
+
+async def test_short_output_no_log_file(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
+    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    results = await broker.execute(
+        [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
+    )
+    assert results[0].ok is True
+    assert results[0].truncated is False
+    assert results[0].log_path is None
+    # 未截断输出不落盘：会话日志目录不应被创建。
+    assert (tmp_path / "logs" / "s1").exists() is False
+
+
+async def test_truncated_log_filename_semantic(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+
+    class _LongClient(_FakeClient):
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPCallResult:
+            return MCPCallResult(content="x" * 12000)
+
+    class _LongManager(_FakeMCPManager):
+        async def acquire(self, server_id: str) -> _FakeClient:
+            self.acquired.append(server_id)
+            return _LongClient(self.tools, server_id)
+
+    broker = _broker(tmp_path, _LongManager(_MCP_TOOLS), _FakeScriptExecutor())
+    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    results = await broker.execute(
+        [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
+    )
+    assert results[0].log_path is not None
+    path = Path(results[0].log_path)
+    assert path.name == "c1_alibaba_search.web_search.txt"
+    # 落盘的是完整原文（未被截断），长度与原始输出一致。
+    full = await anyio.to_thread.run_sync(path.read_text)
+    assert len(full) == 12000
+
+
+async def test_log_retention_sweep(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    logs = tmp_path / "logs"
+    stale = logs / "old_session"
+    fresh = logs / "new_session"
+    stale.mkdir(parents=True)
+    fresh.mkdir(parents=True)
+    (stale / "a.txt").write_text("x", encoding="utf-8")
+    (fresh / "b.txt").write_text("y", encoding="utf-8")
+    old_ts = time.time() - 8 * 86400
+    os.utime(stale, (old_ts, old_ts))
+
+    broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
+    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+
+    assert stale.exists() is False
+    assert fresh.exists() is True
+
+
+async def test_log_per_session_cap(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+
+    class _LongClient(_FakeClient):
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPCallResult:
+            return MCPCallResult(content="x" * 12000)
+
+    class _LongManager(_FakeMCPManager):
+        async def acquire(self, server_id: str) -> _FakeClient:
+            self.acquired.append(server_id)
+            return _LongClient(self.tools, server_id)
+
+    settings = Settings(
+        _env_file=None,
+        tool_log_root_dir=tmp_path / "logs",
+        tool_log_max_files_per_session=1,
+    )
+    broker = ToolBroker(
+        settings=settings,
+        mcp_manager=_LongManager(_MCP_TOOLS),
+        script_executor=_FakeScriptExecutor(),
+    )
+    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    first = await broker.execute(
+        [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
+    )
+    second = await broker.execute(
+        [ToolCallRequest(call_id="c2", tool_name="alibaba_search.web_search", arguments={})],
+    )
+    assert first[0].truncated is True
+    assert first[0].log_path is not None
+    assert second[0].truncated is True
+    assert second[0].log_path is None
+    assert len(list((tmp_path / "logs" / "s1").iterdir())) == 1
 
 
 async def test_error_classification_with_suggestion(tmp_path: Path) -> None:

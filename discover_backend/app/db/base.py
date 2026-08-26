@@ -27,6 +27,5 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=_NAMING_CONVENTION)
 
 
-def utc_now() -> datetime:
-    """时区感知的当前 UTC 时间（数据库时间戳统一入口）。"""
-    return datetime.now(UTC)
+def local_now() -> datetime:
+    return datetime.now()

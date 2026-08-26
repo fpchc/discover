@@ -9,12 +9,15 @@ import os
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 from urllib.parse import quote_plus
 
 from dotenv import dotenv_values
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources import ENV_FILE_SENTINEL, DotenvType
+
+# 默认日志时区（IANA 名称）。
+DEFAULT_LOG_TZ: Final[str] = "Asia/Shanghai"
 
 
 class SideEffectType(StrEnum):
@@ -139,6 +142,8 @@ class Settings(BaseSettings):
     tool_default_timeout_seconds: float = 30.0
     tool_output_truncate_chars: int = 6000
     tool_log_root_dir: Path = Path("logs/tools")
+    tool_log_retention_days: int = 7
+    tool_log_max_files_per_session: int = 200
 
     # ---- 脚本执行（本地直跑） ----
     # pragma: 简化 — 可信内部脚本，P1 一律宿主 subprocess 直跑，不做容器隔离；
@@ -173,11 +178,18 @@ class Settings(BaseSettings):
     # 新增能力，默认关闭：不配 Redis 服务也能正常启动
     redis_enabled: bool = False
 
-    # ---- logging 插件 ----
-    # 日志格式："text" 明文行 / "json" 结构化单行
-    log_format: str = "text"
-    # 日志落盘目录；None 表示仅控制台输出
-    log_dir: Path | None = None
+    # ---- logging 扩展 ----
+    # 输出格式："text" 明文行 / "json" 结构化单行
+    log_output_format: Literal["text", "json"] = "text"
+    # 日志时区（IANA 名称）
+    log_tz: str = DEFAULT_LOG_TZ
+    # 日志目录与文件名（RotatingFileHandler，log_file_max_size 单位为 MB）
+    log_dir: str = "logs"
+    log_file: str = "app.log"
+    log_file_max_size: int = 10
+    log_file_backup_count: int = 5
+    # 模块级日志级别覆盖：{logger 名: 级别}，如 {"app.tools.broker": "DEBUG"}
+    log_module_levels: dict[str, str] = {}
 
     # ---- redis 插件 ----
     redis_url: str = "redis://127.0.0.1:6379/0"

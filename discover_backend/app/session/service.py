@@ -10,11 +10,11 @@ from pathlib import Path
 from app.config.settings import Settings
 from app.db.engine import Database
 from app.errors.base import SessionError
+from app.extensions.storage.base_storage import BaseStorage
 from app.session.artifacts import ArtifactManager, record_to_dto
 from app.session.models import ArtifactRecord, SessionRecord
 from app.session.store import SessionStore
 from app.session.workspace import Workspace, WorkspaceManager, _is_within
-from app.storage.base import BaseStorage
 
 
 @dataclass(frozen=True)

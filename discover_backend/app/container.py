@@ -1,27 +1,31 @@
 """接入层共享服务容器：应用生命周期内单例 + FastAPI 依赖。
 
-插件系统统一加载基础设施（logging/db/storage/redis/mcp/llm），startup
-从插件取类型化客户端并组装领域服务（session/registry/script_executor/runtime）；
-shutdown 逆序关停插件。热重载开关开启时启动后台轮询任务。
+扩展系统统一加载基础设施（logging/db/storage/redis/mcp/llm），startup 从
+扩展访问器取类型化客户端并组装领域服务（session/registry/script_executor/
+runtime）；shutdown 逆序关停扩展。热重载开关开启时启动后台轮询任务。
 """
 
 import asyncio
 from collections.abc import Callable
 
 import anyio
-from fastapi import Request
+from fastapi import FastAPI, Request
 
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
 from app.db.engine import Database
+from app.extensions import shutdown_extensions, startup_extensions
+from app.extensions.ext_database import get_database
+from app.extensions.ext_llm import get_client, get_providers, resolve_api_key
+from app.extensions.ext_mcp import get_manager, get_registry
+from app.extensions.ext_storage import get_storage
+from app.extensions.storage.base_storage import BaseStorage
 from app.llm.client import LLMClient
 from app.llm.providers import ProviderRegistry
-from app.plugins import DBPlugin, LLMPlugin, MCPPlugin, PluginManager, StoragePlugin
 from app.registry.hot_reload import HotReloader
 from app.registry.registry import AgentRegistry
 from app.runtime.runner import Runtime
 from app.session.service import SessionService
-from app.storage.base import BaseStorage
 from app.tools.mcp_manager import MCPManager
 from app.tools.script_executor import ScriptExecutor
 
@@ -31,7 +35,6 @@ class AppServices:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.plugins = PluginManager(settings)
         self.llm: LLMClient | None = None
         self.providers: ProviderRegistry | None = None
         self.mcp_manager: MCPManager | None = None
@@ -45,22 +48,18 @@ class AppServices:
         self._reloader_scope: anyio.CancelScope | None = None
         self._reloader_task: asyncio.Task[None] | None = None
 
-    async def startup(self) -> None:
-        """启动插件、加载注册表、刷新索引、启动热重载后台任务。"""
-        await self.plugins.startup()
-        llm = self.plugins.require(LLMPlugin)
-        mcp = self.plugins.require(MCPPlugin)
-        db = self.plugins.require(DBPlugin)
-        storage = self.plugins.require(StoragePlugin)
-        self.llm = llm.client
-        self.providers = llm.providers
-        self._resolve_api_key = llm.resolve_api_key
-        self.mcp_manager = mcp.manager
-        self.db = db.client
-        self.storage = storage.client
+    async def startup(self, app: FastAPI) -> None:
+        """启动扩展、加载注册表、刷新索引、启动热重载后台任务。"""
+        await startup_extensions(app)
+        self.db = get_database()
+        self.storage = get_storage()
+        self.llm = get_client()
+        self.providers = get_providers()
+        self._resolve_api_key = resolve_api_key
+        self.mcp_manager = get_manager()
         self.script_executor = ScriptExecutor(self.settings)
         self.sessions = SessionService(self.settings, self.db, self.storage)
-        self.registry = AgentRegistry(self.settings, mcp.registry)
+        self.registry = AgentRegistry(self.settings, get_registry())
         await self.registry.refresh()
         reloader = HotReloader(self.registry, self.settings)
         scope = anyio.CancelScope()
@@ -71,8 +70,8 @@ class AppServices:
         # 取消/join 管理生命周期（CLAUDE.md §4 禁令针对「裸建任务不管理生命周期」）。
         self._reloader_task = asyncio.create_task(self._run_reloader(reloader, scope))
 
-    async def shutdown(self) -> None:
-        """释放会话运行时 MCP 引用、停止热重载、逆序关停插件。"""
+    async def shutdown(self, app: FastAPI) -> None:
+        """释放会话运行时 MCP 引用、停止热重载、逆序关停扩展。"""
         for runtime in self.runtimes.values():
             await runtime.close()
         self.runtimes.clear()
@@ -81,7 +80,7 @@ class AppServices:
             await self._reloader_task
             self._reloader_task = None
             self._reloader_scope = None
-        await self.plugins.shutdown()
+        await shutdown_extensions(app)
 
     async def _run_reloader(self, reloader: HotReloader, scope: anyio.CancelScope) -> None:
         """常驻协程宿主：取消作用域进入/退出在同一任务，由 shutdown 跨任务取消。"""

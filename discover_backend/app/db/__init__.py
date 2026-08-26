@@ -4,8 +4,8 @@
 跨边界 DTO 仍用 pydantic，见 session/models.py。
 """
 
-from app.db.base import Base, utc_now
+from app.db.base import Base, local_now
 from app.db.engine import Database
 from app.db.models import DedupClue, UploadFileRecord
 
-__all__ = ["Base", "Database", "DedupClue", "UploadFileRecord", "utc_now"]
+__all__ = ["Base", "Database", "DedupClue", "UploadFileRecord", "local_now"]

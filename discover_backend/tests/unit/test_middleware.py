@@ -73,9 +73,8 @@ async def test_request_logging_with_request_id(
     assert records
     rec = records[-1]
     assert rec.getMessage() == "http_request"
-    fields = getattr(rec, "extra_fields", None)
-    assert isinstance(fields, dict)
-    assert fields["method"] == "GET"
-    assert fields["path"] == "/ok"
-    assert fields["status"] == 200
-    assert fields["request_id"] == response.headers["x-request-id"]
+    # 结构化字段经标准 logging extra 注入为记录属性（日志扩展格式器统一呈现）。
+    assert rec.method == "GET"
+    assert rec.path == "/ok"
+    assert rec.status == 200
+    assert rec.request_id == response.headers["x-request-id"]

@@ -17,8 +17,8 @@ from app.config.settings import Settings
 from app.db.engine import Database
 from app.db.models import UploadFileRecord
 from app.errors.base import SessionError
+from app.extensions.storage.base_storage import BaseStorage
 from app.session.models import ArtifactRecord
-from app.storage.base import BaseStorage
 
 _FALLBACK_MEDIA_TYPE = "application/octet-stream"
 _WINDOWS_FORBIDDEN = set('<>:"/\\|?*')

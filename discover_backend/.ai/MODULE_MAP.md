@@ -22,12 +22,14 @@
 | 异步引擎 + 会话工厂（NullPool 即开即关） | `app/db/engine.py` |
 | ORM 模型（upload_files / dedup_clues） | `app/db/models.py` |
 
-## 存储层（L0，storage，Blob Engine）
+## 存储层（L0，extensions/storage，Blob Engine）
 
 | 职责 | 路径 |
 |------|------|
-| BaseStorage 抽象（save/load_once/load_stream/download/exists/delete/url/scan） | `app/storage/base.py` |
-| LocalStorage（UUID 扁平、anyio 线程池） | `app/storage/local.py` |
+| BaseStorage 抽象（save/load_once/load_stream/download/exists/delete/url/scan） | `app/extensions/storage/base_storage.py` |
+| StorageType 枚举（local / s3 预留） | `app/extensions/storage/storage_type.py` |
+| LocalStorage（UUID 扁平、anyio 线程池） | `app/extensions/storage/local_storage.py` |
+| S3 后端占位（扩展点，未实现） | `app/extensions/storage/aws_s3_storage.py` |
 
 ## 历史仓库（L0，history）
 
@@ -88,28 +90,35 @@
 
 | 职责 | 路径 |
 |------|------|
-| 应用组装（工厂 + 生命周期 + 中间件注册 + 路由挂载） | `app/application.py` |
+| 应用组装（工厂 + 扩展初始化 + 中间件注册 + 路由挂载） | `app/application.py` |
 | 进程入口（uvicorn 启动，host/port 配置驱动） | `app/main.py` |
-| 服务容器 DI：插件统一加载 + 领域组装 | `app/container.py` |
+| 服务容器 DI：扩展访问器 + 领域组装 | `app/container.py` |
 
-## 插件层（L1，plugins，基础设施统一加载）
+## 扩展层（L1，extensions，基础设施统一加载）
 
 | 职责 | 路径 |
 |------|------|
-| 插件基座（Plugin ABC + 注册表 + PluginManager） | `app/plugins/base.py` |
-| logging 插件（text/JSON 日志配置，增量式不 clobber） | `app/plugins/logging_plugin.py` |
-| db 插件（SQLAlchemy 异步引擎 + 会话工厂） | `app/plugins/db_plugin.py` |
-| storage 插件（BaseStorage 后端选择，local / s3 预留） | `app/plugins/storage_plugin.py` |
-| redis 插件（客户端 + Cache/Lock 封装，默认关闭） | `app/plugins/redis_plugin.py` |
-| mcp 插件（MCP 注册表 + MCPManager 引用计数） | `app/plugins/mcp_plugin.py` |
-| llm 插件（LLMClient + ProviderRegistry + 密钥解析） | `app/plugins/llm_plugin.py` |
+| 扩展加载器（EXTENSIONS 有序元组 + initialize/startup/shutdown） | `app/extensions/__init__.py` |
+| 配置访问间接层（active_settings / set_active_settings） | `app/extensions/base.py` |
+| logging 扩展（非阻塞 QueueHandler/QueueListener 结构化日志） | `app/extensions/ext_logging.py` |
+| db 扩展（SQLAlchemy 异步引擎 + 会话工厂） | `app/extensions/ext_database.py` |
+| redis 扩展（客户端 + Cache/Lock 封装，默认关闭） | `app/extensions/ext_redis.py` |
+| storage 扩展（BaseStorage 后端选择，local / s3 预留） | `app/extensions/ext_storage.py` |
+| mcp 扩展（MCP 注册表 + MCPManager 引用计数） | `app/extensions/ext_mcp.py` |
+| llm 扩展（LLMClient + ProviderRegistry + 密钥解析） | `app/extensions/ext_llm.py` |
+
+## 内核层（L0/L1，kernel）
+
+| 职责 | 路径 |
+|------|------|
+| 日志内核（SensitiveDataFilter / TraceFilter / trace 上下文 / 模块级别） | `app/kernel/logging.py` |
 
 ## 中间件层（L4，middleware）
 
 | 职责 | 路径 |
 |------|------|
 | 全局异常中间件（领域异常 → 统一 JSON，泛型兜底 500 + traceback） | `app/middleware/exceptions.py` |
-| 请求日志中间件（request_id / X-Request-Id / 耗时 / client_ip） | `app/middleware/request_logging.py` |
+| 请求日志中间件（request_id / X-Request-Id / trace_id / 耗时 / client_ip） | `app/middleware/request_logging.py` |
 | 请求/响应模型 | `app/schemas/chat.py` |
 | 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/routes_chat.py` |
 | 产物下载（归属校验 + 安全头，controller） | `app/api/routes_artifacts.py` |

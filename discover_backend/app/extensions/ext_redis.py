@@ -1,4 +1,4 @@
-"""redis 插件：客户端连接池 + 轻量 Cache / Lock 封装（默认 redis_enabled=false）。
+"""Redis 扩展：客户端连接池 + 轻量 Cache / Lock 封装（默认 redis_enabled=false）。
 
 startup 惰性不 ping：Redis 宕机不阻塞应用启动，首次使用时才报错（与 Database
 惰性建连一致）。Cache 值按字符串处理，JSON 序列化由调用方负责。
@@ -10,9 +10,9 @@ from typing import Final
 from uuid import uuid4
 
 import redis.asyncio as aioredis
+from fastapi import FastAPI
 
-from app.config.settings import Settings
-from app.plugins.base import Plugin, register
+from app.extensions.base import active_settings
 
 # 释放锁的 Lua 脚本：仅当持有者 token 匹配时删除（防误删他人持有的锁）。
 _UNLOCK_SCRIPT: Final[str] = """
@@ -63,36 +63,50 @@ class Lock:
         await self._unlock(keys=[name], args=[token])
 
 
-@register
-class RedisPlugin(Plugin):
-    """Redis 客户端 + Cache / Lock 封装。"""
+_client: aioredis.Redis | None = None
+_cache: Cache | None = None
+_lock: Lock | None = None
 
-    name = "redis"
 
-    def __init__(self, settings: Settings) -> None:
-        super().__init__(settings)
-        self._client = aioredis.from_url(settings.redis_url)
-        self._cache = Cache(self._client, settings.redis_cache_default_ttl_seconds)
-        self._lock = Lock(self._client, settings.redis_lock_default_timeout_seconds)
+def is_enabled() -> bool:
+    """由配置开关控制（默认关闭）。"""
+    return active_settings().redis_enabled
 
-    @classmethod
-    def is_enabled(cls, settings: Settings) -> bool:
-        return settings.redis_enabled
 
-    @property
-    def client(self) -> aioredis.Redis:
-        return self._client
+def init_app(app: FastAPI | None) -> None:
+    """构造 Redis 客户端与轻量封装。"""
+    global _client, _cache, _lock
+    settings = active_settings()
+    _client = aioredis.from_url(settings.redis_url)
+    _cache = Cache(_client, settings.redis_cache_default_ttl_seconds)
+    _lock = Lock(_client, settings.redis_lock_default_timeout_seconds)
 
-    @property
-    def cache(self) -> Cache:
-        return self._cache
 
-    @property
-    def lock(self) -> Lock:
-        return self._lock
+async def startup(app: FastAPI) -> None:
+    """惰性连接：无操作。"""
 
-    async def startup(self) -> None:
-        """惰性连接：无操作。"""
 
-    async def shutdown(self) -> None:
-        await self._client.aclose()
+async def shutdown(app: FastAPI) -> None:
+    """关闭连接池。"""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
+
+def get_client() -> aioredis.Redis:
+    """取 Redis 客户端；扩展未启用时抛断言。"""
+    assert _client is not None
+    return _client
+
+
+def get_cache() -> Cache:
+    """取缓存封装。"""
+    assert _cache is not None
+    return _cache
+
+
+def get_lock() -> Lock:
+    """取分布式锁封装。"""
+    assert _lock is not None
+    return _lock

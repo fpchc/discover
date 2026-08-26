@@ -17,7 +17,7 @@
 ```
 L5  frontend/                  Chat UI（消费事件判别流）｜P1 未实现
 L4  api/（controller）          FastAPI 路由；应用组装（application.py）、DI（container.py）、DTO（schemas/）随接入层；
-                               中间件（middleware/：全局异常 + 请求日志）挂接入层；插件（plugins/：基础设施统一加载）由容器消费
+                               中间件（middleware/：全局异常 + 请求日志）挂接入层；扩展（extensions/：基础设施统一加载）由容器消费
 L3  runtime/                   LangGraph 图：route_agent → route_skill → assemble
                                 → agent ⇄ tool_node，generic_chat 兜底
 L2  registry/ + tools/broker   装配层：清单解析/索引/热重载/装配；ToolBroker 工具目录与三级暴露
@@ -59,7 +59,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 后台热重载任务 | 单常驻协程 + CancelScope 宿主任务（`asyncio.create_task`），不用跨 startup/shutdown 常驻的 anyio task group：任务组跨任务退出报 cancel-scope 跨任务错误（pytest-asyncio 生成器 fixture setup/teardown 分任务），嵌套任务组宿主取消时死锁 | 实测修复 |
 | 配置 | `pydantic-settings` 唯一入口，无硬编码 URL/密钥/阈值；env 白名单透传 | CLAUDE.md §5 |
 | 生命周期 | 类式异步上下文管理器（`__aenter__` / `__aexit__`），禁用 `@asynccontextmanager` | CLAUDE.md §4 |
-| 基础设施插件化 | 外部能力（logging/db/storage/redis/mcp/llm）以插件统一加载：配置开关 `{plugin}_enabled` + 生命周期（startup/shutdown）+ 类型化客户端（`app/plugins/`，注册顺序即启动顺序，logging 最先）；跨切面 HTTP 关注点（全局异常 + 请求日志）落中间件（`app/middleware/`），替代内联 `@app.exception_handler`；领域服务（session/registry/runtime）留容器层从插件取客户端，容器瘦身为编排器 | 用户决策 2026-08，可插拔 / 统一加载 |
+| 基础设施扩展化 | 外部能力（logging/db/storage/redis/mcp/llm）以扩展模块统一加载：`app/extensions/ext_*.py` 各暴露 `is_enabled()` / `init_app(app)` / `startup(app)` / `shutdown(app)`，`EXTENSIONS` 有序元组 + `initialize_extensions` 加载器按序启停（logging 最先）；配置开关 `{module}_enabled`（扩展经 `active_settings()` 读当前应用配置）；共享日志内核在 `app/kernel/logging.py`（脱敏/trace/模块级别）；跨切面 HTTP 关注点（全局异常 + 请求日志）落中间件（`app/middleware/`），替代内联 `@app.exception_handler`；领域服务（session/registry/runtime）留容器层经扩展访问器取客户端，容器瘦身为编排器 | 用户决策 2026-08，可插拔 / 统一加载 |
 
 ## 主流程
 

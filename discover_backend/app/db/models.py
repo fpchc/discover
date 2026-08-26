@@ -13,7 +13,7 @@ from sqlalchemy import BigInteger, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, utc_now
+from app.db.base import Base, local_now
 
 
 class UploadFileRecord(Base):
@@ -28,7 +28,7 @@ class UploadFileRecord(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     session_id: Mapped[str] = mapped_column(String(32), index=True)
     agent_id: Mapped[str] = mapped_column(String(64), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
 
 
 class DedupClue(Base):
@@ -39,7 +39,7 @@ class DedupClue(Base):
     clue_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     product_keywords: Mapped[list[str]] = mapped_column(JSONB)
     target_industry: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
     report_path: Mapped[str] = mapped_column(Text, default="")
     recommendations: Mapped[list[dict[str, object]]] = mapped_column(JSONB)
     excluded_companies: Mapped[list[dict[str, object]]] = mapped_column(JSONB)

@@ -7,9 +7,9 @@ import pytest_asyncio
 from app.config.settings import Settings
 from app.db.engine import Database
 from app.errors.base import SessionError, SessionNotFoundError
+from app.extensions.storage.local_storage import LocalStorage
 from app.session.models import ArtifactRecord, SessionStatus
 from app.session.service import SessionService, artifact_download_path
-from app.storage.local import LocalStorage
 
 # 测试共享同一数据库引擎（连接池有界；假脚本场景不触 DB，产物场景才连接）。
 _DATABASE = Database(Settings(_env_file=None))
