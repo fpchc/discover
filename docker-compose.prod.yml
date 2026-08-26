@@ -103,7 +103,7 @@ name: discover-prod
 
 services:
 
-  backend:
+  discover_backend:
     build:
       context: ./discover_backend
       dockerfile: Dockerfile
@@ -122,7 +122,7 @@ services:
     expose:
       - "8000"
 
-  frontend:
+  discover_frontend:
     build:
       context: ./discover_frontend
       dockerfile: Dockerfile
@@ -133,12 +133,12 @@ services:
     image: discover-frontend:prod
     restart: unless-stopped
     depends_on:
-      - backend
+      - discover_backend
     ports:
       - "8080:80"
     environment:
       # nginx 反代目标：compose 内 backend 服务（同源 /api，SSE 长连接）
-      - BACKEND_PROXY_PASS=http://backend:8000
+      - BACKEND_PROXY_PASS=http://discover_backend:8000
 
 volumes:
   pgdata:

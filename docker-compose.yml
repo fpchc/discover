@@ -103,7 +103,7 @@ x-common-env: &common-env
 name: discover
 
 services:
-  backend:
+  discover_backend:
     build:
       context: ./discover_backend
       dockerfile: Dockerfile
@@ -118,14 +118,14 @@ services:
     ports:
       - "8000:8000"
 
-  frontend:
+  discover_frontend:
     build:
       context: ./discover_frontend
       dockerfile: Dockerfile
       target: dev
     container_name: discover-frontend
     depends_on:
-      - backend
+      - discover_backend
     ports:
       - "5173:5173"
     volumes:
@@ -134,7 +134,7 @@ services:
       - /app/node_modules
     environment:
       # dev 代理：/api 反代到 compose 内 backend 服务（免 CORS）
-      - VITE_PROXY_TARGET=http://backend:8000
+      - VITE_PROXY_TARGET=http://discover_backend:8000
     stdin_open: true
     tty: true
 
