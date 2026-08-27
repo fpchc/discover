@@ -37,9 +37,11 @@ deploy/
 
 ```bash
 # 1. DNS：research.elecnest.cn 指向部署服务器
-# 2. 服务器上，仓库根目录
+# 2. 服务器上，仓库根目录，先配密钥（模板见 .env.example；LLM_API_KEY 必填）
+cp .env.example .env && $EDITOR .env
+# 3. 一键启动（脚本不含 git 操作；test 不内置 postgres，连远程库，迁移需手动执行）
 bash deploy/scripts/deploy-test.sh
-# 3. 网关：把 deploy/nginx/gateway-research.conf 挂进宿主机 nginx:latest 的 conf.d/
+# 4. 网关：把 deploy/nginx/gateway-research.conf 挂进宿主机 nginx:latest 的 conf.d/
 #    reload 后 http://research.elecnest.cn 生效（HTTPS 后续再配，需证书）
 ```
 

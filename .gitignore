@@ -14,12 +14,12 @@ coverage/
 .coverage
 
 # ---- 环境与密钥 ----
-# 允许提交的模板文件
-!.env.example
-# 忽略所有其他 .env 文件
+# 忽略所有 .env 文件（模板除外）
 .env
 .env.local
 .env.*
+# 允许提交的模板文件（须放在 .env.* 之后，gitignore 后写覆盖）
+!.env.example
 *.pem
 *.key
 

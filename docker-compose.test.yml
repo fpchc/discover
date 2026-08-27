@@ -140,7 +140,6 @@ services:
       - SERVER_NAME=research.elecnest.cn
 
 volumes:
-  pgdata:
   backend-storage:
   backend-logs:
   backend-workspaces:

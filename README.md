@@ -23,8 +23,9 @@ deploy/                      部署物统一管理（网关反代、部署脚本
 
 ## 一键启动（Docker）
 
-三套 compose 均为一键拉起全栈：`backend` + `frontend`；prod / test 另带 `postgres`，
-dev 不内置 postgres（数据库连接走热挂载 `discover_backend/.env` 配置的外部库）。
+三套 compose 均为一键拉起全栈：`backend` + `frontend`。数据库：prod 内置 `postgres`；
+test 与 dev 不内置——test 连远程库（默认 `175.178.45.21`，可用根目录 `.env` 覆盖 `DB_*`），
+dev 走热挂载 `discover_backend/.env` 配置的外部库。
 
 ```bash
 # dev：前端 3000（Nuxt dev 热更新）/ 后端 8000（--reload 热重载）
@@ -45,8 +46,9 @@ docker compose -f docker-compose.prod.yml down -v   # 连同卷一并清除
 
 ### 服务关系
 
-- **postgres**（prod / test）：本地数据库，`DB_*` 环境变量指向该服务（compose 内 `postgres` 服务名）；
-  dev 不内置 postgres，`DB_*` 由热挂载的 `discover_backend/.env` 提供。
+- **postgres**（prod）：本地数据库，`DB_*` 环境变量指向该服务（compose 内 `postgres` 服务名）；
+  test / dev 不内置 postgres——test 默认连远程库 `175.178.45.21`（根目录 `.env` 可覆盖 `DB_*`），
+  dev 的 `DB_*` 由热挂载的 `discover_backend/.env` 提供。
 - **backend**：镜像启动只拉起 uvicorn，不执行数据库迁移——迁移由部署侧手动运行
   `uv run alembic upgrade head`（`DB_HOST` 可能指向远程库，避免容器自动改库）；运行时可写目录
   `storage/` / `logs/` / `workspaces/` 在 dev 直接落在宿主机 `discover_backend/`，在 prod/test 用命名卷持久化。
