@@ -1,6 +1,6 @@
 {
   // ===== discover 多根工作区 =====
-  // 在仓库根目录打开，同时开发后端(FastAPI/Python)与前端(Vue3/Vite)。
+  // 在仓库根目录打开，同时开发后端(FastAPI/Python)与前端(Nuxt4/Vue3)。
   // 每个子文件夹自带的 .vscode/ 配置(settings/tasks/launch/extensions)都会生效。
   // 打开方式:  `code discover.code-workspace`  (或 VSCode -> File -> Open Workspace from File)
   "folders": [
@@ -13,7 +13,7 @@
       "path": "discover_backend"
     },
     {
-      "name": "frontend (Vue / Vite)",
+      "name": "frontend (Nuxt / Vue)",
       "path": "discover_frontend"
     }
   ]

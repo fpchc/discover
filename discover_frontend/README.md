@@ -23,8 +23,8 @@ Vue 3.5 · TypeScript(strict) · Nuxt 4（SPA，`ssr:false`）· Element Plus ·
 | **test** | `pnpm dev:test` 或 `docker compose -f docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代（8081） |
 | **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f docker-compose.prod.yml up --build -d` | nuxt generate 静态产物 + nginx 反代（8080） |
 
-> 根级 compose 为全栈编排（postgres + 后端 + 前端）；`docker compose up frontend` 也会连带启动其依赖（后端 / postgres）。
-> 反代目标经 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://backend:8000`，compose 服务名）。
+> prod / test 的根级 compose 为全栈编排（postgres + 后端 + 前端）；`docker compose up frontend` 也会连带启动其依赖（后端）。dev 编排不内置 postgres。
+> 反代目标经 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://discover_backend:8000`，compose 服务名）。
 
 ## 质量门禁（提交前，见 CLAUDE.md 第 12 节）
 
@@ -48,13 +48,13 @@ discover_frontend/
 ├── nginx.conf              SSE 反代(proxy_buffering off) + hash 长缓存（envsubst 模板）
 ├── security-headers.conf   CSP / X-Frame-Options 等安全头 snippet
 └── .dockerignore
-docker-compose.yml          dev 全栈（postgres + 后端热重载 + 前端热更新）
+docker-compose.yml          dev 编排（后端热重载 + 前端热更新；不内置 postgres）
 docker-compose.prod.yml     prod 全栈（nginx 反代，8080）
 docker-compose.test.yml     test 全栈（nginx 反代，8081）
 ```
 
 ```bash
-# dev（全栈热更新：前端 5173 / 后端 8000 / postgres 5432）
+# dev（全栈热更新：前端 3000 / 后端 8000）
 docker compose up --build
 # prod（8080）
 docker compose -f docker-compose.prod.yml up --build -d

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gate_render_pass 输入约束",
+  "description": "render_pass 门禁校验器入参。report_json 传 render_report 渲染时落盘的报告 JSON 相对路径（如 output/report.json），平台不注入该路径，由模型按渲染产物位置填写。",
+  "type": "object",
+  "required": ["report_json"],
+  "additionalProperties": false,
+  "properties": {
+    "report_json": {
+      "type": "string",
+      "description": "render_report 渲染时落盘到工作区 output/ 的报告 JSON 相对路径（如 output/report.json）"
+    }
+  }
+}

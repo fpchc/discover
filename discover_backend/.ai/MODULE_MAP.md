@@ -145,6 +145,7 @@
 | 内容 | 路径 |
 |------|------|
 | discover 智能体包（三级结构：`agents/discover/client-finder/`） | `agents/discover/` |
+| discover-new 智能体包（客户调研：候选池评分推荐最优一家，输出 300 字信息卡；三级结构：`agents/discover-new/client-finder/`） | `agents/discover-new/` |
 | discover 脚本入参约束（score/render/dedup/gate，模型可见参数 schema） | `agents/discover/client-finder/schemas/` |
 | discover 报告数据契约单一事实来源（required_fields/optional/compat，驱动 render_report.check_completeness） | `agents/discover/client-finder/schemas/report_schema.json` |
 | discover 脚本：评分 / 去重 / 渲染 / 门禁校验（stdin JSON 契约） | `agents/discover/client-finder/scripts/` |

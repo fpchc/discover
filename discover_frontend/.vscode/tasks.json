@@ -2,10 +2,10 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "dev: Vite dev server",
+      "label": "dev: Nuxt dev server",
       "type": "npm",
       "script": "dev",
-      "detail": "pnpm dev — 启动 Vite 开发服务器（http://localhost:5173，/api 代理到后端）",
+      "detail": "pnpm dev — 启动 Nuxt 开发服务器（http://localhost:3000，/api 代理到后端）",
       "isBackground": true,
       "problemMatcher": {
         "owner": "vite",

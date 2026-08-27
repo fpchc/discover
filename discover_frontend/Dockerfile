@@ -10,7 +10,7 @@ FROM base AS dev
 # pnpm-workspace.yaml 为 pnpm 11 设置文件（allowBuilds.esbuild），install 必须包含它
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
-EXPOSE 5173
+EXPOSE 3000
 CMD ["pnpm", "dev", "--host", "0.0.0.0"]
 
 # 阶段三 build：安装依赖并构建静态产物

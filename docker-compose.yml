@@ -127,7 +127,7 @@ services:
     depends_on:
       - discover_backend
     ports:
-      - "5173:5173"
+      - "3000:3000"
     volumes:
       # 源码热挂载 + node_modules 匿名卷
       - ./discover_frontend:/app

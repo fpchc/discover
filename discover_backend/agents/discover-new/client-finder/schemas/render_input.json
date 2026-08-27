@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "render_report 输入约束",
+  "description": "报告渲染脚本入参。data 必填，内联传报告数据本体（AI 无写文件工具，禁止传文件路径）；check_only 为 true 时只校验不渲染。",
+  "type": "object",
+  "required": ["data"],
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "type": "object",
+      "description": "报告数据本体（V5 结构：cover / l0 / clients / appendix），必须内联传入"
+    },
+    "check_only": {
+      "type": "boolean",
+      "description": "true 时仅做结构校验，不渲染 HTML"
+    }
+  }
+}
