@@ -11,7 +11,7 @@
 |---|---|---|---|
 | dev  | `docker-compose.yml` | 前端 3000 / 后端 8000 | — |
 | prod | `docker-compose.prod.yml` | 8080 | 待确认 |
-| test | `docker-compose.test.yml` | 8081 | `research.elecnest.cn`（经宿主机网关反代） |
+| test | `docker-compose.test.yml` | 9003 | `research.elecnest.cn`（经宿主机网关反代） |
 
 ## 目录
 
@@ -19,7 +19,7 @@
 deploy/
 ├── README.md                      # 本文件：部署物索引
 ├── nginx/
-│   └── gateway-research.conf      # 宿主机网关：research.elecnest.cn(80) → 127.0.0.1:8081（HTTP）
+│   └── gateway-research.conf      # 宿主机网关：research.elecnest.cn(80) → 127.0.0.1:9003（HTTP）
 └── scripts/
     └── deploy-test.sh             # 测试环境一键部署（服务器上执行）
 ```

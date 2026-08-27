@@ -20,7 +20,7 @@ Vue 3.5 · TypeScript(strict) · Nuxt 4（SPA，`ssr:false`）· Element Plus ·
 | 环境 | 启动方式 | 说明 |
 |---|---|---|
 | **dev** | `pnpm dev` / `docker compose up --build` | nuxt dev 热更新，`/api` 走 nitro.devProxy 代理（免 CORS） |
-| **test** | `pnpm dev:test` 或 `docker compose -f docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代（8081） |
+| **test** | `pnpm dev:test` 或 `docker compose -f docker-compose.test.yml up --build -d` | test 模式构建 + nginx 反代（9003） |
 | **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f docker-compose.prod.yml up --build -d` | nuxt generate 静态产物 + nginx 反代（8080） |
 
 > prod / test 的根级 compose 为全栈编排（postgres + 后端 + 前端）；`docker compose up frontend` 也会连带启动其依赖（后端）。dev 编排不内置 postgres。
@@ -50,7 +50,7 @@ discover_frontend/
 └── .dockerignore
 docker-compose.yml          dev 编排（后端热重载 + 前端热更新；不内置 postgres）
 docker-compose.prod.yml     prod 全栈（nginx 反代，8080）
-docker-compose.test.yml     test 全栈（nginx 反代，8081）
+docker-compose.test.yml     test 全栈（nginx 反代，9003）
 ```
 
 ```bash
@@ -58,7 +58,7 @@ docker-compose.test.yml     test 全栈（nginx 反代，8081）
 docker compose up --build
 # prod（8080）
 docker compose -f docker-compose.prod.yml up --build -d
-# test（8081）
+# test（9003）
 docker compose -f docker-compose.test.yml up --build -d
 ```
 
