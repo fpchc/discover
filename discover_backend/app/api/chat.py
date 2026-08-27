@@ -22,8 +22,8 @@ from fastapi.responses import StreamingResponse
 
 from app.catalog.models import GENERIC_ASSISTANT_ID, AssistantTarget, TargetType
 from app.container import AppServices, get_services
+from app.conversations.models import MessageStatus, TurnRecord, TurnUsage
 from app.errors.base import ErrorCategory, NotFoundError, PlatformError, http_status_for
-from app.history.models import MessageStatus, TurnRecord, TurnUsage
 from app.protocol.emitter import QueueEmitter
 from app.protocol.events import (
     AgentEvent,

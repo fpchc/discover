@@ -13,8 +13,8 @@ discover_frontend/
 │   ├── app.vue               应用壳层（NuxtPage）
 │   ├── pages/index.vue       对话页（文件路由，底层 vue-router）
 │   ├── components/
-│   │   ├── layout/           AppSidebar / ChatWindow（空态 + 光晕 + 主题切换）
-│   │   ├── chat/             AssistantPicker（助手选择）/ ChatInput / MessageBubble（头像 + 渐变气泡 + 思考卡）
+│   │   ├── layout/           AppSidebar（品牌左栏）/ ChatWindow（消息窗 + 空态欢迎区）
+│   │   ├── chat/             AssistantMenu（输入卡内助手选择器）/ ChatInput（含 AssistantMenu）/ MessageBubble（头像 + 渐变气泡 + 思考卡）
 │   │   └── common/           AppIcon（手写内联 SVG，无图标依赖）
 │   ├── composables/          useChatStream / useMarkdown / useFileUpload / useNetworkStatus / useTheme
 │   ├── stores/               assistants / chat / conversations
@@ -38,11 +38,11 @@ discover_frontend/
 | 流式编排 | `useChatStream` composable 驱动 store | store 只做状态与变更，HTTP/SSE/取消/超时/retry 全在编排层；turn token 作废旧流防幽灵增量 |
 | Markdown | markdown-it + highlight.js + DOMPurify | 安全红线：渲染结果必须 sanitize |
 | 错误映射 | `api/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
-| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 模型不再自动路由（`select_agent`/`select_skill` 已移除）；用户显式选专家 / 通用对话，选择随下一次发送生效（API.md §6） |
+| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 模型不再自动路由（`select_agent`/`select_skill` 已移除）；用户显式选专家 / 通用对话，选择随下一次发送生效（API.md §6）；选择入口统一在输入卡内 `AssistantMenu`（通用 + 专家下拉），侧栏「技能与助手」为新建绑定专家会话的快捷入口 |
 | 历史数据源 | 后端历史接口（`GET /conversations`、`/conversations/{id}/messages`、`/conversations/{id}/usage`，见 `.claude/feature/API.md`） | 会话列表 / 消息 / 用量以后端为唯一事实源，前端不持久化；新会话乐观入列，回合结束后 `loadList` 校准 |
 | 文件上传 | `useFileUpload` composable + ChatInput 附件（`GET|POST /files/upload`、`GET /files/{id}/preview`） | 上传前本地校验扩展名 / 大小；图片内联缩略、其余新窗口 / `a[download]` |
 | 环境 | VITE_* 收容 `env/`，经脚本 `--dotenv ./env/.env.{development,test,production}` 注入 process.env 流入 `import.meta.env` | Nuxt 不采纳 `vite.envDir`；配置驱动、无硬编码、无密钥模板提交 |
-| 视觉体系 | 品牌渐变（靛蓝→紫→淡紫）+ 明暗双主题（`useTheme` 维护 `html.dark`，记忆 `disf_theme`）+ 空态建议卡片 + 光晕动效 | 仿主流 AI 产品观感；EP 变量映射到主题令牌；`theme-init.js` 首屏防闪白 |
+| 视觉体系 | 品牌渐变（靛蓝→紫→淡紫）主强调 + 明暗双主题（`useTheme` 维护 `html.dark`，记忆 `disf_theme`）；主按钮 / 发送钮 / 选中态 / Logo 用品牌渐变，空态光晕氛围；暗色下主操作保持高对比（避免以 `--text-1` 作按钮底色导致暗色反白失焦） | 双栏 Left-Nav + Main-Chat（品牌左栏 + 消息窗）；EP 变量映射到主题令牌；`theme-init.js` 首屏防闪白 |
 | 代码块 | highlight.js 统一 `github-dark`，`pre.codeblock` 深色外壳 + `::before` 语言标签 | 明暗主题一致；markdown-it highlight 返回以 `<pre` 开头避免二次包裹 |
 | 校验 | Biome（Rust，lint+format 单一源）+ `nuxt typecheck`（vue-tsc） | 类型检查基线；lint 排除 `.nuxt/`、`.output/` |
 | 部署 | 多阶段 Docker + nginx（静态托管 `.output/public`，`/api` 反代 SSE 优化） | 同源 SSE 反代、hash 长缓存、CSP；`Dockerfile` / `nginx.conf` 在项目根，全栈 compose 在仓库根 |
@@ -50,7 +50,7 @@ discover_frontend/
 ## 关键契约确认（2026-08-24，与后端对齐）
 
 * **SSE 判别帧共 7 种**：`message` / `message_end` / `ping` / `error` + 思考三帧
-  `thinking_started` / `thinking_delta` / `thinking_ended`（`routes_chat.py:_stream_sse` 映射）。
+  `thinking_started` / `thinking_delta` / `thinking_ended`（`chat.py:_stream_sse` 映射）。
 * **思考已对外**：`thinking_*` 帧携带思考过程（`thinking_delta.content` 增量、`thinking_ended.duration_ms`），
   前端渲染为可折叠思考分区（ThinkingBlock），由 `VITE_FEATURE_THINKING` 开关控制显示。工具走 `tool_call_*`、
   产物走 `artifact_ready` 仍为后端**内部**事件，不进入对外正文；ToolCallCard / ArtifactLink 保持不在 v1。
@@ -84,18 +84,22 @@ discover_frontend/
 文件上传（本地校验 → 上传 → 预览 / 下载 / 删除）、<768px 响应式抽屉。
 历史数据源切换（2026-08-26）：会话列表与消息快照的 localStorage 持久化已移除，改由后端历史接口提供。
 
-**显式助手选择（2026-08-26）**：聊天页头部「助手选择器」拉取 `GET /assistants` 目录，用户显式选专家 / 通用对话，
+**显式助手选择（2026-08-26，入口布局 2026-08-27 调整）**：`GET /assistants` 目录为选择来源，用户显式选专家 / 通用对话，
 每次发消息带 `agent_id`（首轮绑定 / 续聊切换），回合结束按 `metadata.assistant` 回显选择器；
 打开历史会话按 `ConversationRecord.agent_id` 对齐选择器；旧「多智能体自动路由」文案与徽标已移除。
+**首选入口统一为输入卡内 `AssistantMenu`（2026-08-27）**：输入框 footer 左侧胶囊触发钮（当前助手图标 + 名称 + chevron）
+点击展开下拉（通用对话 + 专家，各带一行描述），选中写入 Pinia `selectedId`、随下一次发送绑定 `agent_id`；会话中 / 空态均可切换。
+空态欢迎区回归「品牌标题 + 光晕」，不再放助手胶囊 / 模式开关；侧栏「技能与助手」点选专家 = 新建绑定该助手的工作会话。
+各入口同源（Pinia `selectedId`）；顶部选择器、`EmptyHero`、`AssistantGallery` 均已移除。
 
 **框架迁移（2026-08-26）**：由 Vue 3 + Vite 迁移至 **Nuxt 4（SPA `ssr:false`）**——`app/` 目录结构、
 文件路由、`@pinia/nuxt` + `@element-plus/nuxt` 模块装配、`nuxt typecheck` 类型检查基线、
 `nuxt generate` 静态产物（`.output/public`）nginx 托管；业务代码（components/composables/stores/api/utils）逻辑零改动。
 
-**视觉重构（2026-08-25）**：页面按主流 AI 产品观感重写——明暗双主题 + 一键切换（默认跟随系统、
-记忆偏好、首屏防闪白）、品牌渐变（靛蓝→紫→淡紫，去高饱和粉）、空态欢迎区（大标题 + 4 张建议
-卡片点击即发送 + 光晕漂移动画）、玻璃输入卡 + 圆形渐变发送钮、助手渐变头像 / 用户渐变气泡 /
-思考卡 shimmer、桌面侧栏折叠；功能与数据流零改动。
+**视觉重构（2026-08-25 首版，2026-08-27 品牌回归）**：明暗双主题 + 一键切换（默认跟随系统、记忆偏好、
+首屏防闪白）、桌面侧栏折叠、玻璃输入卡、助手渐变头像 / 用户渐变气泡 / 思考卡 shimmer、空态光晕。
+2026-08-27 按品牌主题回归定稿：主按钮 / 发送钮 / 选中态 / Logo 统一品牌渐变，恢复页面淡光晕 + 空态 aurora；
+选择入口收敛到输入卡内 `AssistantMenu`；顶部选择器与空态建议卡已移除；功能与数据流零改动。
 
 **不在 v1**：ToolCallCard / ArtifactLink 高级事件卡片——工具 / 产物事件仍为后端内部事件，不进入
 对外正文（见关键契约确认）；若后端后续开放，再按 feature 开关接入。

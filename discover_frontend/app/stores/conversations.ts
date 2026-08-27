@@ -1,15 +1,22 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { deleteConversation } from '@/api/history'
 import type { ConversationRecord } from '@/api/types'
 
 function sortByUpdatedAt(items: ConversationRecord[]): ConversationRecord[] {
   return [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 }
 
+/** 后端 404 判断：会话已被删除（axios 错误体 `.response.status`）。 */
+function isNotFound(err: unknown): boolean {
+  const status = (err as { response?: { status?: unknown } } | null)?.response?.status
+  return status === 404
+}
+
 /**
  * 会话列表状态（后端 GET /conversations 为唯一事实源，见 API.md §1）。
  * 本层只做纯状态变更，不发起 HTTP；拉取 / 校准由 useChatStream.loadList 编排。
- * 删除为前端本地移除（后端无删除接口）。
+ * 删除调后端 DELETE /conversations/{id}（204/404 均视为已删除，其余错误保留条目）。
  */
 export const useConversationsStore = defineStore('conversations', () => {
   const items = ref<ConversationRecord[]>([])
@@ -42,9 +49,17 @@ export const useConversationsStore = defineStore('conversations', () => {
     )
   }
 
-  /** 删除（仅前端本地移除；后端无删除接口，刷新后会话仍由后端带回） */
-  function remove(conversationId: string): void {
+  /** 删除：调后端 DELETE；204/404 视为已删除并从本地移除，其余错误返回 false 保留条目 */
+  async function remove(conversationId: string): Promise<boolean> {
+    try {
+      await deleteConversation(conversationId)
+    } catch (err) {
+      if (!isNotFound(err)) {
+        return false
+      }
+    }
     items.value = items.value.filter((item) => item.conversation_id !== conversationId)
+    return true
   }
 
   return { items, loading, setLoading, replaceAll, add, touch, remove }

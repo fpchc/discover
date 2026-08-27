@@ -7,9 +7,10 @@ import uuid
 
 import pytest_asyncio
 from app.config.settings import Settings
+from app.conversations.models import ConversationStatus, MessageStatus, TurnRecord, TurnUsage
+from app.conversations.service import ConversationService
 from app.db.engine import Database
-from app.history.models import MessageStatus, TurnRecord, TurnUsage
-from app.history.service import ConversationService
+from app.db.models import Conversation
 
 _DATABASE = Database(Settings(_env_file=None))
 
@@ -116,3 +117,44 @@ async def test_get_usage_empty_conversation() -> None:
     assert usage["message_count"] == 0
     assert usage["prompt_tokens"] == 0
     assert usage["cached_read_tokens"] == 0
+
+
+async def test_soft_delete_marks_deleted_and_hides_from_list() -> None:
+    service = _service()
+    cid = uuid.uuid4().hex
+    await service.record_turn(
+        cid, TurnRecord(message_id=uuid.uuid4().hex, query="要被删除", answer="内容")
+    )
+    assert await service.soft_delete_conversation(cid) is True
+    # 从列表隐藏
+    convos = await service.list_conversations(limit=50, offset=0)
+    assert not any(c.conversation_id == cid for c in convos)
+    # 行与 messages 保留（token 用量可审计）
+    assert len(await service.get_messages(cid, limit=50, offset=0)) == 1
+    assert (await service.get_usage(cid))["message_count"] == 1
+
+
+async def test_soft_delete_sets_is_delete_and_preserves_business_status() -> None:
+    """软删除置 is_delete=true；业务状态 status 不被覆盖（SRP 拆分后可还原）。"""
+    service = _service()
+    cid = uuid.uuid4().hex
+    await service.record_turn(cid, TurnRecord(message_id=uuid.uuid4().hex, query="状态保留"))
+    assert await service.soft_delete_conversation(cid) is True
+    async with _DATABASE.session_factory() as session:
+        row = await session.get(Conversation, cid)
+        assert row is not None
+        assert row.is_delete is True
+        assert row.status == ConversationStatus.ACTIVE.value  # 业务状态未随删除覆盖
+
+
+async def test_soft_delete_already_deleted_returns_false() -> None:
+    service = _service()
+    cid = uuid.uuid4().hex
+    await service.record_turn(cid, TurnRecord(message_id=uuid.uuid4().hex, query="首次"))
+    assert await service.soft_delete_conversation(cid) is True
+    assert await service.soft_delete_conversation(cid) is False
+
+
+async def test_soft_delete_missing_returns_false() -> None:
+    service = _service()
+    assert await service.soft_delete_conversation(uuid.uuid4().hex) is False

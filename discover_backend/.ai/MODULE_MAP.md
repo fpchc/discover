@@ -31,13 +31,18 @@
 | LocalStorage（UUID 扁平、anyio 线程池） | `app/extensions/storage/local_storage.py` |
 | S3 后端占位（扩展点，未实现） | `app/extensions/storage/aws_s3_storage.py` |
 
-## 历史仓库（L0，history）
+## 会话历史（L0，conversations）
 
 | 职责 | 路径 |
 |------|------|
-| 去重历史注入/回写（dedup_clues 表，脚本纯计算契约） | `app/history/repo.py` |
-| 对话历史落库/读取（ConversationService，DB 降级内部消化，舱壁） | `app/history/service.py` |
-| 历史记录 DTO（ConversationRecord / MessageRecord / TurnRecord / TurnUsage） | `app/history/models.py` |
+| 对话历史落库/读取/删除（ConversationService，DB 降级内部消化，舱壁） | `app/conversations/service.py` |
+| 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord / TurnUsage） | `app/conversations/models.py` |
+
+## 去重历史（L0，dedup）
+
+| 职责 | 路径 |
+|------|------|
+| 去重历史注入/回写（dedup_clues 表，脚本纯计算契约，DedupStore） | `app/dedup/repo.py` |
 
 ## LLM 层（L1）
 
@@ -85,7 +90,7 @@
 | 职责 | 路径 |
 |------|------|
 | AssistantTarget / TargetType / SelectionSource（选择域模型，保留字 generic） | `app/catalog/models.py` |
-| AssistantCatalog（专家 + 内置通用聚合，capabilities 取技能） | `app/catalog/assistant_catalog.py` |
+| AssistantCatalog（专家目录，capabilities 取技能；通用对话为未绑定默认） | `app/catalog/assistant_catalog.py` |
 
 ## 图运行时层（L3，runtime）
 
@@ -104,10 +109,10 @@
 | 应用组装（工厂 + 扩展初始化 + 中间件注册 + 路由挂载） | `app/application.py` |
 | 进程入口（uvicorn 启动，host/port 配置驱动） | `app/main.py` |
 | 服务容器 DI：扩展访问器 + 领域组装 + assistant_catalog() | `app/container.py` |
-| 对话接口（POST /chat-messages，SSE/blocking，agent_id 显式绑定） | `app/api/routes_chat.py` |
-| 助手目录接口（GET /assistants，只读聚合） | `app/api/routes_assistants.py` |
-| 文件接口（上传/预览） | `app/api/routes_files.py` |
-| 历史接口（conversations/messages/usage） | `app/api/routes_history.py` |
+| 对话接口（POST /chat-messages，SSE/blocking，agent_id 显式绑定） | `app/api/chat.py` |
+| 助手目录接口（GET /assistants，只读聚合） | `app/api/assistants.py` |
+| 文件接口（上传/预览） | `app/api/files.py` |
+| 会话接口（/conversations 列表/消息/用量/软删除） | `app/api/conversations.py` |
 
 ## 扩展层（L1，extensions，基础设施统一加载）
 
@@ -136,9 +141,9 @@
 | 请求日志中间件（request_id / X-Request-Id / trace_id / 耗时 / client_ip） | `app/middleware/request_logging.py` |
 | 请求/响应模型 | `app/schemas/chat.py` |
 | 文件 API DTO（FileResponse / UploadConfig） | `app/schemas/files.py` |
-| 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/routes_chat.py` |
-| 文件路由（/files/upload 配置、上传、{id}/preview 流式预览，controller） | `app/api/routes_files.py` |
-| 历史读取（/conversations、/messages、/usage，controller） | `app/api/routes_history.py` |
+| 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/chat.py` |
+| 文件路由（/files/upload 配置、上传、{id}/preview 流式预览，controller） | `app/api/files.py` |
+| 会话接口（/conversations 列表/消息/用量/软删除，controller） | `app/api/conversations.py` |
 
 ## 数据与配置（非代码）
 

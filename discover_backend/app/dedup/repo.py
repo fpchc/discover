@@ -1,4 +1,4 @@
-"""推荐历史持久化（结构化状态入 PG，脚本纯计算）。
+"""去重历史持久化（结构化状态入 PG，脚本纯计算）。
 
 去重历史此前由脚本读写工作区文件；现入 dedup_clues 表。脚本变为无状态：
 平台注入 history 文档、脚本返回结果，add 模式经结果 `_upsert` 由平台回写。
@@ -61,8 +61,8 @@ def _clue_to_dict(row: DedupClue) -> dict[str, object]:
     }
 
 
-class HistoryStore:
-    """推荐历史仓库：注入脚本的 history 文档、持久化 add 结果。"""
+class DedupStore:
+    """去重历史仓库：注入脚本的 history 文档、持久化 add 结果。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db

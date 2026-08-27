@@ -23,8 +23,8 @@ L3  runtime/                   LangGraph 图：route_agent → route_skill → a
                                 → agent ⇄ tool_node，generic_chat 兜底
 L2  registry/ + tools/broker   装配层：清单解析/索引/热重载/装配；ToolBroker 工具目录与三级暴露
 L1  llm/ + tools/(mcp|script)  LLM 客户端、MCP（Streamable HTTP）、宿主 subprocess 脚本执行器（本地直跑）
-L0  db/ + storage/ + history/ + session/ + config/ + errors/ + protocol/
-                               SQLAlchemy/ORM（PostgreSQL）、Blob 存储、去重历史仓库、
+L0  db/ + storage/ + conversations/ + dedup/ + session/ + config/ + errors/ + protocol/
+                               SQLAlchemy/ORM（PostgreSQL）、Blob 存储、会话历史 + 去重历史仓库、
                                会话工作区与产物、配置载体、领域异常、事件发射器
 ```
 
@@ -38,7 +38,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 包根名 | `app`（仓库根单层包，去除 src/ 包裹与 platform_engine 层；api/ 仅路由） | 用户决策 2026-08 |
 | 业务流程载体 | 图只提供执行环境，流程知识写在智能体/技能清单正文 | graph-runtime-spec §1 |
 | 助手选择 | 用户**显式选择**（`GET /assistants` 目录 + `chat-messages.agent_id`），非 LLM 路由；会话绑定 `assistant_target(type+id)`；图节点 `resolve_assistant`（读会话绑定）→ `resolve_skill`（SkillResolver 确定性策略链）；未绑定走通用对话 | 用户决策 2026-08，graph-runtime-spec §4 |
-| 助手类型体系 | 目录聚合专家（`agents/` 包，`kind: agent` + `type: expert`，类 Claude Code）+ 内置通用对话（`generic` 保留字）；简单技能属未来 `kind: skill`，**非 agent 类型** | 用户决策 2026-08 |
+| 助手类型体系 | 目录聚合专家（`agents/` 包，`kind: agent` + `type: expert`，类 Claude Code）；通用对话（`generic` 保留字）为未绑定默认，**不列入目录**；简单技能属未来 `kind: skill`，**非 agent 类型** | 用户决策 2026-08 |
 | 技能耦合面 | 唯一耦合面是 `AGENT.md` / `SKILL.md` frontmatter | agent-package-spec |
 | 工具命名空间 | MCP = `server.tool`；脚本 = `agent.skill.script.name`；元工具无前缀 | tool-broker-spec |
 | 工具暴露 | 三级：Tier0 元工具 / Tier1 核心 / Tier2 懒加载 | tool-broker-spec |
@@ -50,7 +50,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 报告数据端归一化 | LLM 产出的报告 JSON 形状不稳定（平铺字符串 / 错位字段名 / list 当 HTML 直出 / cover·appendix 缺字段 / 顶层非对象），在 `render_report` 渲染前经 `normalize_report` 统一转成模板 `eitia-cfr.html` 期望的 V5 结构化形态：字符串→结构化、list/dict→HTML 片段；缺失内容用「P1 数据受限」显式占位，消除 `[{'...'}]` repr 泄漏与大片空白。模板为唯一契约，对已结构化数据幂等，`main()` 与 `render()` 均先归一化。**全文件安全检查**：`_load_json_file` 拦截顶层非对象 JSON（argv/stdin 文件路径）；`normalize_report` 对非 dict 入参返回空对象；保证 cover/appendix 为 dict、appendix.version 缺省 V1；`main()` 输出文件名 `.get()` 兜底——渲染成功后文件名不再因缺字段抛 KeyError 丢弃整份报告（实测修复 2026-08-24）。配套单测 `tests/unit/test_report_normalize.py` | 用户决策 2026-08-24，归一化收敛于渲染前单点，不向模板扩散 if-elif（OCP） |
 | 脚本失败诊断 | 脚本契约错误信息走 stdout JSON，broker 失败时透出 stdout 错误载荷（回落 stderr 尾部、再回落退出码占位），避免模型只见「退出码非 0」 | 实测修复 2026-08-23 |
 | 持久化 | PostgreSQL + SQLAlchemy(async) + Alembic；迁移唯一通道（改模型 → `autogenerate` → `upgrade`）；引擎连接按会话即开即关（NullPool） | 用户决策 2026-08，CLAUDE.md §1 |
-| 对话历史落库 | conversations 会话头 + messages 回合明细（query/answer/thinking 一行，usage 聚合到回合）；`ConversationService.record_turn` 回合结束单次落库，**DB 降级内部消化**（舱壁：失败记日志返回 bool，路由无 try/except、无 DB 感知）；首回合会话行由 record_turn 内部 upsert（name=截断首条 query，续聊保留）；读取接口 `GET /conversations`、`/messages`、`/usage` | 用户决策 2026-08，评审采纳 |
+| 对话历史落库 | conversations 会话头 + messages 回合明细（query/answer/thinking 一行，usage 聚合到回合）；`ConversationService.record_turn` 回合结束单次落库，**DB 降级内部消化**（舱壁：失败记日志返回 bool，路由无 try/except、无 DB 感知）；首回合会话行由 record_turn 内部 upsert（name=截断首条 query，续聊保留）；会话接口 `GET /conversations`、`/messages`、`/usage`、`DELETE /conversations/{id}`（**软删除**标记独立 `is_delete=true`，业务状态 status 不被覆盖、行与 token 保留、仅列表隐藏、不可续聊；释放内存会话/运行时，两者皆无 → 404） | 用户决策 2026-08，评审采纳 |
 | usage 防腐层 | `StreamParser` 把三种提供方缓存字段统一为平台标准（OpenAI `prompt_tokens_details.cached_tokens` / DeepSeek `prompt_cache_hit_tokens` / Anthropic `cache_read_input_tokens`+`cache_creation_input_tokens` → cached_read/cached_write）；`UsageAggregator` 回合聚合，Runner 各 LLM 调用点只调 `add()`，修复「后一次覆盖前一次」；DoneEvent 事件驱动携带聚合 usage + provider/model，消费方（路由/未来计费）只监听事件 | 评审采纳 |
 | 文件系统 | `upload_files` 多消费方共享注册表（agent 产物 / 用户上传 / 知识库），**删 session/agent 强绑定**，`created_by_role` 宽松消费方标识，`used`/`used_at` 强制标注使用状态供清理；`/files` API：`GET /files/upload`（上传限制配置）、`POST /files/upload`（字节上传，校验大小+扩展名）、`GET /files/{file_id}/preview`（按 record id 流式 inline 预览，预览即标记 used）；`FileService`（register 磁盘产物 / upload 字节上传 / get_content_stream_by_id 预览） | 用户决策 2026-08 |
 | 去重历史 | 结构化状态入 PG `dedup_clues`，脚本改纯计算：平台注入 `history`、add 模式经 `_upsert` 回写（声明 `history_store: true`） | 用户决策 2026-08 |

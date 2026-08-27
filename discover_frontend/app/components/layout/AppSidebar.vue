@@ -1,12 +1,25 @@
 <script setup lang="ts">
-import type { ConversationRecord } from '@/api/types'
+import type { AssistantRecord, ConversationRecord } from '@/api/types'
 import AppIcon from '@/components/common/AppIcon.vue'
+import { useTheme } from '@/composables/useTheme'
+import { APP_ENV } from '@/config/env'
 
-defineProps<{
+/**
+ * 豆包式左栏：品牌区 + 新对话（近黑主按钮 + Ctrl+K 提示）+ 「技能与助手」专家列表
+ * + 「最近对话」会话列表 + 底部主题切换 / 环境徽标。
+ * 纯展示 + emits 上报；「技能与助手」点选 = 新建绑定该专家的工作会话（由 ChatView 编排）。
+ */
+const props = defineProps<{
   conversations: ConversationRecord[]
   activeId: string
   /** 列表加载中（首次拉取后端 GET /conversations） */
   loading: boolean
+  /** 助手目录（专家，GET /assistants；渲染「技能与助手」） */
+  assistants: AssistantRecord[]
+  /** 助手目录加载中 */
+  assistantLoading: boolean
+  /** 当前选择的助手（专家 id / 'generic'；高亮「技能与助手」对应项） */
+  selectedAssistantId: string
 }>()
 
 const emit = defineEmits<{
@@ -15,7 +28,11 @@ const emit = defineEmits<{
   delete: [id: string]
   /** 桌面折叠侧栏（ChatView 持有 collapsed 状态） */
   collapse: []
+  /** 点选专家助手 → 新建绑定该助手的工作会话 */
+  'select-assistant': [id: string]
 }>()
+
+const theme = useTheme()
 
 function formatTime(iso: string): string {
   const date = new Date(iso)
@@ -32,7 +49,7 @@ function formatTime(iso: string): string {
   <aside class="sidebar">
     <header class="sidebar__header">
       <div class="sidebar__brand">
-        <span class="sidebar__logo"><AppIcon name="sparkle" :size="18" /></span>
+        <span class="sidebar__logo"><AppIcon name="sparkle" :size="15" /></span>
         <span class="sidebar__title">Discover</span>
       </div>
       <el-button
@@ -47,17 +64,37 @@ function formatTime(iso: string): string {
       </el-button>
     </header>
 
-    <el-button class="sidebar__new" type="primary" @click="emit('new')">
+    <el-button class="sidebar__new" @click="emit('new')">
       <template #icon><AppIcon name="plus" :size="16" /></template>
-      新建会话
+      新对话
+      <span class="sidebar__new-kbd">Ctrl K</span>
     </el-button>
 
     <div class="sidebar__body">
+      <p class="sidebar__section">技能与助手</p>
+      <div v-if="assistantLoading" class="sidebar__section-skeleton">
+        <span v-for="n in 2" :key="`skill-${n}`" />
+      </div>
+      <ul v-else-if="assistants.length > 0" class="sidebar__skills">
+        <li
+          v-for="item in assistants"
+          :key="item.id"
+          class="sidebar__skill"
+          :class="{ 'is-active': item.id === selectedAssistantId }"
+          :title="item.description"
+          @click="emit('select-assistant', item.id)"
+        >
+          <span class="sidebar__skill-icon"><AppIcon name="sparkle" :size="15" /></span>
+          <span class="sidebar__skill-name">{{ item.name }}</span>
+        </li>
+      </ul>
+
+      <p class="sidebar__section">最近对话</p>
       <div v-if="loading" class="sidebar__skeleton">
         <el-skeleton v-for="n in 4" :key="n" animated :rows="1" />
       </div>
       <p v-else-if="conversations.length === 0" class="sidebar__empty">
-        暂无会话<br />点击「新建会话」开始探索
+        暂无会话<br />点击「新对话」开始探索
       </p>
       <ul v-else class="sidebar__list">
         <li
@@ -84,6 +121,16 @@ function formatTime(iso: string): string {
         </li>
       </ul>
     </div>
+
+    <footer class="sidebar__footer">
+      <el-button class="sidebar__theme" link @click="theme.toggle">
+        <template #icon>
+          <AppIcon :name="theme.isDark ? 'sun' : 'moon'" :size="16" />
+        </template>
+        {{ theme.isDark ? '浅色模式' : '深色模式' }}
+      </el-button>
+      <span v-if="APP_ENV !== 'production'" class="sidebar__env">{{ APP_ENV }}</span>
+    </footer>
   </aside>
 </template>
 
@@ -100,7 +147,7 @@ function formatTime(iso: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 8px;
+  padding: 16px 16px 10px;
 }
 .sidebar__brand {
   display: flex;
@@ -111,9 +158,9 @@ function formatTime(iso: string): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   background: var(--brand-gradient);
   color: #fff;
   box-shadow: var(--glow-brand);
@@ -133,8 +180,11 @@ function formatTime(iso: string): string {
 .sidebar__collapse:hover {
   color: var(--text-1);
 }
+
+/* 新对话：近黑主按钮 */
 .sidebar__new.el-button {
-  margin: 8px 16px 12px;
+  position: relative;
+  margin: 6px 16px 14px;
   width: calc(100% - 32px);
   height: 40px;
   border: none;
@@ -156,13 +206,90 @@ function formatTime(iso: string): string {
 .sidebar__new.el-button:active {
   transform: translateY(0);
 }
+/* 快捷键提示：EP 按钮默认槽有包裹层，用绝对定位右对齐到按钮内侧 */
+.sidebar__new-kbd {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.82);
+}
+
 .sidebar__body {
   flex: 1;
   overflow-y: auto;
   padding: 0 10px 12px;
 }
+.sidebar__section {
+  margin: 16px 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+.sidebar__section-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 10px;
+}
+.sidebar__section-skeleton > span {
+  height: 36px;
+  border-radius: 9px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-1) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: theme-shimmer 1.2s ease-in-out infinite;
+}
+
+/* ---- 技能与助手 ---- */
+.sidebar__skills {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar__skill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.sidebar__skill:hover {
+  background: var(--surface-hover);
+}
+.sidebar__skill.is-active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(139, 92, 246, 0.08));
+}
+.sidebar__skill-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--brand-2);
+}
+.sidebar__skill-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+/* ---- 最近对话 ---- */
 .sidebar__empty {
-  margin: 24px 12px;
+  margin: 12px;
   font-size: 13px;
   line-height: 1.7;
   text-align: center;
@@ -240,6 +367,32 @@ function formatTime(iso: string): string {
 }
 .sidebar__item:hover .sidebar__item-delete {
   opacity: 1;
+}
+
+/* ---- 底部 ---- */
+.sidebar__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.sidebar__theme {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.sidebar__theme:hover {
+  color: var(--text-1);
+}
+.sidebar__env {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 1px 6px;
 }
 
 @media (max-width: 767px) {

@@ -2,7 +2,7 @@
  * 后端契约类型（映射 discover_backend pydantic 模型）。
  * 禁止在组件内散落重复定义；新契约字段先在此对齐。
  *
- * 边界已确认（discover_backend/src/platform_engine/api/routes_chat.py + docs/API.md）：
+ * 边界已确认（discover_backend/app/api/chat.py + docs/API.md）：
  * SSE 判别帧共 7 种：message / message_end / ping / error 与思考三帧
  * thinking_started / thinking_delta / thinking_ended。message 帧 answer 为正文
  * 纯文本增量；thinking_* 帧携带思考过程，独立于正文。tool_call_* / artifact_ready

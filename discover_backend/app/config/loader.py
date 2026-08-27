@@ -4,11 +4,11 @@
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 import anyio
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.errors.base import ConfigError
 
@@ -56,10 +56,34 @@ class MCPServer(BaseModel):
     concurrency_limit: int = 3
 
 
+class MCSCapability(BaseModel):
+    """平台能力（技能与具体服务之间的抽象层，agent-package-spec §4）。
+
+    技能只声明「需要某个能力」，具体由哪些提供方供给由本注册表决定；
+    加 / 删 / 换提供方只改此处，不触碰技能清单。
+
+    strategy: "failover" 主备切换——按 servers 顺序优先，第一个可用者生效，
+    失败自动切换下一个；全失败时按依赖的 required 决定拒绝激活或降级。
+    """
+
+    servers: list[str] = Field(min_length=1)
+    strategy: Literal["failover"] = "failover"
+
+
 class MCPRegistry(BaseModel):
     """MCP 服务注册表。"""
 
     servers: list[MCPServer] = Field(default_factory=list)
+    capabilities: dict[str, MCSCapability] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_capability_servers(self) -> Self:
+        known = {server.id for server in self.servers}
+        for name, capability in self.capabilities.items():
+            missing = [sid for sid in capability.servers if sid not in known]
+            if missing:
+                raise ValueError(f"能力 {name} 引用了未注册的服务器：{', '.join(missing)}")
+        return self
 
 
 def _read_text(path: Path) -> str:

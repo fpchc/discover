@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import { computed, ref } from 'vue'
-import type { UploadedFile } from '@/api/types'
+import type { AssistantRecord, UploadedFile } from '@/api/types'
+import AssistantMenu from '@/components/chat/AssistantMenu.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import { useFileUpload } from '@/composables/useFileUpload'
 import { FEATURE_FILES } from '@/config/env'
@@ -11,11 +12,17 @@ const props = defineProps<{
   disabled: boolean
   /** query 长度上限（对齐后端） */
   maxLength: number
+  /** 助手目录（专家，供输入卡内 AssistantMenu 选择） */
+  assistants: AssistantRecord[]
+  /** 当前选择的助手（专家 id / 'generic'） */
+  selectedAssistantId: string
 }>()
 
 const emit = defineEmits<{
   send: [text: string]
   stop: []
+  /** 助手选择变更 → 下一次 /chat-messages 生效 */
+  'assistant-change': [id: string]
 }>()
 
 const text = ref<string>('')
@@ -152,7 +159,13 @@ function handleKeydown(event: KeyboardEvent): void {
       @change="handleFileChange"
     />
     <div class="input__footer">
-      <span class="input__hint">Enter 发送 · Shift+Enter 换行</span>
+      <AssistantMenu
+        class="input__menu"
+        :assistants="assistants"
+        :selected-assistant-id="selectedAssistantId"
+        :disabled="disabled"
+        @select="emit('assistant-change', $event)"
+      />
       <div class="input__side">
         <el-button
           v-if="FEATURE_FILES"
@@ -300,10 +313,8 @@ function handleKeydown(event: KeyboardEvent): void {
   justify-content: space-between;
   margin-top: 8px;
 }
-.input__hint {
-  font-size: 12px;
-  color: var(--text-3);
-  user-select: none;
+.input__menu {
+  flex-shrink: 0;
 }
 .input__side {
   display: flex;
@@ -359,9 +370,6 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 @media (max-width: 767px) {
-  .input__hint {
-    display: none;
-  }
   .input {
     border-radius: 16px;
     padding: 10px 14px 8px;

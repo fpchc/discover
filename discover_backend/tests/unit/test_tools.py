@@ -18,7 +18,7 @@ from app.errors.base import (
     MCPRateLimitError,
     MCPTimeoutError,
 )
-from app.registry.assemble import AssemblyPlan
+from app.registry.assemble import AssemblyPlan, CapabilityPlan
 from app.registry.manifests import ScriptDeclaration
 from app.tools.broker import ToolBroker, ToolCallRequest
 from app.tools.descriptor import (
@@ -458,6 +458,72 @@ async def test_activate_required_failure_releases(tmp_path: Path) -> None:
     assert activation.ok is False
     assert activation.failed_required == ["alibaba_search"]
     assert activation.reason == "必需 MCP 依赖不可用，拒绝激活"
+
+
+def _capability_plan(candidates: list[str], *, required: bool = True) -> AssemblyPlan:
+    """仅含能力依赖的装配计划（failover 测试用）。"""
+    return AssemblyPlan(
+        agent_id="finder",
+        skill_id="research",
+        system_prompt="系统提示",
+        capabilities=[
+            CapabilityPlan(
+                capability="web_search",
+                candidate_servers=candidates,
+                required=required,
+            )
+        ],
+        env_whitelist=[],
+    )
+
+
+async def test_activate_capability_failover_switches_to_backup(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_capability_plan(["alibaba_search", "yuanbao_search"]),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+    )
+    assert activation.ok is True
+    assert activation.started_services == ["yuanbao_search"]
+    assert activation.degraded_services == ["alibaba_search"]
+    assert "yuanbao_search.web_search" in broker._descriptors  # type: ignore[attr-defined]
+    assert "alibaba_search.web_search" not in broker._descriptors  # type: ignore[attr-defined]
+
+
+async def test_activate_capability_required_all_fail_releases(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search", "yuanbao_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_capability_plan(["alibaba_search", "yuanbao_search"]),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+    )
+    assert activation.ok is False
+    assert activation.failed_required == ["alibaba_search", "yuanbao_search"]
+    assert activation.reason == "必需依赖不可用，拒绝激活"
+    assert manager.released == []
+
+
+async def test_activate_capability_optional_all_fail_degrades(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search", "yuanbao_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_capability_plan(["alibaba_search", "yuanbao_search"], required=False),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+    )
+    assert activation.ok is True
+    assert activation.failed_required == []
+    assert activation.degraded_services == ["alibaba_search", "yuanbao_search"]
+    assert activation.reason is None
 
 
 async def test_execute_mcp_and_script_and_order(tmp_path: Path) -> None:

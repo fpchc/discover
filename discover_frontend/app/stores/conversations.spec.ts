@@ -1,7 +1,12 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { deleteConversation } from '@/api/history'
 import type { ConversationRecord } from '@/api/types'
 import { useConversationsStore } from './conversations'
+
+vi.mock('@/api/history', () => ({
+  deleteConversation: vi.fn(async () => undefined),
+}))
 
 function record(id: string, updatedAt: string): ConversationRecord {
   return {
@@ -55,14 +60,32 @@ describe('conversations store', () => {
     )
   })
 
-  it('remove 移除指定会话', () => {
+  it('remove 调后端并移除指定会话', async () => {
     const store = useConversationsStore()
     store.replaceAll([
       record('a', '2026-01-01T00:00:00.000Z'),
       record('b', '2026-01-02T00:00:00.000Z'),
     ])
-    store.remove('a')
+    vi.mocked(deleteConversation).mockResolvedValueOnce(undefined)
+    expect(await store.remove('a')).toBe(true)
+    expect(deleteConversation).toHaveBeenCalledWith('a')
     expect(store.items.map((item) => item.conversation_id)).toEqual(['b'])
+  })
+
+  it('remove 删除失败保留条目', async () => {
+    const store = useConversationsStore()
+    store.replaceAll([record('a', '2026-01-01T00:00:00.000Z')])
+    vi.mocked(deleteConversation).mockRejectedValueOnce(new Error('network'))
+    expect(await store.remove('a')).toBe(false)
+    expect(store.items.map((item) => item.conversation_id)).toEqual(['a'])
+  })
+
+  it('remove 遇 404 视为已删除', async () => {
+    const store = useConversationsStore()
+    store.replaceAll([record('a', '2026-01-01T00:00:00.000Z')])
+    vi.mocked(deleteConversation).mockRejectedValueOnce({ response: { status: 404 } })
+    expect(await store.remove('a')).toBe(true)
+    expect(store.items).toHaveLength(0)
   })
 
   it('setLoading 控制列表加载态', () => {

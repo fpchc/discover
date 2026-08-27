@@ -1,10 +1,10 @@
-"""单元测试：内部 AgentEvent → 对外 SSE 帧映射（routes_chat._map_stream_event）。
+"""单元测试：内部 AgentEvent → 对外 SSE 帧映射（chat._map_stream_event）。
 
 覆盖思考事件独立映射为 thinking_* 帧、正文/心跳/错误/完成映射，以及
 路由/工具等富事件在对外流中丢弃（返回 None）。纯函数测试，无网络无 DB。
 """
 
-from app.api.routes_chat import _map_stream_event
+from app.api.chat import _map_stream_event
 from app.errors.base import ErrorCategory
 from app.protocol.events import (
     AgentEvent,

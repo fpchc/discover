@@ -19,12 +19,12 @@ import anyio
 from pydantic import BaseModel, Field
 
 from app.config.settings import Settings, SideEffectType
+from app.dedup.repo import DedupStore
 from app.errors.base import (
     ErrorCategory,
     PlatformError,
     RegistryValidationError,
 )
-from app.history.repo import HistoryStore
 from app.llm.models import ChatToolSpec
 from app.protocol.sanitize import sanitize_tool_args, truncate
 from app.registry.assemble import AssemblyPlan
@@ -184,7 +184,7 @@ class ToolBroker:
         settings: Settings,
         mcp_manager: MCPManagerPort,
         script_executor: ScriptExecutorPort,
-        history_store: HistoryStore | None = None,
+        history_store: DedupStore | None = None,
     ) -> None:
         self._settings = settings
         self._mcp_manager = mcp_manager
@@ -294,6 +294,35 @@ class ToolBroker:
             await self._add_mcp_tools(server_id, client, plan.core_tool_names)
             self._clients[server_id] = client
             started.append(server_id)
+        # 能力依赖：主备切换（failover）——候选服务器按注册表顺序尝试，首个可用者生效。
+        for cap in plan.capabilities:
+            cap_failures: list[str] = []
+            activated = False
+            for server_id in cap.candidate_servers:
+                try:
+                    client = await self._mcp_manager.acquire(server_id)
+                except PlatformError:
+                    cap_failures.append(server_id)
+                    degraded.append(server_id)
+                    degrade_notes.append(cap.degrade_note or "搜索提供方不可用，尝试备用提供方")
+                    continue
+                await self._add_mcp_tools(server_id, client, cap.core_tools)
+                self._clients[server_id] = client
+                started.append(server_id)
+                activated = True
+                break
+            if not activated and cap.required:
+                failed_required.extend(cap_failures)
+        if failed_required:
+            for server_id in started:
+                self._mcp_manager.release(server_id)
+            return ToolActivation(
+                ok=False,
+                core_count=self._core_count(),
+                catalog_size=len(self._descriptors),
+                failed_required=failed_required,
+                reason="必需依赖不可用，拒绝激活",
+            )
         self._activated = True
         return ToolActivation(
             ok=True,

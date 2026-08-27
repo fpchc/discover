@@ -1,14 +1,15 @@
-"""助手目录：聚合专家 + 内置通用项，供选择器渲染与 wire 校验。
+"""助手目录：聚合专家供选择器渲染与 wire 校验。
 
 目录接口是「用户可选助手清单」（聚合入口），不是 agents/ 目录的直接暴露。
-专家来自注册表索引，通用是内置合成项；capabilities 取专家的技能 ID 列表。
+专家来自注册表索引；通用对话是未指定 agent_id 时的默认态，不列入目录；
+capabilities 取专家的技能 ID 列表。
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.catalog.models import GENERIC_ASSISTANT_ID, GENERIC_ASSISTANT_NAME, TargetType
+from app.catalog.models import TargetType
 from app.registry.registry import AgentRegistry
 
 
@@ -29,7 +30,7 @@ class AssistantCatalog:
         self._registry = registry
 
     def list(self) -> list[AssistantCatalogEntry]:
-        """专家（registry 索引）+ 内置通用项。"""
+        """专家（registry 索引）。通用对话为未绑定默认，不列入目录。"""
         entries: list[AssistantCatalogEntry] = []
         for agent_id, agent in self._registry.index().agents.items():
             package = self._registry.get_agent(agent_id)
@@ -43,18 +44,8 @@ class AssistantCatalog:
                     capabilities=capabilities,
                 )
             )
-        entries.append(self._generic_entry())
         return entries
 
     def resolve(self, assistant_id: str) -> AssistantCatalogEntry | None:
         """按 id 查目录（wire 校验用）。未知 id → None。"""
         return next((entry for entry in self.list() if entry.id == assistant_id), None)
-
-    @staticmethod
-    def _generic_entry() -> AssistantCatalogEntry:
-        return AssistantCatalogEntry(
-            id=GENERIC_ASSISTANT_ID,
-            type=TargetType.GENERIC,
-            name=GENERIC_ASSISTANT_NAME,
-            description="日常问答与通用助手，不绑定专家能力",
-        )

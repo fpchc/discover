@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from app.catalog.assistant_catalog import AssistantCatalog
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
+from app.conversations.service import ConversationService
 from app.db.engine import Database
 from app.extensions import shutdown_extensions, startup_extensions
 from app.extensions.ext_database import get_database
@@ -21,7 +22,6 @@ from app.extensions.ext_llm import get_client, get_providers, resolve_api_key
 from app.extensions.ext_mcp import get_manager, get_registry
 from app.extensions.ext_storage import get_storage
 from app.extensions.storage.base_storage import BaseStorage
-from app.history.service import ConversationService
 from app.llm.client import LLMClient
 from app.llm.providers import ProviderRegistry
 from app.registry.hot_reload import HotReloader
@@ -121,6 +121,12 @@ class AppServices:
             )
             self.runtimes[session_id] = runtime
         return runtime
+
+    async def discard_runtime(self, session_id: str) -> None:
+        """释放并移除会话运行时（存在则关停，回收 MCP 引用）。"""
+        runtime = self.runtimes.pop(session_id, None)
+        if runtime is not None:
+            await runtime.close()
 
 
 def get_services(request: Request) -> AppServices:

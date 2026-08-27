@@ -1,4 +1,4 @@
-"""历史记录服务（L0，ConversationService）。
+"""会话历史服务（L0，ConversationService）。
 
 对话历史持久化：record_turn 在回合结束把 query/answer/thinking/usage 落库
 （conversations 行 upsert + messages 行插入）。DB 降级全部内部消化（舱壁，
@@ -12,16 +12,16 @@ import logging
 
 from sqlalchemy import func, select
 
-from app.db.base import local_now
-from app.db.engine import Database
-from app.db.models import Conversation, Message
-from app.history.models import (
+from app.conversations.models import (
     ConversationRecord,
     ConversationStatus,
     MessageRecord,
     MessageStatus,
     TurnRecord,
 )
+from app.db.base import local_now
+from app.db.engine import Database
+from app.db.models import Conversation, Message
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,7 @@ class ConversationService:
                         name=turn.conversation_name or turn.query[:64],
                         status=ConversationStatus.ACTIVE.value,
                         dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
+                        is_delete=False,  # 同上：显式初始化软删除标记
                     )
                     session.add(convo)
                 convo.dialogue_count += 1
@@ -128,6 +129,7 @@ class ConversationService:
             rows = (
                 await session.scalars(
                     select(Conversation)
+                    .where(Conversation.is_delete.is_(False))
                     .order_by(Conversation.updated_at.desc())
                     .limit(limit)
                     .offset(offset)
@@ -180,3 +182,18 @@ class ConversationService:
             "cached_read_tokens": int(one.cached_read_tokens),
             "cached_write_tokens": int(one.cached_write_tokens),
         }
+
+    async def soft_delete_conversation(self, conversation_id: str) -> bool:
+        """软删除会话：标记 is_delete=true（行与 messages 保留，token 可审计）。
+
+        业务状态 status 不被覆盖（可还原）；已删除或不存在返回 False。显式用户
+        操作，DB 错误照常上抛（不降级）。
+        """
+        async with self._db.session_factory() as session:
+            convo = await session.get(Conversation, conversation_id)
+            if convo is None or convo.is_delete:
+                return False
+            convo.is_delete = True
+            convo.updated_at = local_now()
+            await session.commit()
+        return True

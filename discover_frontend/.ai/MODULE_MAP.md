@@ -9,11 +9,11 @@
 | Nuxt 装配（`ssr:false` / devProxy / modules / 全局 CSS / head） | `nuxt.config.ts` |
 | 环境配置唯一入口（类型化 VITE_*） | `app/config/env.ts` |
 | 对话页编排 | `app/pages/index.vue` |
-| 会话列表侧栏（新建 / 切换 / 删除 / 加载骨架） | `app/components/layout/AppSidebar.vue` |
-| 消息窗（列表 + 空态 + 自动滚动 + 用量角标 + 助手选择器 + 历史加载态） | `app/components/layout/ChatWindow.vue` |
+| 品牌左栏（品牌 / 新对话 Ctrl+K / 技能与助手 / 最近对话 / 底部主题切换） | `app/components/layout/AppSidebar.vue` |
+| 消息窗（列表 + 空态欢迎区 + 自动滚动 + 用量角标 + 历史加载态） | `app/components/layout/ChatWindow.vue` |
 | 单条消息气泡（思考分区 / Markdown / 复制 / 用量 / 错误重试） | `app/components/chat/MessageBubble.vue` |
-| 输入区（Enter 发送 / 停止 / 长度校验 / 文件上传附件） | `app/components/chat/ChatInput.vue` |
-| 助手选择器（专家 / 通用对话显式选择，API.md §6） | `app/components/chat/AssistantPicker.vue` |
+| 输入区（Enter 发送 / 停止 / 长度校验 / 文件上传附件 / 输入卡内助手选择器） | `app/components/chat/ChatInput.vue` |
+| 输入卡内助手选择器（当前助手胶囊触发 + 下拉列表：通用对话 + 专家，API.md §6） | `app/components/chat/AssistantMenu.vue` |
 | 内联 SVG 图标库（手写，无图标依赖） | `app/components/common/AppIcon.vue` |
 | 对话发送 + 会话列表 / 助手目录 / 历史加载编排（send/stop/retry/cancel/openConversation/loadList/loadAssistants、agent_id 随发、metadata.assistant 回显、turn token、超时） | `app/composables/useChatStream.ts` |
 | Markdown 渲染 + DOMPurify 清洗（代码块深色外壳） | `app/composables/useMarkdown.ts` |

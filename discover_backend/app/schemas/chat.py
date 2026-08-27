@@ -68,7 +68,7 @@ class ThinkingStartFrame(BaseModel):
     """思考开始帧（DeepSeek 式思考分区：前端据此打开折叠思考框）。
 
     Frame 后缀为对外 SSE 帧，区别于 protocol/events.py 的内部事件
-    （ThinkingStartedEvent 等，routes_chat 同时 import 两者避免同名冲突）。
+    （ThinkingStartedEvent 等，chat.py 同时 import 两者避免同名冲突）。
     """
 
     event: Literal["thinking_started"] = "thinking_started"

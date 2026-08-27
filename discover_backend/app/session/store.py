@@ -35,3 +35,7 @@ class SessionStore:
         updated = current.model_copy(update={"assistant_target": target, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
+
+    def delete(self, session_id: str) -> bool:
+        """移除会话记录；不存在返回 False。"""
+        return self._sessions.pop(session_id, None) is not None

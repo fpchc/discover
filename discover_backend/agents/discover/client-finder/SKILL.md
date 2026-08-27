@@ -6,8 +6,8 @@ scope:
   applies: 需要找/开发/评估潜在客户、竞品客户反推、行业机会扫描、区域产业带聚焦时
   does_not_apply: 纯闲聊、与企业获客无关的通用咨询、非电子信息产业链的销售场景
 keywords: [找客户, 客户发现, 拓客, 潜在客户, 评估公司, 竞品客户, 机会扫描, 区域聚焦, 买什么, 卖给谁]
-mcp_dependencies:
-  - server: alibaba_search
+capability_dependencies:
+  - capability: web_search
     core_tools: []
     required: true
     degrade_note: null
@@ -33,7 +33,7 @@ documents:
   - path: references/tier-funnel-prompts.md
     when: 阶段 1 需求澄清（三层漏斗追问）时
   - path: references/data-source-mapping.md
-    when: 数据采集维度与降级策略，P1 仅 alibaba_search
+    when: 数据采集维度与降级策略，P1 仅平台联网搜索（web_search 能力）
   - path: references/scoring-rules.md
     when: 八维评分子维度细则与权重
   - path: references/eitia-architecture.md
@@ -81,7 +81,7 @@ templates:
 ## 3. 阶段 2：搜索 → 初筛 → 评分
 
 ### 3.1 搜索与初筛（数据受限）
-P1 数据源仅 `alibaba_search`（公开搜索）。多路关键词并发：产品名+行业、行业+区域、竞品+客户/供应链、招标/机会词。
+P1 数据源仅平台联网搜索（`web_search` 能力，具体提供方由平台配置）。多路关键词并发：产品名+行业、行业+区域、竞品+客户/供应链、招标/机会词。
 - 候选池不足 5 家 → 扩展关键词 / 放宽区域重搜；仍不足则明确告知用户。
 - 初筛：仅凭公开信息判断，信用红线一票否决（失信 / 破产 / 吊销 / 严重违法）直接排除；其余入深挖队列或后备池。
 - 排除过滤器生效。
@@ -116,7 +116,7 @@ P1 数据源仅 `alibaba_search`（公开搜索）。多路关键词并发：产
 
 - 封面 / 导读明确标注「数据来源受限版本：公开搜索」。
 - 数据不充分维度标「数据不充分·取中性分」；无决策人信息标「公开社交平台未能识别到决策人」。
-- 附录 A 数据日志记录工具来源，突出 `alibaba_search`，让读者明确数据范围。
+- 附录 A 数据日志记录工具来源，突出实际使用的搜索工具（`web_search` 系列），让读者明确数据范围。
 - 专有工商库维度（股权 / 集团穿透等）P1 标记受限。
 
 ## 6. 执行纪律

@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import type { AssistantRecord, ChatMessage, ConversationUsage } from '@/api/types'
-import AssistantPicker from '@/components/chat/AssistantPicker.vue'
+import type { ChatMessage, ConversationUsage } from '@/api/types'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import AppIcon from '@/components/common/AppIcon.vue'
-import { useTheme } from '@/composables/useTheme'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -17,24 +15,12 @@ const props = defineProps<{
   usageSummary: ConversationUsage | null
   /** 历史消息加载中（切换会话时） */
   historyLoading: boolean
-  /** 助手目录（API.md §6.1；供头部选择器渲染选项） */
-  assistants: AssistantRecord[]
-  /** 当前选择的助手 id（专家 id / 'generic'） */
-  selectedAssistantId: string
-  /** 助手目录加载中 */
-  assistantLoading: boolean
 }>()
 
 const emit = defineEmits<{
   'toggle-sidebar': []
   retry: []
-  /** 空态建议卡片 → 立即发送 */
-  suggestion: [text: string]
-  /** 助手选择器变更 → 下一次 /chat-messages 生效 */
-  'assistant-change': [id: string]
 }>()
-
-const theme = useTheme()
 
 /** 头部轻量用量角标：`X 回合 · Y tokens`；无数据不显示 */
 const usageLabel = computed<string>(() => {
@@ -42,30 +28,6 @@ const usageLabel = computed<string>(() => {
   if (usage === null) return ''
   return `${usage.message_count} 回合 · ${usage.total_tokens.toLocaleString()} tokens`
 })
-
-/** 空态建议卡片（显式选择助手后即用，不依赖 LLM 自动路由） */
-const suggestions: ReadonlyArray<{ title: string; desc: string; text: string }> = [
-  {
-    title: '演示一次客户探索',
-    desc: '让客户发现助手跑通完整探索流程',
-    text: '演示一次完整的客户探索流程',
-  },
-  {
-    title: '拆解并规划需求',
-    desc: '把一份业务需求拆成可执行计划',
-    text: '帮我拆解并规划一份业务需求',
-  },
-  {
-    title: '对比方案给出建议',
-    desc: '多角度评估，输出权衡后的结论',
-    text: '对比两种方案并给出建议',
-  },
-  {
-    title: '提炼核心要点',
-    desc: '快速总结内容的关键信息',
-    text: '把这段内容提炼成要点',
-  },
-]
 
 const scrollRef = ref<HTMLElement | null>(null)
 
@@ -114,27 +76,9 @@ onMounted(scrollToBottom)
       <span class="window__title">{{ title || '新对话' }}</span>
 
       <div class="window__actions">
-        <AssistantPicker
-          class="window__picker"
-          :catalog="assistants"
-          :selected-id="selectedAssistantId"
-          :loading="assistantLoading"
-          :disabled="isStreaming"
-          @change="emit('assistant-change', $event)"
-        />
         <span v-if="usageLabel !== ''" class="window__usage" :title="usageLabel">
           {{ usageLabel }}
         </span>
-        <el-button
-          class="window__theme"
-          link
-          circle
-          size="small"
-          :title="theme.isDark ? '切换到浅色' : '切换到深色'"
-          @click="theme.toggle"
-        >
-          <AppIcon :name="theme.isDark ? 'sun' : 'moon'" :size="17" />
-        </el-button>
       </div>
     </header>
 
@@ -153,22 +97,7 @@ onMounted(scrollToBottom)
           <h1 class="window__welcome">
             今天，想<span class="window__welcome-accent">探索</span>什么？
           </h1>
-          <p class="window__hint">先选一位助手，再输入问题开始探索</p>
-          <div class="window__suggestions">
-            <button
-              v-for="suggestion in suggestions"
-              :key="suggestion.title"
-              type="button"
-              class="window__suggestion"
-              @click="emit('suggestion', suggestion.text)"
-            >
-              <span class="window__suggestion-icon"><AppIcon name="sparkle" :size="15" /></span>
-              <span class="window__suggestion-text">
-                <span class="window__suggestion-title">{{ suggestion.title }}</span>
-                <span class="window__suggestion-desc">{{ suggestion.desc }}</span>
-              </span>
-            </button>
-          </div>
+          <p class="window__hint">在下方输入框选择助手，开始你的探索</p>
         </div>
       </template>
     </div>
@@ -237,20 +166,11 @@ onMounted(scrollToBottom)
   align-items: center;
   gap: 6px;
 }
-.window__picker {
-  flex-shrink: 0;
-}
 .window__usage {
   font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-.window__theme {
-  color: var(--text-2);
-}
-.window__theme:hover {
-  color: var(--text-1);
 }
 
 /* ---- 空态：光晕 + 欢迎区 ---- */
@@ -327,59 +247,9 @@ onMounted(scrollToBottom)
   color: transparent;
 }
 .window__hint {
-  margin: 12px 0 28px;
+  margin: 12px 0 0;
   font-size: 14px;
   color: var(--text-2);
-}
-.window__suggestions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.window__suggestion {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--surface-1);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: var(--text-1);
-  transition:
-    transform 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-.window__suggestion:hover {
-  transform: translateY(-2px);
-  border-color: var(--brand-2);
-  box-shadow: var(--shadow-card);
-}
-.window__suggestion-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--brand-2);
-  transition: transform 0.18s ease;
-}
-.window__suggestion:hover .window__suggestion-icon {
-  transform: scale(1.15) rotate(-8deg);
-}
-.window__suggestion-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.window__suggestion-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-.window__suggestion-desc {
-  font-size: 12px;
-  color: var(--text-3);
 }
 
 /* ---- 消息区 ---- */
@@ -405,9 +275,6 @@ onMounted(scrollToBottom)
   }
   .window__scroll {
     padding: 12px 16px 24px;
-  }
-  .window__suggestions {
-    grid-template-columns: 1fr;
   }
 }
 </style>

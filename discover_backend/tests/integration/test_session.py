@@ -59,6 +59,19 @@ async def test_bind_assistant_updates_record(tmp_path: Path) -> None:
     assert service.get_session(record.session_id).assistant_target == target
 
 
+async def test_delete_session_removes_record(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    record = await service.create_session()
+    assert service.delete_session(record.session_id) is True
+    with pytest.raises(SessionNotFoundError):
+        service.get_session(record.session_id)
+
+
+async def test_delete_session_missing_returns_false(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    assert service.delete_session("nope") is False
+
+
 async def test_workspace_agent_keyed_shared_across_sessions(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     await service.create_session()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatWindow from '@/components/layout/ChatWindow.vue'
@@ -17,7 +17,20 @@ const chatStream = useChatStream()
 onMounted(() => {
   void chatStream.loadList()
   void chatStream.loadAssistants()
+  window.addEventListener('keydown', handleGlobalShortcut)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalShortcut)
+})
+
+/** 全局快捷键：Ctrl/Cmd+K 新建会话（与侧栏按钮提示一致） */
+function handleGlobalShortcut(event: KeyboardEvent): void {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    handleNew()
+  }
+}
 
 /** 移动端侧边栏抽屉开关（<768px 生效） */
 const sidebarOpen = ref<boolean>(false)
@@ -49,6 +62,15 @@ function handleNew(): void {
   sidebarCollapsed.value = false
 }
 
+/** 侧栏「技能与助手」点选：新建绑定该专家的会话（等价于工作模式新任务） */
+function handleStartAssistant(id: string): void {
+  chatStream.cancel()
+  chat.reset()
+  assistants.select(id)
+  sidebarOpen.value = false
+  sidebarCollapsed.value = false
+}
+
 function handleSelect(id: string): void {
   if (id === chat.conversationId && !chat.isStreaming) {
     sidebarOpen.value = false
@@ -58,9 +80,9 @@ function handleSelect(id: string): void {
   sidebarOpen.value = false
 }
 
-function handleDelete(id: string): void {
-  conversations.remove(id)
-  if (id === chat.conversationId) {
+async function handleDelete(id: string): Promise<void> {
+  const removed = await conversations.remove(id)
+  if (removed && id === chat.conversationId) {
     chat.reset()
     assistants.resetForNewConversation()
   }
@@ -73,11 +95,6 @@ function handleToggleSidebar(): void {
   } else {
     sidebarCollapsed.value = !sidebarCollapsed.value
   }
-}
-
-/** 空态建议卡片点击 → 直接发送（由 chatStream 内部拦截流式中重复发送） */
-function handleSuggestion(text: string): void {
-  handleSend(text)
 }
 </script>
 
@@ -96,10 +113,14 @@ function handleSuggestion(text: string): void {
         :conversations="conversations.items"
         :active-id="chat.conversationId"
         :loading="conversations.loading"
+        :assistants="assistants.catalog"
+        :assistant-loading="assistants.loading"
+        :selected-assistant-id="assistants.selectedId"
         @new="handleNew"
         @select="handleSelect"
         @delete="handleDelete"
         @collapse="sidebarCollapsed = true"
+        @select-assistant="handleStartAssistant"
       />
     </div>
     <div v-if="sidebarOpen" class="chat-view__mask" @click="sidebarOpen = false" />
@@ -112,18 +133,16 @@ function handleSuggestion(text: string): void {
         :sidebar-collapsed="sidebarCollapsed"
         :usage-summary="chat.usageSummary"
         :history-loading="chat.loadingHistory"
-        :assistants="assistants.catalog"
-        :selected-assistant-id="assistants.selectedId"
-        :assistant-loading="assistants.loading"
         @toggle-sidebar="handleToggleSidebar"
         @retry="handleRetry"
-        @suggestion="handleSuggestion"
-        @assistant-change="assistants.select"
       />
       <div class="chat-view__input">
         <ChatInput
           :disabled="chat.isStreaming"
           :max-length="CHAT_QUERY_MAX"
+          :assistants="assistants.catalog"
+          :selected-assistant-id="assistants.selectedId"
+          @assistant-change="assistants.select"
           @send="handleSend"
           @stop="handleStop"
         />

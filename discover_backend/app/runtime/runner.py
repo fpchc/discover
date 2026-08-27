@@ -17,8 +17,8 @@ from app.catalog.models import SelectionSource, TargetType
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
 from app.db.engine import Database
+from app.dedup.repo import DedupStore
 from app.errors.base import ConfigError, RegistryValidationError
-from app.history.repo import HistoryStore
 from app.llm.client import LLMClient
 from app.llm.models import (
     ChatMessage,
@@ -120,7 +120,7 @@ class Runtime:
             settings=settings,
             mcp_manager=mcp_manager,
             script_executor=script_executor,
-            history_store=HistoryStore(db),
+            history_store=DedupStore(db),
         )
         self._assistant_resolver: AssistantResolver = ExplicitSelectionResolver()
         self._skill_resolver = SkillResolver()

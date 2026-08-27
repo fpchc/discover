@@ -1,9 +1,9 @@
-# 阿里百炼搜索 MCP 接入
+# 搜索 MCP 接入与能力抽象
 
 ## 适用场景 / 何时触发
 
-- 接入阿里百炼联网搜索作为 P1 搜索数据源时
-- 配置 MCP 注册表时
+- 接入 / 更换联网搜索提供方（阿里百炼、腾讯元宝等）时
+- 配置 MCP 注册表与 `capabilities` 能力段时
 - 排查搜索调用失败、返回为空、超时时
 - P2 需要接入其他 MCP 服务时的参考模板
 
@@ -51,6 +51,22 @@ P2 阶段根据实际可用性逐步接入其他数据源，恢复评分维度�
 
 **认证令牌只存变量名，值从环境读取**，不写进配置文件也不写进代码。
 
+### 3.1 capabilities 能力段
+
+搜索类提供方可互换，技能不点名具体服务，改声明能力。注册表把多个候选提供方
+归入同一能力，运行期按顺序主备切换（failover）：
+
+```yaml
+capabilities:
+  web_search:
+    strategy: failover      # 主备切换：首个可用者生效，失败自动切换
+    servers:
+      - alibaba_search
+      - yuanbao_search
+```
+
+加 / 删 / 换搜索提供方只改本注册表，智能体包内任何文件（清单、正文、参考文档）不动。
+
 ---
 
 ## 4. 工具清单获取
@@ -71,16 +87,24 @@ MCP 协议要求服务提供 `list_tools` 接口，返回该服务支持的全�
 
 ---
 
-## 5. eitia 技能清单的依赖声明
+## 5. 技能清单的依赖声明
 
-在 `agents/discover/skills/client-finder/SKILL.md` 的 MCP 依赖段声明：
+技能不点名提供方，在 `agents/*/{skill}/SKILL.md` 的**能力依赖段**声明：
+
+```yaml
+capability_dependencies:
+  - capability: web_search
+    core_tools: []
+    required: true
+    degrade_note: null
+```
 
 | 字段 | 填写 |
 |------|------|
-| 服务器标识 | `alibaba_search` |
+| 能力标识 | `web_search`（须存在于注册表 `capabilities` 段） |
 | 核心工具列表 | 留空（让搜索工具走 Tier 2 按需检索，不预注入） |
 | 是否必需 | `true` |
-| 降级说明 | 不适用（必需依赖缺失会拒绝激活） |
+| 降级说明 | 该能力全部候选提供方不可用时注入模型的说明 |
 
 **为什么核心工具列表留空**：搜索类工具的使用频率不如原企业数据类工具（原 tyc/qcc 的基础查询是高频核心工具），且搜索工具名可能因服务升级变化，列入核心工具反而增加维护成本。让模型用 `search_tools` 检索更灵活。
 
@@ -155,8 +179,8 @@ MCP 协议要求服务提供 `list_tools` 接口，返回该服务支持的全�
 
 当其他 MCP 服务可用时，增量接入方式：
 
-1. 在 `mcp-servers.yaml` 新增服务条目
-2. 在 eitia 技能清单的依赖段新增，标记为可选依赖并附降级说明
+1. 在 `config/mcp-servers.yaml` 新增服务条目
+2. 搜索类通道在 `capabilities.web_search.servers` 追加提供方（主备切换顺序即列表顺序）；专有数据源在技能 SKILL.md 的 `mcp_dependencies` 新增可选依赖并附降级说明
 3. 技能正文中的数据采集章节改为「优先使用专有数据源，不可用时降级搜索」
 4. 门禁逐步恢复原有要求
 

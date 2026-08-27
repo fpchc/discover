@@ -6,6 +6,7 @@
 
 from pydantic import BaseModel, Field
 
+from app.config.loader import MCPRegistry
 from app.config.settings import SideEffectType
 from app.errors.base import RegistryValidationError
 from app.registry.loader import AgentPackage
@@ -17,6 +18,20 @@ from app.registry.manifests import (
 )
 
 
+class CapabilityPlan(BaseModel):
+    """能力装配计划：运行时按候选服务器顺序主备切换（failover）。
+
+    能力由注册表解析为候选服务器列表；第一个可用者生效，失败自动切换。
+    required 能力全候选失败 → 拒绝激活；optional 能力全失败 → 降级并继续。
+    """
+
+    capability: str
+    candidate_servers: list[str] = Field(default_factory=list)
+    core_tools: list[str] = Field(default_factory=list)
+    required: bool = True
+    degrade_note: str | None = None
+
+
 class AssemblyPlan(BaseModel):
     """技能装配计划：运行时据此装配工具、注入上下文、启动 MCP 依赖。"""
 
@@ -26,6 +41,7 @@ class AssemblyPlan(BaseModel):
     required_mcp_servers: list[str] = Field(default_factory=list)
     optional_mcp_servers: list[str] = Field(default_factory=list)
     mcp_degrade_notes: dict[str, str] = Field(default_factory=dict)
+    capabilities: list[CapabilityPlan] = Field(default_factory=list)
     core_tool_names: list[str] = Field(default_factory=list)
     scripts: list[ScriptDeclaration] = Field(default_factory=list)
     env_whitelist: list[str] = Field(default_factory=list)
@@ -77,7 +93,14 @@ def _build_system_prompt(agent: AgentManifest, skill: SkillManifest) -> str:
 
 
 class SkillAssembler:
-    """在选定智能体内部选技能、装配上下文与工具声明。"""
+    """在选定智能体内部选技能、装配上下文与工具声明。
+
+    依赖 MCP 注册表：把技能声明的能力解析为候选服务器列表（failover），
+    技能本身不点名提供方。
+    """
+
+    def __init__(self, mcp_registry: MCPRegistry) -> None:
+        self._mcp_registry = mcp_registry
 
     def assemble(self, package: AgentPackage, skill_id: str | None) -> AssemblyPlan:
         skill = self._resolve_skill(package, skill_id)
@@ -93,6 +116,7 @@ class SkillAssembler:
                 optional.append(dep.server)
                 if dep.degrade_note:
                     degrade_notes[dep.server] = dep.degrade_note
+        capabilities = self._resolve_capabilities(skill)
         scripts = skill.scripts + _gate_validator_scripts(skill)
         return AssemblyPlan(
             agent_id=package.manifest.agent_id,
@@ -101,12 +125,30 @@ class SkillAssembler:
             required_mcp_servers=required,
             optional_mcp_servers=optional,
             mcp_degrade_notes=degrade_notes,
+            capabilities=capabilities,
             core_tool_names=core_tool_names,
             scripts=scripts,
             env_whitelist=package.manifest.env_whitelist,
             model_preference=package.manifest.model_preference,
             thinking_preference=package.manifest.thinking_preference,
         )
+
+    def _resolve_capabilities(self, skill: SkillManifest) -> list[CapabilityPlan]:
+        plans: list[CapabilityPlan] = []
+        for dep in skill.capability_dependencies:
+            capability = self._mcp_registry.capabilities.get(dep.capability)
+            if capability is None:
+                raise RegistryValidationError(f"平台能力未注册：{dep.capability}")
+            plans.append(
+                CapabilityPlan(
+                    capability=dep.capability,
+                    candidate_servers=list(capability.servers),
+                    core_tools=dep.core_tools,
+                    required=dep.required,
+                    degrade_note=dep.degrade_note,
+                )
+            )
+        return plans
 
     @staticmethod
     def _resolve_skill(package: AgentPackage, skill_id: str | None) -> SkillManifest:

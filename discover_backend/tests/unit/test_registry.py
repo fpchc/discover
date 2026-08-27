@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from app.config.loader import MCPRegistry, MCPServer
+from app.config.loader import MCPRegistry, MCPServer, MCSCapability
 from app.config.settings import Settings
 from app.errors.base import RegistryValidationError
 from app.registry.hot_reload import HotReloader
@@ -100,7 +100,10 @@ def _write_agent(
             (sdir / "templates" / "report.md").write_text("# 报告\n", encoding="utf-8")
 
 
-def _mcp_registry(*server_ids: str) -> MCPRegistry:
+def _mcp_registry(
+    *server_ids: str,
+    capabilities: dict[str, list[str]] | None = None,
+) -> MCPRegistry:
     servers = [
         MCPServer(
             id=server_id,
@@ -109,18 +112,29 @@ def _mcp_registry(*server_ids: str) -> MCPRegistry:
         )
         for server_id in server_ids
     ]
-    return MCPRegistry(servers=servers)
+    caps = {name: MCSCapability(servers=sids) for name, sids in (capabilities or {}).items()}
+    return MCPRegistry(servers=servers, capabilities=caps)
 
 
-async def _build_registry(root: Path, *mcp_ids: str, **overrides: object) -> AgentRegistry:
+async def _build_registry(
+    root: Path,
+    *mcp_ids: str,
+    capabilities: dict[str, list[str]] | None = None,
+    **overrides: object,
+) -> AgentRegistry:
     settings = Settings(_env_file=None, agents_root_dir=root, **overrides)
-    registry = AgentRegistry(settings, _mcp_registry(*mcp_ids))
+    registry = AgentRegistry(settings, _mcp_registry(*mcp_ids, capabilities=capabilities))
     await registry.refresh()
     return registry
 
 
-async def _load(root: Path, *mcp_ids: str, **overrides: object) -> AgentRegistrySnapshot:
-    registry = await _build_registry(root, *mcp_ids, **overrides)
+async def _load(
+    root: Path,
+    *mcp_ids: str,
+    capabilities: dict[str, list[str]] | None = None,
+    **overrides: object,
+) -> AgentRegistrySnapshot:
+    registry = await _build_registry(root, *mcp_ids, capabilities=capabilities, **overrides)
     return registry.snapshot
 
 
@@ -178,7 +192,7 @@ async def test_manifest_invalid_kind_or_type_rejected(tmp_path: Path) -> None:
 
 
 async def test_reserved_generic_agent_id_rejected(tmp_path: Path) -> None:
-    """保留字 generic 被目录接口内置通用项占用，专家包不得使用。"""
+    """保留字 generic 为通用对话默认态，专家包不得占用。"""
     _write_agent(tmp_path, name="generic", agent_md=_agent_md(agent_id="generic"))
     snapshot = await _load(tmp_path, "alibaba_search")
     assert snapshot.packages == {}
@@ -327,6 +341,45 @@ async def test_assemble_unknown_agent_raises(tmp_path: Path) -> None:
     registry = await _build_registry(tmp_path, "alibaba_search")
     with pytest.raises(RegistryValidationError):
         registry.assemble("nope", None)
+
+
+async def test_assemble_capability_resolves_to_candidates(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        skill_md=_skill_md(
+            mcp_dependencies=[],
+            capability_dependencies=[
+                {"capability": "web_search", "core_tools": [], "required": True}
+            ],
+        ),
+    )
+    registry = await _build_registry(
+        tmp_path,
+        "alibaba_search",
+        "yuanbao_search",
+        capabilities={"web_search": ["alibaba_search", "yuanbao_search"]},
+    )
+    plan = registry.assemble("finder", "research")
+    assert plan.required_mcp_servers == []
+    assert len(plan.capabilities) == 1
+    cap = plan.capabilities[0]
+    assert cap.capability == "web_search"
+    assert cap.candidate_servers == ["alibaba_search", "yuanbao_search"]
+    assert cap.required is True
+
+
+async def test_capability_not_registered_marks_skill_invalid(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        skill_md=_skill_md(
+            mcp_dependencies=[],
+            capability_dependencies=[{"capability": "ghost_cap", "required": True}],
+        ),
+    )
+    snapshot = await _load(tmp_path, "alibaba_search")
+    package = snapshot.packages["finder"]
+    assert package.skill_failures
+    assert "能力未注册" in package.skill_failures[0].invalid_reason
 
 
 # ---- 热重载 ----

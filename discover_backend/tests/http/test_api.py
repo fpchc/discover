@@ -175,21 +175,19 @@ async def test_chat_messages_empty_query_rejected(
 
 
 # ---- 助手目录与显式选择 ----
-async def test_assistants_catalog_lists_expert_and_generic(
+async def test_assistants_catalog_lists_experts_only(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
-    """GET /assistants：专家（registry）+ 内置通用对话。"""
+    """GET /assistants：只列专家；通用对话为默认态，不列入目录。"""
     _app, client = api_ctx
     response = await client.get("/api/v1/assistants")
     assert response.status_code == 200
     data = response.json()
     by_id = {entry["id"]: entry for entry in data}
-    assert set(by_id) == {"finder", "generic"}
+    assert set(by_id) == {"finder"}
     assert by_id["finder"]["type"] == "expert"
     assert by_id["finder"]["name"] == "客户发现"
     assert by_id["finder"]["capabilities"] == ["research"]
-    assert by_id["generic"]["type"] == "generic"
-    assert by_id["generic"]["name"] == "通用对话"
 
 
 async def test_chat_binds_expert_by_agent_id(
@@ -253,3 +251,35 @@ async def test_chat_rebind_switches_assistant(
     )
     payload = ChatMessageResponse.model_validate(second.json())
     assert payload.metadata["assistant"] == {"type": "generic", "id": None}
+
+
+# ---- 会话删除（DELETE /conversations/{id}） ----
+class _FakeHistoryService:
+    """路由测试桩：替身历史服务，隔离真实 DB（CLAUDE.md §12 Mock 红线）。"""
+
+    def __init__(self, exists: bool) -> None:
+        self._exists = exists
+
+    async def soft_delete_conversation(self, conversation_id: str) -> bool:
+        return self._exists
+
+
+async def test_delete_conversation_returns_204(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """DB 有历史 → 删除并返回 204 空体。"""
+    app, client = api_ctx
+    app.state.services.history = _FakeHistoryService(exists=True)
+    response = await client.delete("/api/v1/conversations/cafebabe")
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+async def test_delete_conversation_unknown_returns_404(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """DB 历史与内存会话皆无 → 404。"""
+    app, client = api_ctx
+    app.state.services.history = _FakeHistoryService(exists=False)
+    response = await client.delete("/api/v1/conversations/nope")
+    assert response.status_code == 404

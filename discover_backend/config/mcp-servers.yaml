@@ -13,3 +13,24 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
+  - id: yuanbao_search
+    transport: streamable_http
+    base_url: "https://api.wsa.cloud.tencent.com/Mcp"
+    auth:
+      type: bearer_token
+      token_env: "YUANBAO_SEARCH_TOKEN"
+    per_session: false
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3
+
+# 能力 = 技能与具体服务之间的抽象层（agent-package-spec §4）。
+# 技能只声明「需要 web_search 能力」，提供方由本注册表决定；
+# 加 / 删 / 换搜索提供方只改这里，不触碰智能体包内任何文件。
+# strategy: failover = 主备切换，按 servers 顺序优先，第一个可用者生效，失败自动切换。
+capabilities:
+  web_search:
+    strategy: failover
+    servers:
+      # - alibaba_search
+      - yuanbao_search

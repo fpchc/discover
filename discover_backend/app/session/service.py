@@ -48,6 +48,10 @@ class SessionService:
     def bind_assistant(self, session_id: str, target: AssistantTarget) -> SessionRecord:
         return self._store.bind_assistant(session_id, target)
 
+    def delete_session(self, session_id: str) -> bool:
+        """移除内存会话；不存在返回 False。"""
+        return self._store.delete(session_id)
+
     # ---- 工作区 ----
     async def workspace_for(self, agent_id: str) -> Workspace:
         """返回（必要时创建）智能体工作区（按 agent 键控，跨会话共享）。"""

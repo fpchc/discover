@@ -35,6 +35,20 @@ servers:
     per_session: false
     call_timeout_seconds: 30
     concurrency_limit: 3
+  - id: yuanbao_search
+    transport: streamable_http
+    base_url: "https://mcp-yuanbao.example.com"
+    auth:
+      type: bearer_token
+      token_env: "YUANBAO_SEARCH_TOKEN"
+    per_session: false
+    concurrency_limit: 3
+capabilities:
+  web_search:
+    strategy: failover
+    servers:
+      - alibaba_search
+      - yuanbao_search
 """
 
 
@@ -70,6 +84,24 @@ async def test_load_mcp_servers(tmp_path: Path) -> None:
     assert registry.servers[0].transport == "streamable_http"
     assert registry.servers[0].auth.token_env == "ALIBABA_SEARCH_TOKEN"
     assert registry.servers[0].per_session is False
+    assert registry.servers[1].id == "yuanbao_search"
+    assert registry.servers[1].auth.token_env == "YUANBAO_SEARCH_TOKEN"
+    capability = registry.capabilities["web_search"]
+    assert capability.strategy == "failover"
+    assert capability.servers == ["alibaba_search", "yuanbao_search"]
+
+
+async def test_load_mcp_capability_references_missing_server(tmp_path: Path) -> None:
+    path = tmp_path / "mcp-servers.yaml"
+    path.write_text(
+        MCP_YAML.replace(
+            "servers:\n      - alibaba_search\n      - yuanbao_search",
+            "servers:\n      - alibaba_search\n      - ghost_server",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="ghost_server"):
+        await load_mcp_servers(path)
 
 
 async def test_load_missing_file_raises_config_error(tmp_path: Path) -> None:

@@ -21,9 +21,26 @@ class Scope(BaseModel):
 
 
 class MCPSkillDependency(BaseModel):
-    """技能对 MCP 服务器的依赖声明（§4）。"""
+    """技能对 MCP 服务器的依赖声明（§4）。
+
+    用于单服务器专有数据源（如天眼查 / 企查查），直接点名具体服务；
+    多提供方可互换的搜索类通道走 CapabilityDependency。
+    """
 
     server: str
+    core_tools: list[str] = Field(default_factory=list)
+    required: bool = True
+    degrade_note: str | None = None
+
+
+class CapabilityDependency(BaseModel):
+    """技能对平台能力（而非具体 MCP 服务器）的依赖声明（§4）。
+
+    capability 须存在于 MCP 注册表 capabilities 段；具体由哪些提供方供给、
+    如何主备切换均由注册表决定，技能不点名提供方。
+    """
+
+    capability: str
     core_tools: list[str] = Field(default_factory=list)
     required: bool = True
     degrade_note: str | None = None
@@ -97,6 +114,7 @@ class SkillManifest(BaseModel):
     scope: Scope
     keywords: list[str] = Field(default_factory=list)
     mcp_dependencies: list[MCPSkillDependency] = Field(default_factory=list)
+    capability_dependencies: list[CapabilityDependency] = Field(default_factory=list)
     scripts: list[ScriptDeclaration] = Field(default_factory=list)
     documents: list[DocumentDeclaration] = Field(default_factory=list)
     gates: list[GateDeclaration] = Field(default_factory=list)

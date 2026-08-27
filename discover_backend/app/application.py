@@ -13,10 +13,10 @@ from types import TracebackType
 
 from fastapi import FastAPI
 
-from app.api.routes_assistants import router as assistants_router
-from app.api.routes_chat import router as chat_router
-from app.api.routes_files import router as files_router
-from app.api.routes_history import router as history_router
+from app.api.assistants import router as assistants_router
+from app.api.chat import router as chat_router
+from app.api.conversations import router as conversations_router
+from app.api.files import router as files_router
 from app.config.settings import Settings
 from app.container import AppServices
 from app.extensions import initialize_extensions
@@ -55,7 +55,7 @@ def _register_routes(app: FastAPI) -> None:
     prefix = "/api/v1"
     app.include_router(chat_router, prefix=prefix)
     app.include_router(files_router, prefix=prefix)
-    app.include_router(history_router, prefix=prefix)
+    app.include_router(conversations_router, prefix=prefix)
     app.include_router(assistants_router, prefix=prefix)
 
 

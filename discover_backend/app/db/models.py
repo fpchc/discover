@@ -34,6 +34,9 @@ class Conversation(Base):
     name: Mapped[str] = mapped_column(String(256))
     summary: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="active")
+    # 软删除独立标记：与业务状态 status 解耦（DELETED 不再占用 status 枚举值），
+    # 删除不覆盖业务状态，行与 messages 保留（token 可审计）。
+    is_delete: Mapped[bool] = mapped_column(default=False)
     dialogue_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)

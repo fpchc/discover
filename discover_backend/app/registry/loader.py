@@ -135,6 +135,7 @@ class AgentLoader:
     def __init__(self, settings: Settings, mcp_registry: MCPRegistry) -> None:
         self._settings = settings
         self._mcp_ids = {server.id for server in mcp_registry.servers}
+        self._capability_ids = set(mcp_registry.capabilities)
 
     async def load_agents(self, agents_root: Path) -> AgentRegistrySnapshot:
         agent_dirs = await anyio.to_thread.run_sync(_list_agent_dirs, agents_root)
@@ -233,6 +234,9 @@ class AgentLoader:
         for dep in manifest.mcp_dependencies:
             if dep.server not in self._mcp_ids:
                 raise RegistryValidationError(f"MCP 服务器未注册：{dep.server}")
+        for cap_dep in manifest.capability_dependencies:
+            if cap_dep.capability not in self._capability_ids:
+                raise RegistryValidationError(f"平台能力未注册：{cap_dep.capability}")
         seen_names: set[str] = set()
         for script in manifest.scripts:
             if script.name in seen_names:

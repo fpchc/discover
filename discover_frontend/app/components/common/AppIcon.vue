@@ -26,6 +26,7 @@ const props = withDefaults(
       | 'download'
       | 'external'
       | 'x'
+      | 'check'
     size?: number
   }>(),
   { size: 16 },
@@ -304,6 +305,23 @@ const dimension = computed<string>(() => `${props.size}px`)
     aria-hidden="true"
   >
     <path d="M18 6L6 18M6 6l12 12" />
+  </svg>
+
+  <!-- 选中对勾 -->
+  <svg
+    v-else-if="name === 'check'"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    :width="dimension"
+    :height="dimension"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M20 6L9 17l-5-5" />
   </svg>
 
   <!-- 侧栏面板（折叠 / 展开） -->

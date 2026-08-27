@@ -18,7 +18,7 @@ class AgentRegistry:
 
     def __init__(self, settings: Settings, mcp_registry: MCPRegistry) -> None:
         self._loader = AgentLoader(settings, mcp_registry)
-        self._assembler = SkillAssembler()
+        self._assembler = SkillAssembler(mcp_registry)
         # 归一为绝对路径：技能目录 / 脚本宿主路径 / SKILL_ROOT_DIR 一律绝对，
         # 否则脚本 subprocess cwd=工作区时会把相对脚本路径按工作区解析而找不到
         # （实测：dedup_manager 报 "No such file or directory"）。

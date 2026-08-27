@@ -1,4 +1,4 @@
-"""历史记录数据模型（跨边界 DTO，CLAUDE.md §3）。
+"""会话历史数据模型（跨边界 DTO，CLAUDE.md §3）。
 
 conversations / messages 持久化载体为 ORM（app/db/models.py），跨边界传递
 一律 pydantic BaseModel。usage 为回合聚合（含 prompt 缓存命中/写入）。
@@ -13,7 +13,11 @@ from pydantic import BaseModel, Field
 
 
 class ConversationStatus(StrEnum):
-    """会话生命周期状态。"""
+    """会话生命周期状态（纯业务状态）。
+
+    软删除不在本枚举——由 ORM Conversation.is_delete 独立标记承载。避免把删除
+    塞进业务状态机：删除不再覆盖业务状态（可还原），列表过滤单点 is_delete。
+    """
 
     ACTIVE = "active"
     CLOSED = "closed"
