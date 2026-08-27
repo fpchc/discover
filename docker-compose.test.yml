@@ -132,9 +132,12 @@ services:
     depends_on:
       - discover_backend
     ports:
+      # 宿主机 80/443 已被 nginx:latest 网关占用，前端保持 8081，域名经网关反代接入
       - "8081:80"
     environment:
       - BACKEND_PROXY_PASS=http://discover_backend:8000
+      # server_name：research.elecnest.cn（网关反代进入后 Host 透传匹配）
+      - SERVER_NAME=research.elecnest.cn
 
 volumes:
   pgdata:

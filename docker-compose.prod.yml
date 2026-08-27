@@ -139,6 +139,8 @@ services:
     environment:
       # nginx 反代目标：compose 内 backend 服务（同源 /api，SSE 长连接）
       - BACKEND_PROXY_PASS=http://discover_backend:8000
+      # server_name 兜底（nginx 模板变量必须注入，否则 ${SERVER_NAME} 残留导致启动失败）
+      - SERVER_NAME=_
 
 volumes:
   pgdata:

@@ -17,7 +17,8 @@ discover_frontend/           Chat UI（Nuxt 4 SPA + Element Plus）
 └── .dockerignore
 docker-compose.yml           dev 编排（后端热重载 + 前端热更新；不内置 postgres）
 docker-compose.prod.yml      prod 编排（postgres + nginx 反代，8080）
-docker-compose.test.yml      test 编排（postgres + nginx 反代，8081）
+docker-compose.test.yml      test 编排（nginx 反代，8081；域名 research.elecnest.cn 经宿主机网关接入）
+deploy/                      部署物统一管理（网关反代、部署脚本、配置归属说明，见 deploy/README.md）
 ```
 
 ## 一键启动（Docker）
@@ -32,8 +33,10 @@ docker compose up --build
 # prod：前端 8080（nginx 静态服务 + /api 反代）
 docker compose -f docker-compose.prod.yml up --build -d
 
-# test：前端 8081（VITE_APP_ENV=test 构建）
+# test：IP:8081；域名 research.elecnest.cn 经宿主机 nginx 网关反代到 8081（VITE_APP_ENV=test 构建）
 docker compose -f docker-compose.test.yml up --build -d
+
+# 服务器上一键部署/网关反代配置见 deploy/（deploy/scripts/deploy-test.sh、deploy/nginx/）
 
 # 停止 / 清库
 docker compose -f docker-compose.prod.yml down
