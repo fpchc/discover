@@ -35,13 +35,21 @@ deploy/
 
 ## 测试环境部署步骤
 
+> 完整 runbook（步骤 0 代码同步 → 密钥 → 一键启动 → 网关 → 迁移 → 验证 → 回滚 → 常见问题）
+> 见仓库根目录 `README.md` 的「测试环境部署（test）」一节，本目录只列精简版。
+
 ```bash
+# 0. 提交并推送未提交的部署资产（若服务器用 git pull 拉取；rsync/scp 则跳过并先校验）
+git add -A && git commit -m "deploy: 测试环境部署" && git push
+docker compose -f docker-compose.test.yml config -q   # 服务器上校验（无输出即合法）
 # 1. DNS：research.elecnest.cn 指向部署服务器
-# 2. 服务器上，仓库根目录，先配密钥（模板见 .env.example；LLM_API_KEY 必填）
+# 2. 服务器上，仓库根目录，先配密钥（模板见根目录 .env.example；LLM_API_KEY 必填）
 cp .env.example .env && $EDITOR .env
 # 3. 一键启动（脚本不含 git 操作；test 不内置 postgres，连远程库，迁移需手动执行）
 bash deploy/scripts/deploy-test.sh
-# 4. 网关：把 deploy/nginx/gateway-research.conf 挂进宿主机 nginx:latest 的 conf.d/
+# 4. 网关：把 deploy/nginx/gateway-research.conf 挂进宿主机 nginx-public 容器的 conf.d/ 并 reload
+docker cp deploy/nginx/gateway-research.conf nginx-public:/etc/nginx/conf.d/research.elecnest.cn.conf
+docker exec nginx-public nginx -t && docker exec nginx-public nginx -s reload
 #    reload 后 http://research.elecnest.cn 生效（HTTPS 后续再配，需证书）
 ```
 
@@ -49,3 +57,4 @@ bash deploy/scripts/deploy-test.sh
 
 真实密钥不入库。`x-common-env` 全部是 `${VAR:-默认值}`，服务器根目录放 `.env`
 （compose 自动读取），用 `LLM_API_KEY=`、`ALIBABA_SEARCH_TOKEN=`、`DB_*` 覆盖默认值。
+模板：根目录 `.env.example`（已加入 `.gitignore` 白名单，可提交）。

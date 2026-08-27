@@ -27,6 +27,12 @@ coverage/
 sessions/
 *.log
 
+# ---- bind mount 数据目录（test/prod 后端运行时可写目录 + postgres 数据）----
+/storage/
+/logs/
+/workspaces/
+/pgdata/
+
 .idea/
 
 # ---- Python ----

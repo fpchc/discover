@@ -116,9 +116,11 @@ services:
       <<: *common-env
     volumes:
       # 运行时可写目录持久化
-      - backend-storage:/app/storage
-      - backend-logs:/app/logs
-      - backend-workspaces:/app/workspaces
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./workspaces:/app/workspaces
+    networks:
+      - discover-net
     expose:
       - "8000"
 
@@ -136,14 +138,14 @@ services:
       - discover_backend
     ports:
       - "8080:80"
+    networks:
+      - discover-net
     environment:
       # nginx 反代目标：compose 内 backend 服务（同源 /api，SSE 长连接）
       - BACKEND_PROXY_PASS=http://discover_backend:8000
       # server_name 兜底（nginx 模板变量必须注入，否则 ${SERVER_NAME} 残留导致启动失败）
       - SERVER_NAME=_
 
-volumes:
-  pgdata:
-  backend-storage:
-  backend-logs:
-  backend-workspaces:
+networks:
+  discover-net:
+    driver: bridge

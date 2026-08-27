@@ -115,6 +115,8 @@ services:
       # 源码热挂载 + .venv 匿名卷（不污染宿主机）
       - ./discover_backend:/app
       - /app/.venv
+    networks:
+      - discover-net
     ports:
       - "8000:8000"
 
@@ -132,11 +134,14 @@ services:
       # 源码热挂载 + node_modules 匿名卷
       - ./discover_frontend:/app
       - /app/node_modules
+    networks:
+      - discover-net
     environment:
       # dev 代理：/api 反代到 compose 内 backend 服务（免 CORS）
       - VITE_PROXY_TARGET=http://discover_backend:8000
     stdin_open: true
     tty: true
 
-volumes:
-  pgdata:
+networks:
+  discover-net:
+    driver: bridge
