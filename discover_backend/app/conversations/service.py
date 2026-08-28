@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 
 from app.conversations.models import (
     ConversationRecord,
@@ -18,10 +18,12 @@ from app.conversations.models import (
     MessageRecord,
     MessageStatus,
     TurnRecord,
+    UsageAggregate,
 )
 from app.db.base import local_now
 from app.db.engine import Database
 from app.db.models import Conversation, Message
+from app.errors.base import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,7 @@ class ConversationService:
                 if convo is None:
                     convo = Conversation(
                         conversation_id=conversation_id,
+                        from_account_id=turn.account_id,
                         name=turn.conversation_name or turn.query[:64],
                         status=ConversationStatus.ACTIVE.value,
                         dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
@@ -100,6 +103,7 @@ class ConversationService:
                     Message(
                         message_id=turn.message_id,
                         conversation_id=conversation_id,
+                        created_by=turn.account_id,
                         agent_id=turn.agent_id,
                         provider=turn.provider,
                         model=turn.model,
@@ -123,13 +127,18 @@ class ConversationService:
             logger.warning("历史落库失败（best-effort 忽略）：%s：%r", conversation_id, exc)
             return False
 
-    async def list_conversations(self, *, limit: int, offset: int) -> list[ConversationRecord]:
-        """分页列出会话（按 updated_at 倒序）。"""
+    async def list_conversations(
+        self, account_id: str, *, limit: int, offset: int
+    ) -> list[ConversationRecord]:
+        """分页列出当前账号会话（按 updated_at 倒序，跨账号隔离）。"""
         async with self._db.session_factory() as session:
             rows = (
                 await session.scalars(
                     select(Conversation)
-                    .where(Conversation.is_delete.is_(False))
+                    .where(
+                        Conversation.from_account_id == account_id,
+                        Conversation.is_delete.is_(False),
+                    )
                     .order_by(Conversation.updated_at.desc())
                     .limit(limit)
                     .offset(offset)
@@ -138,10 +147,16 @@ class ConversationService:
         return [_conversation_to_record(row) for row in rows]
 
     async def get_messages(
-        self, conversation_id: str, *, limit: int, offset: int
+        self, account_id: str, conversation_id: str, *, limit: int, offset: int
     ) -> list[MessageRecord]:
-        """分页列出会话消息（按 created_at 升序）。"""
+        """分页列出会话消息（按 created_at 升序）。
+
+        先校验会话归属（from_account_id）；跨账号或不存在 → 404（不泄露存在性）。
+        """
         async with self._db.session_factory() as session:
+            convo = await session.get(Conversation, conversation_id)
+            if convo is None or convo.from_account_id != account_id:
+                raise NotFoundError(f"未知会话：{conversation_id}")
             rows = (
                 await session.scalars(
                     select(Message)
@@ -153,47 +168,74 @@ class ConversationService:
             ).all()
         return [_message_to_record(row) for row in rows]
 
-    async def get_usage(self, conversation_id: str) -> dict[str, object]:
-        """会话级用量汇总（tokens 聚合 + 消息数，供控制台统计）。"""
-        async with self._db.session_factory() as session:
-            one = (
-                await session.execute(
-                    select(
-                        func.count(Message.message_id).label("message_count"),
-                        func.coalesce(func.sum(Message.prompt_tokens), 0).label("prompt_tokens"),
-                        func.coalesce(func.sum(Message.completion_tokens), 0).label(
-                            "completion_tokens"
-                        ),
-                        func.coalesce(func.sum(Message.total_tokens), 0).label("total_tokens"),
-                        func.coalesce(func.sum(Message.cached_read_tokens), 0).label(
-                            "cached_read_tokens"
-                        ),
-                        func.coalesce(func.sum(Message.cached_write_tokens), 0).label(
-                            "cached_write_tokens"
-                        ),
-                    ).where(Message.conversation_id == conversation_id)
-                )
-            ).one()
-        return {
-            "message_count": int(one.message_count),
-            "prompt_tokens": int(one.prompt_tokens),
-            "completion_tokens": int(one.completion_tokens),
-            "total_tokens": int(one.total_tokens),
-            "cached_read_tokens": int(one.cached_read_tokens),
-            "cached_write_tokens": int(one.cached_write_tokens),
-        }
-
-    async def soft_delete_conversation(self, conversation_id: str) -> bool:
+    async def soft_delete_conversation(self, account_id: str, conversation_id: str) -> bool:
         """软删除会话：标记 is_delete=true（行与 messages 保留，token 可审计）。
 
-        业务状态 status 不被覆盖（可还原）；已删除或不存在返回 False。显式用户
-        操作，DB 错误照常上抛（不降级）。
+        业务状态 status 不被覆盖（可还原）；不存在、已删除或非本人账号 → False。
+        显式用户操作，DB 错误照常上抛（不降级）。
         """
         async with self._db.session_factory() as session:
             convo = await session.get(Conversation, conversation_id)
-            if convo is None or convo.is_delete:
+            if convo is None or convo.is_delete or convo.from_account_id != account_id:
                 return False
             convo.is_delete = True
             convo.updated_at = local_now()
             await session.commit()
         return True
+
+    # ---- 账号 token 用量聚合（按 messages.created_by） ----
+    async def aggregate_user_usage(self, account_id: str) -> UsageAggregate:
+        """单账号用量：会话数（去重）+ 回合数 + token 合计（含缓存命中/写入）。"""
+        async with self._db.session_factory() as session:
+            row = (
+                await session.execute(
+                    select(
+                        func.count(distinct(Message.conversation_id)),
+                        func.count(Message.message_id),
+                        func.coalesce(func.sum(Message.prompt_tokens), 0),
+                        func.coalesce(func.sum(Message.completion_tokens), 0),
+                        func.coalesce(func.sum(Message.total_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_read_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_write_tokens), 0),
+                    ).where(Message.created_by == account_id)
+                )
+            ).one()
+        return UsageAggregate(
+            conversation_count=row[0],
+            message_count=row[1],
+            prompt_tokens=row[2],
+            completion_tokens=row[3],
+            total_tokens=row[4],
+            cached_read_tokens=row[5],
+            cached_write_tokens=row[6],
+        )
+
+    async def usage_by_account(self) -> dict[str, UsageAggregate]:
+        """全部账号用量（超级用户接口）：按 created_by 分组聚合。"""
+        async with self._db.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        Message.created_by,
+                        func.count(distinct(Message.conversation_id)),
+                        func.count(Message.message_id),
+                        func.coalesce(func.sum(Message.prompt_tokens), 0),
+                        func.coalesce(func.sum(Message.completion_tokens), 0),
+                        func.coalesce(func.sum(Message.total_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_read_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_write_tokens), 0),
+                    ).group_by(Message.created_by)
+                )
+            ).all()
+        result: dict[str, UsageAggregate] = {}
+        for row in rows:
+            result[row[0]] = UsageAggregate(
+                conversation_count=row[1],
+                message_count=row[2],
+                prompt_tokens=row[3],
+                completion_tokens=row[4],
+                total_tokens=row[5],
+                cached_read_tokens=row[6],
+                cached_write_tokens=row[7],
+            )
+        return result

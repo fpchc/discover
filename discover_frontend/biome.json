@@ -6,7 +6,7 @@
   "files": {
     "includes": [
       "**/*.ts",
-      "**/*.vue",
+      "**/*.tsx",
       "**/*.json",
       "**/*.js",
       "**/*.mjs",
@@ -14,7 +14,8 @@
       "!!**/dist",
       "!!**/coverage",
       "!!**/.nuxt",
-      "!!**/.output"
+      "!!**/.output",
+      "!!**/.vite"
     ],
     "ignoreUnknown": true
   },
@@ -34,6 +35,9 @@
       },
       "style": {
         "noNonNullAssertion": "off"
+      },
+      "correctness": {
+        "noUnusedVariables": "warn"
       }
     }
   },
@@ -44,28 +48,5 @@
       "trailingCommas": "all",
       "arrowParentheses": "always"
     }
-  },
-  "overrides": [
-    {
-      "includes": ["**/*.vue"],
-      "linter": {
-        "rules": {
-          "correctness": {
-            "noUnusedVariables": "off",
-            "noUnusedImports": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["app/pages/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "useVueMultiWordComponentNames": "off"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

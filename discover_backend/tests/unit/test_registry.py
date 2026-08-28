@@ -283,6 +283,25 @@ async def test_absolute_path_literal_in_skill_script(tmp_path: Path) -> None:
     assert "绝对路径" in package.skill_failures[0].invalid_reason
 
 
+async def test_pycache_compiled_artifact_ignored(tmp_path: Path) -> None:
+    """回归：scripts/__pycache__/*.pyc 编译产物不得判为绝对路径字面量。
+
+    字节码内嵌源码绝对路径（co_filename），按文本读会命中盘符模式；若被扫描，
+    本地跑过一次脚本后技能即判无效 → assemble 无技能 → 线上 500「缺少智能体或技能」。
+    """
+    _write_agent(tmp_path)
+    pyc_dir = tmp_path / "finder" / "research" / "scripts" / "__pycache__"
+    pyc_dir.mkdir()
+    (pyc_dir / "run_research.cpython-312.pyc").write_bytes(
+        b"\xe3\x00\x00\x00\x00\x00\x00\x00"
+        + b"D:\\vibecoding\\discover\\agents\\finder\\research\\scripts\\run_research.py"
+    )
+    snapshot = await _load(tmp_path, "alibaba_search")
+    package = snapshot.packages["finder"]
+    assert "research" in package.skills
+    assert package.skill_failures == []
+
+
 # ---- 两级索引 ----
 async def test_index_two_level_isolation(tmp_path: Path) -> None:
     _write_agent(tmp_path)

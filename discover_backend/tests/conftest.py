@@ -5,9 +5,35 @@ import anyio
 import httpx
 import pytest
 from app.application import create_app
+from app.auth.security import JwtService
 from app.config.settings import Settings
 from app.protocol.events import DoneEvent
 from app.runtime.state import GraphState
+
+# 测试固定 JWT 密钥（≥32 字节，避免 pyjwt 弱密钥警告；与 _build_settings 对齐）
+_TEST_JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef"
+# 测试令牌默认账号（虚构 uuid；JWT 解签不查库，隔离过滤按此字符串）
+_TEST_ACCOUNT_ID = "00000000-0000-0000-0000-0000000000aa"
+
+
+def make_auth_token(account_id: str = _TEST_ACCOUNT_ID, *, secret: str = _TEST_JWT_SECRET) -> str:
+    """构造有效 JWT（认证依赖仅解签，不查库，任意 account_id 可过）。"""
+    return JwtService(Settings(_env_file=None, jwt_secret_key=secret)).encode(account_id)
+
+
+@pytest.fixture()
+def auth_headers() -> dict[str, str]:
+    """受保护路由的 Authorization 头（默认测试账号）。"""
+    return {"Authorization": f"Bearer {make_auth_token()}"}
+
+
+@pytest.fixture()
+def auth_headers_other() -> dict[str, str]:
+    """第二个账号的 Authorization 头（跨账号隔离用例）。"""
+    return {
+        "Authorization": f"Bearer {make_auth_token('00000000-0000-0000-0000-0000000000bb')}"
+    }
+
 
 # 目录 → marker 映射：四层测试结构，按目录自动打标（pytest 9 的 conftest pytestmark
 # 不再传播到同目录模块，故用 collection 钩子统一处理）
@@ -86,6 +112,8 @@ def _build_settings(tmp_path: Path) -> Settings:
         hot_reload_enabled=False,
         # 关闭日志扩展：其非阻塞配置会替换根 logger handler，破坏 pytest 日志捕获
         logging_enabled=False,
+        # 认证恒启用（无 auth_enabled 开关）；测试注入固定密钥（≥32 字节）
+        jwt_secret_key="test-secret-0123456789abcdef0123456789abcdef",
     )
 
 

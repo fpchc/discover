@@ -11,6 +11,7 @@ from collections.abc import Callable
 import anyio
 from fastapi import FastAPI, Request
 
+from app.auth.service import AuthService
 from app.catalog.assistant_catalog import AssistantCatalog
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
@@ -45,6 +46,7 @@ class AppServices:
         self.storage: BaseStorage | None = None
         self.sessions: SessionService | None = None
         self.history: ConversationService | None = None
+        self.auth: AuthService | None = None
         self.registry: AgentRegistry | None = None
         self.runtimes: dict[str, Runtime] = {}
         self._resolve_api_key: Callable[[LLMProvider], str] | None = None
@@ -63,6 +65,7 @@ class AppServices:
         self.script_executor = ScriptExecutor(self.settings)
         self.sessions = SessionService(self.settings, self.db, self.storage)
         self.history = ConversationService(self.db)
+        self.auth = AuthService(self.settings, self.db, self.history)
         self.registry = AgentRegistry(self.settings, get_registry())
         await self.registry.refresh()
         reloader = HotReloader(self.registry, self.settings)

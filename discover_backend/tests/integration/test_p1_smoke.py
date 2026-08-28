@@ -332,7 +332,7 @@ async def test_route_discover_end_to_end(tmp_path: Path) -> None:
 
     settings = _settings(tmp_path)
     sessions = SessionService(settings, _DATABASE, LocalStorage(tmp_path / "storage"))
-    record = await sessions.create_session()
+    record = await sessions.create_session("00000000-0000-0000-0000-0000000000cc")
     sessions.bind_assistant(
         record.session_id, AssistantTarget(type=TargetType.EXPERT, id="discover")
     )

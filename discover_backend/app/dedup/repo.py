@@ -67,22 +67,36 @@ class DedupStore:
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    async def load_history(self) -> dict[str, object]:
-        """读取全部线索，组装脚本约定的 history 文档（空历史返回空 doc）。"""
+    async def load_history(self, account_id: str) -> dict[str, object]:
+        """读取当前账号线索，组装脚本约定的 history 文档（空历史返回空 doc）。
+
+        按账号隔离：只注入本账号去重历史（跨账号互不影响，组合主键消除覆盖冲突）。
+        """
         async with self._db.session_factory() as session:
-            rows = (await session.scalars(select(DedupClue).order_by(DedupClue.created_at))).all()
+            rows = (
+                await session.scalars(
+                    select(DedupClue)
+                    .where(DedupClue.created_by == account_id)
+                    .order_by(DedupClue.created_at)
+                )
+            ).all()
         return {
             "version": _HISTORY_VERSION,
             "product_clues": [_clue_to_dict(row) for row in rows],
         }
 
-    async def upsert_clue(self, clue: dict[str, object]) -> None:
-        """按 clue_id 新增或更新线索（脚本 add 模式 _upsert 回写）。"""
+    async def upsert_clue(self, clue: dict[str, object], account_id: str) -> None:
+        """按 (account_id, clue_id) 组合键新增或更新线索（脚本 add 模式 _upsert 回写）。"""
         clue_id = str(clue.get("clue_id", ""))
         async with self._db.session_factory() as session:
-            row = await session.get(DedupClue, clue_id)
+            row = await session.scalar(
+                select(DedupClue).where(
+                    DedupClue.created_by == account_id,
+                    DedupClue.clue_id == clue_id,
+                )
+            )
             if row is None:
-                row = DedupClue(clue_id=clue_id)
+                row = DedupClue(created_by=account_id, clue_id=clue_id)
                 session.add(row)
             row.product_keywords = _as_str_list(clue.get("product_keywords"))
             row.target_industry = str(clue.get("target_industry", ""))

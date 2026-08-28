@@ -59,7 +59,7 @@ docker compose -f docker-compose.prod.yml down -v   # 连同卷一并清除
 
 ### 配置注入
 
-- 后端公共参数（含 `LLM_API_KEY` / `ALIBABA_SEARCH_TOKEN` 空占位）以 YAML 锚点 `x-common-env` 写在三套
+- 后端公共参数（含 `LLM_API_KEY` / `YUANBAO_SEARCH_TOKEN` 空占位）以 YAML 锚点 `x-common-env` 写在三套
   compose 各自文件头部，`services.<svc>.environment` 用 `<<: *common-env` 展开，一处修改三处生效；
   真实密钥不入库：放服务器根目录 `.env`（模板根目录 `.env.example`），compose 自动读取并覆盖默认值。
 - `DB_*` 按环境各自声明：prod / test 指向 compose 内 postgres；dev 不内置 postgres，走热挂载 `discover_backend/.env`。
@@ -79,7 +79,7 @@ docker compose -f docker-compose.prod.yml down -v   # 连同卷一并清除
 | 代码 | 仓库已同步到服务器（见步骤 0） |
 | DNS | `research.elecnest.cn` A 记录指向本服务器 |
 | 数据库 | test 不内置 postgres，连远程库（默认 `175.178.45.21`，根目录 `.env` 可覆盖 `DB_*`） |
-| 密钥 | 根目录 `.env` 配置 `LLM_API_KEY`（必填）、`ALIBABA_SEARCH_TOKEN`（可选），否则对话 / 搜索工具不可用 |
+| 密钥 | 根目录 `.env` 配置 `LLM_API_KEY`（必填）、`YUANBAO_SEARCH_TOKEN`（可选，web_search 默认提供方），否则对话 / 搜索工具不可用 |
 
 ### 步骤 0 — 提交并同步代码（git 方式需要）
 
@@ -102,7 +102,7 @@ git pull
 
 ```bash
 cp .env.example .env
-vim .env      # 必填 LLM_API_KEY；按需 ALIBABA_SEARCH_TOKEN
+vim .env      # 必填 LLM_API_KEY；按需 YUANBAO_SEARCH_TOKEN（搜索默认 yuanbao，ALIBABA 为备选）
 ```
 
 > `.env` 模板各变量都有默认值，只覆盖需要改的项。不配置也能启动，但 LLM / 搜索工具不可用。

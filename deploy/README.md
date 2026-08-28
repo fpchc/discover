@@ -56,5 +56,6 @@ docker exec nginx-public nginx -t && docker exec nginx-public nginx -s reload
 ## 密钥注入
 
 真实密钥不入库。`x-common-env` 全部是 `${VAR:-默认值}`，服务器根目录放 `.env`
-（compose 自动读取），用 `LLM_API_KEY=`、`ALIBABA_SEARCH_TOKEN=`、`DB_*` 覆盖默认值。
+（compose 自动读取），用 `LLM_API_KEY=`、`YUANBAO_SEARCH_TOKEN=`（web_search 默认走
+yuanbao；`ALIBABA_SEARCH_TOKEN=` 为 failover 备选）、`DB_*` 覆盖默认值。
 模板：根目录 `.env.example`（已加入 `.gitignore` 白名单，可提交）。

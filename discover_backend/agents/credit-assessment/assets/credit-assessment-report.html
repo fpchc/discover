@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>东莞市凯格精机股份有限公司 · PCB 客户账期评估</title>
+<meta name="author" content="EITIA">
+<meta name="description" content="PCB 客户账期评估报告 · 凯格精机(301338)">
+<meta name="generator" content="EITIA">
+<style>
+@font-face { font-family: "TsangerJinKai02"; src: url("../fonts/TsangerJinKai02-W04.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+@font-face { font-family: "TsangerJinKai02"; src: url("../fonts/TsangerJinKai02-W05.ttf") format("truetype"); font-weight: 500; font-style: normal; }
+
+/* ══════ EITIA 品牌设计系统 ══════ */
+:root {
+  --bg: #f4f6f7; --card: #fafbfc; --ink: #141413; --warm: #3d3d3a; --stone: #6b6a64;
+  --brand: #059669; --bsoft: #d4f0e0; --line: #e0e2e3; --soft: #e8eaeb;
+  --pos: #059669; --neg: #c0392b; --warn: #f59e0b; --info: #3b82f6; --purp: #8b5cf6;
+  --serif: "TsangerJinKai02","Source Han Serif SC","Noto Serif CJK SC","STSong",Georgia,serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); }
+body { color: var(--ink); font-family: var(--serif); font-size: 10pt; line-height: 1.6; max-width: 210mm; margin: 0 auto; padding: 16mm 18mm 18mm 18mm; }
+
+/* 封面 */
+.cover-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 9pt; color: var(--brand); letter-spacing: 1.2pt; font-weight: 500; margin-bottom: 10px; }
+.cover-eyebrow::before { content: ""; width: 8px; height: 2px; border-radius: 1px; background: var(--brand); }
+.cover-title { font-size: 24pt; font-weight: 500; line-height: 1.2; margin-bottom: 6px; }
+.cover-subtitle { font-size: 11pt; color: #504e49; line-height: 1.5; margin-bottom: 14px; }
+.cover-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.cover-tag { font-size: 7.5pt; color: var(--brand); background: var(--bsoft); padding: 2px 9px; border-radius: 9px; font-weight: 500; }
+.cover-verdict { display: flex; align-items: center; gap: 14px; padding: 12px 16px; background: var(--bsoft); border-radius: 6px; margin-bottom: 14px; }
+.cover-badge { flex: 0 0 62px; width: 62px; height: 62px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 38pt; font-weight: 500; color: #fff; background: var(--brand); }
+.cover-verdict-body { flex: 1; }
+.cover-verdict-title { font-size: 13pt; font-weight: 500; color: var(--brand); }
+.cover-verdict-desc { font-size: 8pt; color: var(--warm); margin-top: 2px; line-height: 1.5; }
+.cover-kpi-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.cover-kpi { flex: 1; text-align: center; background: var(--bsoft); border-radius: 4px; padding: 10px 5px; }
+.cover-kpi-num { font-size: 15pt; font-weight: 500; color: var(--brand); line-height: 1.2; }
+.cover-kpi-lbl { font-size: 6.5pt; color: var(--stone); margin-top: 2px; }
+.cover-meta { font-size: 7.5pt; color: var(--stone); border-top: 0.5pt solid var(--line); padding-top: 10px; margin-top: 6px; }
+
+/* 章节 */
+.section { margin-top: 46px; padding-top: 26px; border-top: 2pt solid var(--line); }
+.section h2 { font-size: 15pt; font-weight: 500; color: var(--brand); margin-bottom: 15px; padding-bottom: 7px; border-bottom: 1pt solid var(--line); }
+.section h3 { font-size: 11pt; font-weight: 500; color: var(--warm); margin: 14px 0 8px; }
+.section p { font-size: 9pt; color: var(--warm); margin-bottom: 8px; }
+
+/* 组件 */
+.callout { background: var(--card); border-left: 2pt solid var(--brand); padding: 10px 13px; border-radius: 3pt; margin: 10px 0; font-size: 8.5pt; line-height: 1.55; }
+.callout.warn { border-left-color: var(--warn); background: #fffbeb; }
+.callout.info { border-left-color: var(--info); background: #eff6ff; }
+.callout.red { border-left-color: var(--neg); background: #fde8e8; }
+
+/* 表格 */
+.data-table { font-size: 7.5pt; width: 100%; border-collapse: collapse; margin: 10px 0; }
+.data-table th { text-align: left; padding: 5px 8px; border-bottom: 1pt solid var(--line); color: var(--stone); font-size: 6.5pt; font-weight: 500; background: var(--card); }
+.data-table td { padding: 5px 8px; border-bottom: 0.3pt dotted var(--soft); vertical-align: top; line-height: 1.5; }
+.data-table .hi { color: var(--brand); font-weight: 500; }
+.data-table .lo { color: var(--neg); }
+.data-table .wa { color: var(--warn); }
+
+/* 仪表盘 */
+.dash { display: grid; gap: 8px; margin: 12px 0; }
+.dash-3 { grid-template-columns: 1fr 1fr 1fr; }
+.dash-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.dash-5 { grid-template-columns: repeat(5, 1fr); }
+.dash-card { background: var(--card); border: 0.5pt solid var(--line); border-radius: 5px; padding: 11px 13px; }
+.dash-card h5 { font-size: 7pt; font-weight: 500; color: var(--stone); margin-bottom: 5px; }
+.dash-card .val { font-size: 16pt; font-weight: 500; line-height: 1; }
+.dash-card .val.g { color: var(--pos); }
+.dash-card .val.a { color: var(--warn); }
+.dash-card .val.r { color: var(--neg); }
+.dash-card .note { font-size: 6.5pt; color: var(--stone); margin-top: 4px; line-height: 1.4; }
+
+/* 信号矩阵 */
+.signal-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+.signal-col { border-radius: 5px; padding: 13px 15px; }
+.signal-col.g { background: #d4f0e0; }
+.signal-col.a { background: #fffbeb; }
+.signal-col.r { background: #fde8e8; }
+.signal-col h4 { font-size: 9.5pt; font-weight: 500; margin-bottom: 8px; }
+.signal-col.g h4 { color: var(--pos); }
+.signal-col.a h4 { color: var(--warn); }
+.signal-col.r h4 { color: var(--neg); }
+.signal-item { font-size: 7.5pt; padding: 4px 0; border-bottom: 0.3pt dotted rgba(0,0,0,0.08); line-height: 1.5; }
+.signal-item:last-child { border-bottom: none; }
+
+/* 风险矩阵 */
+.risk-table { font-size: 7.5pt; width: 100%; border-collapse: collapse; margin: 10px 0; }
+.risk-table th { text-align: left; padding: 5px 8px; border-bottom: 1pt solid var(--line); color: var(--stone); font-size: 6.5pt; background: var(--card); }
+.risk-table td { padding: 5px 8px; border-bottom: 0.3pt dotted var(--soft); }
+.risk-lv-无 { color: var(--pos); }
+.risk-lv-低 { color: var(--pos); }
+.risk-lv-中 { color: var(--warn); }
+.risk-lv-高 { color: var(--neg); }
+
+/* 对抗审查 */
+.adversarial { background: var(--card); border: 0.5pt solid var(--line); border-radius: 5px; padding: 13px 16px; margin-bottom: 8px; }
+.adversarial h4 { font-size: 9.5pt; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+.adversarial .ev { font-size: 7.5pt; color: var(--warm); margin-bottom: 4px; line-height: 1.5; }
+.adversarial .verdict { font-size: 8pt; font-weight: 500; }
+.verdict-pass { color: var(--pos); }
+.verdict-partial { color: var(--warn); }
+
+.src { font-size: 7pt; color: var(--stone); margin-top: 12px; border-top: 0.3pt dotted var(--line); padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<!-- ══════════ 封面 ══════════ -->
+<div class="cover-eyebrow">EITIA · 电子信息产业链 · PCB 客户账期评估</div>
+<div class="cover-title">东莞市凯格精机股份有限公司</div>
+<div class="cover-subtitle">PCB 客户账期评估报告 · 股票代码 301338 · 创业板</div>
+<div class="cover-tags">
+  <span class="cover-tag">国家级单项冠军</span>
+  <span class="cover-tag">专精特新小巨人</span>
+  <span class="cover-tag">SMT 锡膏印刷设备全球领先</span>
+  <span class="cover-tag">上市公司</span>
+</div>
+<div class="cover-verdict">
+  <div class="cover-badge">S</div>
+  <div class="cover-verdict-body">
+    <div class="cover-verdict-title">S级 · 战略级 · 回款风险极低</div>
+    <div class="cover-verdict-desc">综合授信分 9.5（满分 10）· 红线零触发 · 建议合作</div>
+  </div>
+</div>
+<div class="cover-kpi-row">
+  <div class="cover-kpi"><div class="cover-kpi-num">44天</div><div class="cover-kpi-lbl">建议账期</div></div>
+  <div class="cover-kpi"><div class="cover-kpi-num">59万</div><div class="cover-kpi-lbl">建议授信额度</div></div>
+  <div class="cover-kpi"><div class="cover-kpi-num">480万</div><div class="cover-kpi-lbl">PCB年盘子(中值)</div></div>
+  <div class="cover-kpi"><div class="cover-kpi-num">9.5</div><div class="cover-kpi-lbl">综合授信分</div></div>
+</div>
+<div class="cover-meta">EITIA 会员部 · 销售管理 · 2026-08-06 · 数据截至 2026Q1 财报 · 数据来源：上市公司公告/工商数据库/公开司法信息</div>
+
+<!-- ══════════ 1 授信结论 ══════════ -->
+<div class="section">
+  <h2>1 · 授信结论</h2>
+  <div class="callout">综合授信分 CS = 0.5×F(财务) + 0.3×R(信用) + 0.2×S(稳定) = 0.5×9.0 + 0.3×10 + 0.2×10 = <strong>9.5</strong> → <strong>S 级</strong>。5 条红线全部未触发。</div>
+  <table class="data-table">
+    <tr><th>维度</th><th>评分</th><th>说明</th></tr>
+    <tr><td>建议账期</td><td class="hi">44 天</td><td>受硬约束 建议账期 ≤ min(档位90天, 客户自身应收周转44天) 封顶</td></tr>
+    <tr><td>建议授信额度</td><td class="hi">59 万元</td><td>(PCB年盘子480万/12) × 账期1.47月 × S级系数1.0</td></tr>
+    <tr><td>适用条件</td><td>S 级 · 战略级</td><td>回款风险极低，可长期合作</td></tr>
+    <tr><td>坏账敞口</td><td class="wa">59 万全损 ≈ 盘子 12.3%</td><td>占 EITIA PCB 业务总盘子比重需业务端评估</td></tr>
+  </table>
+  <div class="callout warn">⚠ 首次合作建议小额试单验证，季度滚动评估额度。额度随 PCB 盘子波动：若实际盘子 181 万则额度约 22 万，若 906 万则约 111 万。PCB 占比参数已按招股书第一手数据校准（见第 3 章）。</div>
+
+  <h3>综合授信分 F / R / S 评分依据</h3>
+  <p>三个维度分数均由凯格精机实际采集数据对照评分规则逐一得出，非主观估计。评分规则：每子维度按"评分锚定标准"打分，加总为该维度分。</p>
+
+  <h4>F 财务健康 = 9.0 / 10（权重 50%）</h4>
+  <table class="data-table">
+    <tr><th>子维度</th><th>满分</th><th>得分</th><th>评分标准</th><th>凯格实际数据</th></tr>
+    <tr><td>偿债能力</td><td>3</td><td class="hi">3.0</td><td>负债率&lt;40% 且流动比&gt;2 → 满分</td><td>负债率 39.68%、流动比 2.14（2025 年报）</td></tr>
+    <tr><td>盈利能力</td><td>2.5</td><td class="hi">2.5</td><td>毛利率&gt;35% 且净利率&gt;15% → 满分</td><td>毛利率 41.26%、净利率 16.29%（2025 年报）</td></tr>
+    <tr><td>现金流质量</td><td>2</td><td class="wa">1.0</td><td>OCF/营收&gt;0.15 且连续为正 → 2；0.05-0.15 → 1.5；0-0.05 → 1；为负 → 0.5</td><td>2025 全年 OCF 1.64 亿转正（OCF/营收 14.19%），但 2024 为负（-8120 万）、2026Q1 仅 132 万，季度波动大 → 审慎扣分</td></tr>
+    <tr><td>增长势头</td><td>1.5</td><td class="hi">1.5</td><td>营收增速&gt;30% 且净利增速&gt;50% → 满分</td><td>营收 +34.93%、净利 +164.8%（2025 年报）</td></tr>
+    <tr><td>营运效率</td><td>1</td><td class="hi">1.0</td><td>应收周转≤90 天 → 满分</td><td>应收周转 44 天（2025）</td></tr>
+    <tr><td>合计</td><td>10</td><td class="hi">9.0</td><td colspan="2">—</td></tr>
+  </table>
+
+  <h4>R 信用风险 = 10.0 / 10（权重 30%）</h4>
+  <table class="data-table">
+    <tr><th>扣减项</th><th>每条扣分</th><th>凯格实际</th><th>扣分</th></tr>
+    <tr><td>在册被执行</td><td>3 分/条（≥2 条归零）</td><td>0 条（企查查+天眼查双源）</td><td class="hi">0</td></tr>
+    <tr><td>欠税/税务违法</td><td>2 分/条</td><td>0 条</td><td class="hi">0</td></tr>
+    <tr><td>票据违约</td><td>2 分/条</td><td>0 条</td><td class="hi">0</td></tr>
+    <tr><td>合同纠纷涉诉（作为被告）</td><td>0.5 分/条（上限 3）</td><td>0 条（14 条裁判文书凯格全部为原告/追款方）</td><td class="hi">0</td></tr>
+    <tr><td>合计</td><td colspan="2">基础 10 分 - 0</td><td class="hi">10.0</td></tr>
+  </table>
+
+  <h4>S 经营稳定性 = 10.0 / 10（权重 20%）</h4>
+  <table class="data-table">
+    <tr><th>扣减项</th><th>每条扣分</th><th>凯格实际</th><th>扣分</th></tr>
+    <tr><td>经营异常（在册）</td><td>5</td><td>无</td><td class="hi">0</td></tr>
+    <tr><td>股权冻结</td><td>3</td><td>无</td><td class="hi">0</td></tr>
+    <tr><td>实控人变更</td><td>2</td><td>无（实控人邱国良持股 5389 万股，治理稳定）</td><td class="hi">0</td></tr>
+    <tr><td>高管异常</td><td>2</td><td>无</td><td class="hi">0</td></tr>
+    <tr><td>行政处罚</td><td>2</td><td>0 条</td><td class="hi">0</td></tr>
+    <tr><td>审计非标</td><td>5</td><td>无（连续多年标准无保留，信永中和）</td><td class="hi">0</td></tr>
+    <tr><td>合计</td><td colspan="2">基础 10 分 - 0</td><td class="hi">10.0</td></tr>
+  </table>
+
+  <div class="callout"><strong>评分说明：</strong>CS = 0.5×9.0 + 0.3×10 + 0.2×10 = 9.5 → S 级。F 是唯一被扣分的维度（现金流质量因季度波动审慎降档）；R/S 因零负面记录得满分。5 条红线（失信/破产·吊销·注销/严重违法/在册经营异常/连续 2 年现金流+净利双负）经企查查 35 因子全量扫描 + 天眼查双源确认，全部未触发。数据来源：Tushare 财务指标、2025 年报、企查查风险扫描、天眼查司法维度。</div>
+</div>
+
+<!-- ══════════ 2 客户基本面 ══════════ -->
+<div class="section">
+  <h2>2 · 客户基本面</h2>
+  <table class="data-table">
+    <tr><th style="width:25%">项目</th><th>内容</th></tr>
+    <tr><td>企业全称</td><td>东莞市凯格精机股份有限公司（GKG Precision Machine Co., Ltd.）</td></tr>
+    <tr><td>统一社会信用代码</td><td>91441900775087033K</td></tr>
+    <tr><td>法定代表人</td><td>邱国良</td></tr>
+    <tr><td>注册资本/实缴</td><td>10640 万元 / 10640 万元（双源核对，IPO 增资后）</td></tr>
+    <tr><td>成立/上市</td><td>2005-05-08 / 2022-08-16（创业板 301338）</td></tr>
+    <tr><td>人员规模</td><td>参保 1058 人 · 在职 1290 人 · 大型企业</td></tr>
+    <tr><td>所属行业</td><td>专用设备制造业（电子制程产品制造 / EITIA L2·电子制造）</td></tr>
+    <tr><td>注册地址</td><td>东莞市东城街道沙朗路 2 号</td></tr>
+    <tr><td>主营产品</td><td>锡膏印刷设备（全球领先）、点胶设备、封装设备（LED/半导体固晶）、柔性自动化设备（光模块组装线）</td></tr>
+    <tr><td>核心客户</td><td>华为、富士康、鹏鼎控股、立讯精密、比亚迪、Jabil、纬创、和硕等，全球 50+ 国家</td></tr>
+    <tr><td>外销占比</td><td>21.2%（2025，2.45 亿，+96.19%）</td></tr>
+    <tr><td>资质荣誉</td><td>国家制造业单项冠军、专精特新小巨人、国家高新技术企业、国家知识产权示范企业</td></tr>
+  </table>
+  <div class="src">来源：天眼查工商画像 + 企查查注册信息（双源交叉验证）</div>
+</div>
+
+<!-- ══════════ 3 需求总体量摸排 ══════════ -->
+<div class="section">
+  <h2>3 · 需求总体量摸排（PCB 年盘子）</h2>
+  <div class="callout"><strong>估算结论：PCB 年采购盘子约 181万-906 万元，中值约 480 万元/年。</strong>上限由凯格招股书原材料构成表锁定，三方法交叉，给区间不给单点。</div>
+
+  <h3>方法 A · 成本占比法（主推，已校准）</h3>
+  <p>公式：PCB年盘子 ≈ 直接材料额 × PCB占直接材料比</p>
+  <p>= 6.04亿（2025年报直接材料，占营业成本 90.68%）× (0.3%~1.5%) ≈ <strong>181万 - 906万元/年</strong></p>
+  <p class="src">直接材料额 90.68% 来自 2025 年报；PCB 占比上限锚定凯格 IPO 招股说明书原材料构成表（1-1-197 页，2022-03 披露）。</p>
+
+  <h3>凯格招股书原材料构成（2021，第一手数据）</h3>
+  <table class="data-table">
+    <tr><th>原材料类别</th><th>2021</th><th>2020</th><th>2019</th><th>含义</th></tr>
+    <tr><td>非标加工件类</td><td>37.70%</td><td>37.69%</td><td>36.86%</td><td>精加工/铸件/钣金（机械结构件）</td></tr>
+    <tr><td>光电元件类</td><td>38.02%</td><td>36.13%</td><td>36.43%</td><td>伺服电机/驱动器/运动控制卡/工控机</td></tr>
+    <tr><td>机械配件类</td><td>16.69%</td><td>18.27%</td><td>18.68%</td><td>直线导轨/滚珠丝杆</td></tr>
+    <tr><td>气动元件类</td><td>5.18%</td><td>5.78%</td><td>5.75%</td><td>气缸</td></tr>
+    <tr><td class="hi">其他类</td><td class="hi">2.41%</td><td class="hi">2.13%</td><td class="hi">2.27%</td><td>单一品类金额小未列示，<strong>PCB 大概率落此类</strong></td></tr>
+    <tr><td>合计</td><td>100%</td><td>100%</td><td>100%</td><td>—</td></tr>
+  </table>
+  <div class="callout warn">⚠ <strong>关键校准：</strong>凯格原材料以机械结构件（非标加工 37.7%）+ 运动控制（光电元件 38%）为主，合计 75%+。"其他类"仅 2.4%，PCB 裸板几乎必然落在其中 → <strong>PCB 占直接材料上限 ≤ 2.4%</strong>。原假设（1.5%-4%）经此第一手数据校准后大幅下修至 <strong>0.3%-1.5%</strong>。</div>
+
+  <h3>方法 B · 供应商采购额（交叉）</h3>
+  <p>2025 前五大供应商合计采购 9925 万元，占年度采购总额 12.7%。若其中 PCB 厂商占相当比例，盘子下限可达数百万元。</p>
+  <p class="src">2025 年报前五大供应商披露。年报未披露供应商具体名称，无法确认 PCB 厂商占比，仅作方向参考。</p>
+
+  <h3>方法 C · 可比三角（参照）</h3>
+  <p>劲拓股份（300400）招股说明书披露主要原材料占直接材料比重（2013）：自动控制件 7.57%、PLC及温控模块 6.77%、电脑 2.17%、显示器/触摸屏 1.23%……<strong>前 20 项原材料均无 PCB 单列</strong>，PCB 内嵌于控制模组或落未列示尾部 → 印证 PCB 裸板占直接材料比在 0.3%-1.5% 区间。</p>
+  <p class="src">劲拓股份首次公开发行股票招股说明书（2014-09 披露）原材料构成表。</p>
+
+  <h3>敏感性分析</h3>
+  <table class="data-table">
+    <tr><th>PCB 占直接材料比</th><th>PCB 年盘子估算</th><th>对应月盘子</th><th>对应 44 天账期额度</th></tr>
+    <tr><td>0.3%（保守）</td><td>≈ 181 万元</td><td>≈ 15 万元</td><td>≈ 22 万元</td></tr>
+    <tr><td>0.8%（中值）</td><td>≈ 483 万元</td><td>≈ 40 万元</td><td>≈ 59 万元</td></tr>
+    <tr><td>1.5%（乐观）</td><td>≈ 906 万元</td><td>≈ 76 万元</td><td>≈ 111 万元</td></tr>
+    <tr><td>2.4%（招股书上限）</td><td>≈ 1450 万元</td><td>≈ 121 万元</td><td>≈ 178 万元</td></tr>
+  </table>
+  <div class="callout info">📌 建议：接触客户后通过采购部门确认 PCB 供应商名单及年采购额，将估算中值 480 万校准为实际值。凯格 2025 营收 +34.9%，若延续增速，盘子有上行空间。</div>
+</div>
+
+<!-- ══════════ 4 财务健康 ══════════ -->
+<div class="section">
+  <h2>4 · 财务健康</h2>
+  <div class="dash dash-5">
+    <div class="dash-card"><h5>2025 营收</h5><div class="val g">11.56亿</div><div class="note">+34.93%</div></div>
+    <div class="dash-card"><h5>2025 归母净利</h5><div class="val g">1.87亿</div><div class="note">+164.8%</div></div>
+    <div class="dash-card"><h5>毛利率</h5><div class="val g">41.26%</div><div class="note">+9.05pct</div></div>
+    <div class="dash-card"><h5>资产负债率</h5><div class="val g">39.68%</div><div class="note">流动比 2.14</div></div>
+    <div class="dash-card"><h5>应收周转</h5><div class="val g">44天</div><div class="note">健康</div></div>
+  </div>
+  <table class="data-table">
+    <tr><th>期间</th><th>营收</th><th>归母净利</th><th>毛利率</th><th>负债率</th><th>经营现金流</th></tr>
+    <tr><td>2023</td><td>7.40 亿</td><td>5258 万</td><td>30.95%</td><td>33.42%</td><td>1767 万</td></tr>
+    <tr><td>2024</td><td>8.57 亿</td><td>7052 万</td><td>32.21%</td><td>35.79%</td><td class="lo">-8120 万</td></tr>
+    <tr><td>2025</td><td class="hi">11.56 亿</td><td class="hi">1.87 亿</td><td class="hi">41.26%</td><td>39.68%</td><td class="hi">1.64 亿</td></tr>
+    <tr><td>2026Q1</td><td>3.40 亿</td><td>6498 万</td><td>40.10%</td><td>39.87%</td><td class="wa">132 万</td></tr>
+  </table>
+  <div class="callout warn">⚠ 现金流质量是最大关注点：2024 全年经营现金流为负（-8120 万），2026Q1 仅 132 万，与净利 6498 万严重背离（OCF/净利≈0.02）。2025 全年 1.64 亿转正显示改善，但季度波动大。审计意见连续多年标准无保留（信永中和），排除审计层面粉饰。</div>
+  <div class="callout">应收账款 1.92 亿（2025 年报）：1 年以内占 81%，5 年以上占 12.5%（2399 万，历史敞口）。坏账准备计提比例 18.72%，5 年以上已 100% 计提，敞口已覆盖。</div>
+  <div class="src">来源：2025 年报 + 2026Q1 季报（东方财富/年报披露）；财务指标 Tushare + 东财双源核对一致</div>
+</div>
+
+<!-- ══════════ 5 付款习惯 ══════════ -->
+<div class="section">
+  <h2>5 · 付款习惯与营运效率</h2>
+  <table class="data-table">
+    <tr><th>维度</th><th>指标</th><th>评价</th></tr>
+    <tr><td>应收周转</td><td class="hi">44 天（2025）</td><td>显著优于行业平均，向客户回款快，资金占用低</td></tr>
+    <tr><td>作为被告被诉</td><td class="hi">0 次</td><td>14 条裁判文书凯格全部为原告（追讨货款方）</td></tr>
+    <tr><td>票据违约</td><td class="hi">0</td><td>无商票拒付记录</td></tr>
+    <tr><td>欠税/税务违法</td><td class="hi">0</td><td>纳税记录干净</td></tr>
+    <tr><td>存货周转</td><td class="wa">273 天</td><td>偏慢，存货 6 亿偏高（订单备货所致）</td></tr>
+  </table>
+  <h3>追讨货款记录（凯格为原告）</h3>
+  <table class="data-table">
+    <tr><th>案号</th><th>对方</th><th>金额</th><th>结果</th></tr>
+    <tr><td>(2025)粤1971民初19773号</td><td>辽宁艾德光电</td><td class="hi">1210.5 万</td><td>凯格胜诉追回货款</td></tr>
+    <tr><td>(2020)粤1971民初27027号</td><td>深圳百思拓</td><td class="hi">161.7 万</td><td>凯格胜诉</td></tr>
+    <tr><td>(2024)粤1971民初13389号</td><td>深圳鑫鑫向嵘</td><td>9.4 万</td><td>凯格胜诉</td></tr>
+  </table>
+  <div class="callout">📌 <strong>偿付意愿结论</strong>：凯格是"强势收款方"——它向客户追讨货款有 1210 万大额胜诉记录，应收管理严格。作为采购方，供应链付款记录干净（无票据违约、无欠税）。偿付意愿和习惯良好。</div>
+  <div class="src">来源：企查查裁判文书 + 天眼查司法维度 + 博查反向搜索</div>
+</div>
+
+<!-- ══════════ 6 司法与信用风险 ══════════ -->
+<div class="section">
+  <h2>6 · 司法与信用风险矩阵</h2>
+  <table class="risk-table">
+    <tr><th>风险因子</th><th>记录数</th><th>等级</th><th>说明</th></tr>
+    <tr><td>失信被执行人</td><td>0</td><td class="risk-lv-无">无</td><td>双源确认</td></tr>
+    <tr><td>被执行人</td><td>0</td><td class="risk-lv-无">无</td><td>双源确认</td></tr>
+    <tr><td>限制高消费</td><td>0</td><td class="risk-lv-无">无</td><td>双源确认</td></tr>
+    <tr><td>破产重整</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>严重违法</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>经营异常</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>行政处罚</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>欠税公告</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>税收违法</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>票据违约</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>股权冻结/出质</td><td>0</td><td class="risk-lv-无">无</td><td>—</td></tr>
+    <tr><td>裁判文书</td><td>14</td><td class="risk-lv-低">低</td><td>凯格全部为原告（追货款），无被告风险</td></tr>
+    <tr><td>立案信息</td><td>10</td><td class="risk-lv-低">低</td><td>原告为主</td></tr>
+    <tr><td>送达公告</td><td>28</td><td class="risk-lv-中">中</td><td>数量偏多，多为主动追讨流程</td></tr>
+    <tr><td>担保信息</td><td>2</td><td class="risk-lv-低">低</td><td>需了解具体担保对象</td></tr>
+    <tr><td>公示催告</td><td>2</td><td class="risk-lv-低">低</td><td>票据公示催告，金额需核实</td></tr>
+  </table>
+  <div class="callout">🟢 <strong>风险总评：低。</strong>35 项风险因子全量扫描，仅 6 项有记录，且核心红线项（失信/被执行/限高/破产/严重违法/经营异常/处罚/欠税/违约）全部零记录。</div>
+</div>
+
+<!-- ══════════ 7 经营稳定性 ══════════ -->
+<div class="section">
+  <h2>7 · 经营稳定性</h2>
+  <div class="dash dash-4">
+    <div class="dash-card"><h5>审计意见</h5><div class="val g">标准无保留</div><div class="note">连续多年 · 信永中和</div></div>
+    <div class="dash-card"><h5>经营异常</h5><div class="val g">无</div><div class="note">双源确认</div></div>
+    <div class="dash-card"><h5>股权冻结</h5><div class="val g">无</div><div class="note">产权清晰</div></div>
+    <div class="dash-card"><h5>研发投入</h5><div class="val g">8.09%</div><div class="note">312 名研发人员</div></div>
+  </div>
+  <p>公司成立于 2005 年，经营 21 年。实控人邱国良持股 5389 万股，治理结构稳定。2025 年管理层换届后财务总监变更为谢学运（2026-01 入职，注册会计师+法律职业资格），专业背景强。全球 70+ 国家注册商标 GKG，品牌护城河深。</p>
+  <div class="src">来源：天眼查人员/董监高 + 2025 年报 + Tushare 审计意见</div>
+</div>
+
+<!-- ══════════ 8 风险信号矩阵 ══════════ -->
+<div class="section">
+  <h2>8 · 风险信号矩阵</h2>
+  <div class="signal-grid">
+    <div class="signal-col g">
+      <h4>🟢 正面信号</h4>
+      <div class="signal-item">2025 营收/净利/毛利率三高增长，业绩拐点</div>
+      <div class="signal-item">AI 算力 + 光模块 + 消费电子复苏驱动需求</div>
+      <div class="signal-item">光模块自动化组装线（800G/1.6T）获全球客户认可</div>
+      <div class="signal-item">客户结构优质（华为/富士康/鹏鼎/立讯）</div>
+      <div class="signal-item">外销高增 96%，海外市场拓展快</div>
+      <div class="signal-item">SMT 设备行业景气上行（PCB 设备板块 2025 营收+55%）</div>
+    </div>
+    <div class="signal-col a">
+      <h4>🟡 关注信号</h4>
+      <div class="signal-item">2026Q1 经营现金流仅 132 万，与净利背离</div>
+      <div class="signal-item">存货周转 273 天偏慢，存货 6 亿偏高</div>
+      <div class="signal-item">应收账款 5 年以上账龄 12.5%</div>
+      <div class="signal-item">送达公告 28 条偏多</div>
+      <div class="signal-item">LED 封装设备下滑 37%</div>
+    </div>
+    <div class="signal-col r">
+      <h4>🔴 风险信号</h4>
+      <div class="signal-item">无重大红线风险</div>
+      <div class="signal-item">PCB 占比估算参数不确定，需求盘子需校准</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 9 授信结论与监控 ══════════ -->
+<div class="section">
+  <h2>9 · 授信结论与监控方案</h2>
+  <div class="callout">综合授信分 <strong>9.5</strong>（F=9.0 / R=10 / S=10），<strong>S 级</strong>。建议 <strong>44 天账期</strong>、授信额度约 <strong>59 万元</strong>。</div>
+  <h3>监控指标（季度）</h3>
+  <table class="data-table">
+    <tr><th>指标</th><th>阈值</th><th>触发动作</th></tr>
+    <tr><td>经营现金流</td><td>连续 2 季度为负且净利下滑</td><td class="lo">授信降级至 B 级以下</td></tr>
+    <tr><td>存货周转天数</td><td>&gt; 400 天</td><td class="wa">关注资金占用</td></tr>
+    <tr><td>5 年以上应收</td><td>大幅新增坏账</td><td class="wa">重估历史敞口</td></tr>
+    <tr><td>被执行/失信</td><td>任一新增</td><td class="lo">立即中止账期</td></tr>
+  </table>
+  <h3>坏账测算</h3>
+  <p>若 59 万额度全额坏账，损失约为凯格 PCB 年盘子（480 万中值）的 <strong>12.3%</strong>。S 级客户历史坏账概率低，但 44 天账期下资金占用约 59 万元，需计入 EITIA PCB 业务总盘子资金规划。</p>
+  <div class="callout info">📌 执行建议：首次合作小额试单（如 20 万）验证回款节奏 → 季度滚动评估 → 达标后升至 59 万额度。44 天账期与凯格自身应收周转匹配，避免超出其回款节奏。</div>
+</div>
+
+<!-- ══════════ 10 数据来源与验证状态 ══════════ -->
+<div class="section">
+  <h2>10 · 数据来源与验证状态</h2>
+  <table class="data-table">
+    <tr><th>数据项</th><th>主源</th><th>验证源</th><th>状态</th></tr>
+    <tr><td>注册资本</td><td>天眼查 5000万</td><td>企查查 10640万</td><td class="wa">⚠ 偏差 · 取较新源 10640万（IPO 增资）</td></tr>
+    <tr><td>统一社会信用代码</td><td>天眼查</td><td>企查查</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>法定代表人</td><td>天眼查 邱国良</td><td>企查查 邱国良</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>成立日期</td><td>2005-05-08</td><td>2005-05-08</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>参保人数</td><td>1058</td><td>1058</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>上市状态/代码</td><td>天眼查 301338</td><td>Tushare 301338.SZ</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>营收（2025）</td><td>东方财富 11.56亿</td><td>年报 11.56亿</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>负债率（2025）</td><td>Tushare 39.68%</td><td>东方财富 39.68%</td><td class="hi">✓ 一致</td></tr>
+    <tr><td>应收周转（2025）</td><td>Tushare 43.9天</td><td>年报账龄 44天</td><td class="hi">✓ 一致</td></tr>
+  </table>
+  <div class="callout info">数据来源包括：天眼查（工商画像/集团/人员/风险）、企查查（注册/风险扫描/裁判文书/税务/股权/处罚）、东方财富（财务/年报/研报/舆情）、Tushare（财务指标/现金流/审计/基本面）、博查/Tavily/Exa/AnySearch/TinyFish（舆情与行业基准）。P0 项全部双源交叉验证。<strong>PCB 占比参数来源为凯格 IPO 招股说明书原材料构成表（1-1-197 页）+ 劲拓股份招股书（第一手数据），非行业经验假设。</strong></div>
+  <div class="src">采集时间：2026-08-06 · 数据截至 2026Q1 财报</div>
+</div>
+
+<!-- ══════════ 11 对抗审查 ══════════ -->
+<div class="section">
+  <h2>11 · 报告说明与对抗审查记录</h2>
+  <p>本报告经 8 条对抗式灵魂拷问逐条审查，全部附证据与结论，无"主观臆断"残留。审查要点：</p>
+  <div class="adversarial">
+    <h4>Q1 数据支撑 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">每条结论绑定 source + raw_data；PCB 占比唯一无直接披露参数，已标假设 + 敏感性区间。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q2 多源一致 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">P0 九项八项一致；注册资本偏差取较新源 10640 万并标注。无阻塞级矛盾。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q3 模型假设 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">PCB 占比参数已用凯格招股书原材料构成表（1-1-197 页，第一手数据）校准，上限锁定 2.4%，结合劲拓招股书交叉验证取 0.3%-1.5%，给敏感性区间，非单点。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q4 反向证据 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">刻意找"它不给钱"证据：裁判文书 14 条凯格全部为原告；失信/被执行/票据违约/欠税零记录；博查反向搜索无负面。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q5 财务粉饰 — <span class="verdict verdict-partial">🟡 部分通过</span></h4>
+    <div class="ev">2026Q1 OCF 与净利严重背离（132万 vs 6498万），已降现金流子分并列入监控。审计标准无保留。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q6 时效偏差 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">用 2025 年报 + 2026Q1 季报，数据最新。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q7 乐观偏差 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">44 天账期受 AR 硬约束封顶；额度 59 万基于招股书校准后盘子（480 万中值），且随盘子波动有敏感性（22-178 万）；建议小额试单三重防护。</div>
+  </div>
+  <div class="adversarial">
+    <h4>Q8 可执行性 — <span class="verdict verdict-pass">✅ 通过</span></h4>
+    <div class="ev">含明确账期/额度/监控指标/退出触发，销售财务可直接落地。</div>
+  </div>
+  <div class="callout"><strong>免责声明：</strong>本报告基于公开数据（上市公司公告、工商登记、司法信息、新闻舆情）综合分析，仅供 EITIA 内部业务决策参考，不构成投资建议。数据采集于 2026-08-06，后续企业经营状况变化可能影响评估结论。</div>
+</div>
+
+</body>
+</html>

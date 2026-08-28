@@ -433,7 +433,11 @@ async def test_activate_three_tiers(tmp_path: Path) -> None:
     manager = _FakeMCPManager(_MCP_TOOLS)
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1"
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
     )
     assert activation.ok is True
     assert activation.started_services == ["alibaba_search"]
@@ -453,7 +457,11 @@ async def test_activate_required_failure_releases(tmp_path: Path) -> None:
     manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1"
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
     )
     assert activation.ok is False
     assert activation.failed_required == ["alibaba_search"]
@@ -486,6 +494,7 @@ async def test_activate_capability_failover_switches_to_backup(tmp_path: Path) -
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
     )
     assert activation.ok is True
     assert activation.started_services == ["yuanbao_search"]
@@ -503,6 +512,7 @@ async def test_activate_capability_required_all_fail_releases(tmp_path: Path) ->
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
     )
     assert activation.ok is False
     assert activation.failed_required == ["alibaba_search", "yuanbao_search"]
@@ -519,6 +529,7 @@ async def test_activate_capability_optional_all_fail_degrades(tmp_path: Path) ->
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
     )
     assert activation.ok is True
     assert activation.failed_required == []
@@ -531,7 +542,13 @@ async def test_execute_mcp_and_script_and_order(tmp_path: Path) -> None:
     manager = _FakeMCPManager(_MCP_TOOLS)
     script_executor = _FakeScriptExecutor()
     broker = _broker(tmp_path, manager, script_executor)
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     calls = [
         ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={"q": "x"}),
         ToolCallRequest(
@@ -547,7 +564,13 @@ async def test_execute_mcp_and_script_and_order(tmp_path: Path) -> None:
 async def test_execute_unknown_tool_with_candidates(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_sear", arguments={})],
     )
@@ -572,7 +595,13 @@ async def test_execute_delete_side_effect_runs_directly(tmp_path: Path) -> None:
         }
     )
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), script_executor)
-    await broker.activate(plan=plan, skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="finder.research.script.run", arguments={})]
     )
@@ -583,7 +612,13 @@ async def test_execute_delete_side_effect_runs_directly(tmp_path: Path) -> None:
 async def test_search_tools_no_params(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     hits = broker.search_tools("搜索 新闻")
     assert any(hit.qualified_name == "alibaba_search.web_search_news" for hit in hits)
     dumped = hits[0].model_dump()
@@ -593,7 +628,13 @@ async def test_search_tools_no_params(tmp_path: Path) -> None:
 async def test_describe_tool_expands_exposed(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     assert "alibaba_search.web_search_news" not in {s.function.name for s in broker.exposed_tools()}
     results = await broker.execute(
         [
@@ -611,7 +652,13 @@ async def test_describe_tool_expands_exposed(tmp_path: Path) -> None:
 async def test_read_reference_traversal_rejected(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [
             ToolCallRequest(
@@ -626,7 +673,13 @@ async def test_read_reference_traversal_rejected(tmp_path: Path) -> None:
 async def test_read_reference_valid_and_dedup(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="read_reference", arguments={"path": "guide.md"})],
     )
@@ -651,7 +704,13 @@ async def test_truncation_and_log(tmp_path: Path) -> None:
             return _LongClient(self.tools, server_id)
 
     broker = _broker(tmp_path, _LongManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
     )
@@ -665,7 +724,13 @@ async def test_truncation_and_log(tmp_path: Path) -> None:
 async def test_short_output_no_log_file(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
     )
@@ -689,7 +754,13 @@ async def test_truncated_log_filename_semantic(tmp_path: Path) -> None:
             return _LongClient(self.tools, server_id)
 
     broker = _broker(tmp_path, _LongManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
     )
@@ -714,7 +785,13 @@ async def test_log_retention_sweep(tmp_path: Path) -> None:
     os.utime(stale, (old_ts, old_ts))
 
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
 
     assert stale.exists() is False
     assert fresh.exists() is True
@@ -742,7 +819,13 @@ async def test_log_per_session_cap(tmp_path: Path) -> None:
         mcp_manager=_LongManager(_MCP_TOOLS),
         script_executor=_FakeScriptExecutor(),
     )
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     first = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="alibaba_search.web_search", arguments={})],
     )
@@ -765,7 +848,13 @@ async def test_error_classification_with_suggestion(tmp_path: Path) -> None:
     plan = _plan().model_copy(
         update={"required_mcp_servers": ["alibaba_search"], "core_tool_names": ["boom"]}
     )
-    await broker.activate(plan=plan, skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="alibaba_search.boom", arguments={})],
     )
@@ -782,7 +871,13 @@ async def test_script_produced_files_surfaced(tmp_path: Path) -> None:
         produced_files=[(workspace / "out.csv").resolve()],
     )
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor(produced))
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="finder.research.script.run", arguments={})],
     )
@@ -797,7 +892,13 @@ async def test_script_failure_surfaces_stdout_error_json(tmp_path: Path) -> None
         stdout='{"error": "报告 JSON 不存在（提示文本）"}',
     )
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor(failed))
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="finder.research.script.run", arguments={})],
     )
@@ -812,7 +913,13 @@ async def test_script_failure_falls_back_to_stderr(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     failed = ScriptExecution(exit_code=1, stdout="", stderr_tail="stderr 详情")
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor(failed))
-    await broker.activate(plan=_plan(), skill_dir=skill_dir, workspace=workspace, session_id="s1")
+    await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
     results = await broker.execute(
         [ToolCallRequest(call_id="c1", tool_name="finder.research.script.run", arguments={})],
     )

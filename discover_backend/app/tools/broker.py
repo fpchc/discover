@@ -197,6 +197,7 @@ class ToolBroker:
         self._skill_dir: Path | None = None
         self._workspace: Path | None = None
         self._session_id: str = ""
+        self._account_id: str = ""
         self._env_whitelist: list[str] = []
         self._loaded_docs: set[str] = set()
         self._activated = False
@@ -244,6 +245,7 @@ class ToolBroker:
         skill_dir: Path,
         workspace: Path,
         session_id: str,
+        account_id: str,
     ) -> ToolActivation:
         """技能激活：构建 Tier1 脚本工具、启动 MCP、扩充 Tier2。"""
         if self._activated:
@@ -251,6 +253,7 @@ class ToolBroker:
         self._skill_dir = skill_dir
         self._workspace = workspace
         self._session_id = session_id
+        self._account_id = account_id
         self._log_file_count = 0
         if not self._log_swept:
             await self._sweep_stale_logs()
@@ -625,7 +628,10 @@ class ToolBroker:
             and descriptor.script_decl.history_store
             and history_store is not None
         ):
-            args = {**call.arguments, "history": await history_store.load_history()}
+            args = {
+                **call.arguments,
+                "history": await history_store.load_history(self._account_id),
+            }
         timeout = descriptor.timeout_seconds or self._settings.tool_default_timeout_seconds
         logger.debug(
             "执行脚本工具 %s（call_id=%s），超时 %.1fs，入参：%s",
@@ -691,7 +697,7 @@ class ToolBroker:
         ):
             upsert, content = _extract_upsert(content)
             if upsert is not None:
-                await history_store.upsert_clue(upsert)
+                await history_store.upsert_clue(upsert, self._account_id)
         produced = [str(path.relative_to(self._workspace)) for path in execution.produced_files]
         logger.debug(
             "脚本工具 %s 成功（%dms，stdout %d 字符，产物 %s，call_id=%s）",

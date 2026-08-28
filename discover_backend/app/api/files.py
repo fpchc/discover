@@ -19,6 +19,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.auth.deps import get_current_account_id
 from app.container import AppServices, get_services
 from app.errors.base import BadRequestError
 from app.schemas.files import FileResponse, UploadConfig
@@ -42,15 +43,17 @@ async def upload_config(services: AppServices = Depends(get_services)) -> Upload
 @router.post("/upload")
 async def upload_file(
     file: UploadFile,
+    account_id: str = Depends(get_current_account_id),
     services: AppServices = Depends(get_services),
 ) -> FileResponse:
-    """上传文件 — 存储 Key 为 {uuid}.{ext}（极简 UUID 扁平化）。"""
+    """上传文件（归属当前账号）— 存储 Key 为 {uuid}.{ext}（极简 UUID 扁平化）。"""
     assert services.sessions is not None
     limit = services.settings.storage_upload_file_size_limit_mb * 1024 * 1024
     content = await file.read(limit + 1)
     if len(content) > limit:
         raise BadRequestError(f"文件超过大小上限（{limit} 字节）")
     return await services.sessions.upload_file(
+        account_id=account_id,
         filename=file.filename or "unnamed",
         content=content,
         mimetype=file.content_type or "",

@@ -114,6 +114,10 @@ def _find_absolute_path_literals(scripts_dir: Path) -> list[str]:
     for path in sorted(scripts_dir.rglob("*")):
         if not path.is_file():
             continue
+        # 跳过 __pycache__ 编译产物：字节码内嵌 co_filename 绝对路径，按文本读
+        # 会命中盘符模式，误判「脚本含绝对路径字面量」→ 本地跑过一次脚本即判技能无效。
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:

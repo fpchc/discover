@@ -109,6 +109,7 @@ class FileService:
         *,
         source_path: Path,
         filename: str,
+        created_by: str,
         created_by_role: str = "agent",
     ) -> ArtifactRecord:
         """登记产物：源文件字节→存储层，元数据入库，清理源文件。"""
@@ -120,7 +121,11 @@ class FileService:
             )
         data = await anyio.to_thread.run_sync(_read_source, source_path)
         row = await self._store(
-            filename=filename, data=data, mimetype="", created_by_role=created_by_role
+            filename=filename,
+            data=data,
+            mimetype="",
+            created_by=created_by,
+            created_by_role=created_by_role,
         )
         await anyio.to_thread.run_sync(_remove_source, source_path)
         return record_to_dto(row)
@@ -132,6 +137,7 @@ class FileService:
         filename: str,
         content: bytes,
         mimetype: str,
+        created_by: str,
         created_by_role: str = "user",
     ) -> FileResponse:
         """上传文件：校验大小与扩展名，字节→存储层，元数据入库。"""
@@ -145,12 +151,22 @@ class FileService:
             shown = extension or "(无扩展名)"
             raise BadRequestError(f"不允许的文件类型：.{shown}（允许：{allowed}）")
         row = await self._store(
-            filename=filename, data=content, mimetype=mimetype, created_by_role=created_by_role
+            filename=filename,
+            data=content,
+            mimetype=mimetype,
+            created_by=created_by,
+            created_by_role=created_by_role,
         )
         return _to_file_response(row)
 
     async def _store(
-        self, *, filename: str, data: bytes, mimetype: str, created_by_role: str
+        self,
+        *,
+        filename: str,
+        data: bytes,
+        mimetype: str,
+        created_by: str,
+        created_by_role: str,
     ) -> UploadFileRecord:
         """存储层落盘 + 元数据入库（register/upload 共用）。"""
         file_id = uuid.uuid4().hex
@@ -166,6 +182,7 @@ class FileService:
             media_type=media_type,
             size_bytes=len(data),
             hash=_content_hash(data),
+            created_by=created_by,
             created_by_role=created_by_role,
         )
         async with self._db.session_factory() as session:

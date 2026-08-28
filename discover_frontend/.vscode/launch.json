@@ -2,22 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      // 启动 Nuxt dev server（preLaunchTask）后打开 Chrome 调试
+      // 启动 Vite dev server（preLaunchTask）后打开 Chrome 调试
       "type": "chrome",
       "request": "launch",
-      "name": "Debug in Chrome (Nuxt)",
-      "url": "http://localhost:3000",
+      "name": "Debug in Chrome (Vite)",
+      "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "dev: Nuxt dev server"
+      "preLaunchTask": "dev: Vite dev server"
     },
     {
       // 同 Chrome，浏览器换成 Edge
       "type": "msedge",
       "request": "launch",
-      "name": "Debug in Edge (Nuxt)",
-      "url": "http://localhost:3000",
+      "name": "Debug in Edge (Vite)",
+      "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "dev: Nuxt dev server"
+      "preLaunchTask": "dev: Vite dev server"
     },
     {
       // 直接以 node 方式跑 Vitest，可在测试内打断点

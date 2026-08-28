@@ -18,8 +18,11 @@ class SessionStore:
         self._sessions: dict[str, SessionRecord] = {}
 
     # ---- 会话 ----
-    def create_session(self) -> SessionRecord:
-        record = SessionRecord(session_id=uuid.uuid4().hex)
+    def create_session(self, from_account_id: str) -> SessionRecord:
+        record = SessionRecord(
+            session_id=uuid.uuid4().hex,
+            from_account_id=from_account_id,
+        )
         self._sessions[record.session_id] = record
         return record
 

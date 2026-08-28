@@ -20,7 +20,7 @@
 |------|------|
 | SQLAlchemy 声明式基类 + 命名约定 + UTC 时间 | `app/db/base.py` |
 | 异步引擎 + 会话工厂（NullPool 即开即关） | `app/db/engine.py` |
-| ORM 模型（conversations / messages / upload_files / dedup_clues） | `app/db/models.py` |
+| ORM 模型（accounts / conversations / messages / upload_files / dedup_clues；既有表带 from_account_id / created_by 账号关联） | `app/db/models.py` |
 
 ## 存储层（L0，extensions/storage，Blob Engine）
 
@@ -35,14 +35,25 @@
 
 | 职责 | 路径 |
 |------|------|
-| 对话历史落库/读取/删除（ConversationService，DB 降级内部消化，舱壁） | `app/conversations/service.py` |
-| 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord / TurnUsage） | `app/conversations/models.py` |
+| 对话历史落库/读取/删除（ConversationService，按账号隔离；DB 降级内部消化，舱壁）+ 账号 token 用量聚合（aggregate_user_usage / usage_by_account） | `app/conversations/service.py` |
+| 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord 含 account_id / UsageAggregate） | `app/conversations/models.py` |
 
 ## 去重历史（L0，dedup）
 
 | 职责 | 路径 |
 |------|------|
-| 去重历史注入/回写（dedup_clues 表，脚本纯计算契约，DedupStore） | `app/dedup/repo.py` |
+| 去重历史注入/回写（dedup_clues 表按账号隔离 + 组合主键 (created_by, clue_id)，脚本纯计算契约，DedupStore） | `app/dedup/repo.py` |
+
+## 账号认证（L0/L4，auth）
+
+| 职责 | 路径 |
+|------|------|
+| 认证 DTO（LoginRequest / LoginResponse / AccountRecord / UserUsage / AccountStatus） | `app/auth/models.py` |
+| Argon2id 密码哈希 + JWT 会话令牌（PasswordHasher / JwtService） | `app/auth/security.py` |
+| 账号认证门面（login / get_account / get_user_usage / list_users_with_usage，AuthService） | `app/auth/service.py` |
+| FastAPI 认证依赖（get_current_account_id / get_current_account / require_superuser） | `app/auth/deps.py` |
+| 认证接口（/auth/login、/users/me、/users/me/usage、/users 超级用户） | `app/api/auth.py` |
+| 预置账号 CLI（python -m app.auth.provision，无注册接口） | `app/auth/provision.py` |
 
 ## LLM 层（L1）
 
@@ -58,11 +69,11 @@
 
 | 职责 | 路径 |
 |------|------|
-| 会话/产物模型 | `app/session/models.py` |
+| 会话/产物模型（SessionRecord 含 from_account_id 归属账号） | `app/session/models.py` |
 | 会话存储 | `app/session/store.py` |
 | workspace 创建/路径校验/防穿越（按 agent 键控） | `app/session/workspace.py` |
-| 文件服务（register 磁盘产物 / upload 字节上传 / 预览 / used 标记；多消费方注册表） | `app/session/files.py` |
-| 会话服务门面（含文件上传/预览） | `app/session/service.py` |
+| 文件服务（register/upload 带 created_by 归属账号；预览全局；多消费方注册表） | `app/session/files.py` |
+| 会话服务门面（会话/文件均携带归属账号） | `app/session/service.py` |
 
 ## 工具层（L1/L2）
 
@@ -109,10 +120,11 @@
 | 应用组装（工厂 + 扩展初始化 + 中间件注册 + 路由挂载） | `app/application.py` |
 | 进程入口（uvicorn 启动，host/port 配置驱动） | `app/main.py` |
 | 服务容器 DI：扩展访问器 + 领域组装 + assistant_catalog() | `app/container.py` |
-| 对话接口（POST /chat-messages，SSE/blocking，agent_id 显式绑定） | `app/api/chat.py` |
-| 助手目录接口（GET /assistants，只读聚合） | `app/api/assistants.py` |
-| 文件接口（上传/预览） | `app/api/files.py` |
-| 会话接口（/conversations 列表/消息/用量/软删除） | `app/api/conversations.py` |
+| 对话接口（POST /chat-messages，SSE/blocking，agent_id 显式绑定；Bearer 认证，会话归属账号） | `app/api/chat.py` |
+| 助手目录接口（GET /assistants，只读聚合，公开） | `app/api/assistants.py` |
+| 文件接口（上传需认证带归属账号；预览全局公开） | `app/api/files.py` |
+| 会话接口（/conversations 列表/消息/软删除；按账号隔离，跨账号 404） | `app/api/conversations.py` |
+| 认证接口（/auth/login 公开；/users/me、/users/me/usage、/users 超级用户） | `app/api/auth.py` |
 
 ## 扩展层（L1，extensions，基础设施统一加载）
 
@@ -143,7 +155,7 @@
 | 文件 API DTO（FileResponse / UploadConfig） | `app/schemas/files.py` |
 | 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/chat.py` |
 | 文件路由（/files/upload 配置、上传、{id}/preview 流式预览，controller） | `app/api/files.py` |
-| 会话接口（/conversations 列表/消息/用量/软删除，controller） | `app/api/conversations.py` |
+| 会话接口（/conversations 列表/消息/软删除，controller） | `app/api/conversations.py` |
 
 ## 数据与配置（非代码）
 

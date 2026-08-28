@@ -214,6 +214,16 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # ---- 账号认证（JWT + Argon2id） ----
+    # JWT 签名密钥：必须从环境注入，无默认有效值（缺失时 JwtService 构造抛 ConfigError）
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expires_minutes: int = 60 * 24 * 7
+    # Argon2id 参数（OWASP 推荐强度：64 MiB、3 次迭代、4 并行）
+    argon2_time_cost: int = 3
+    argon2_memory_cost: int = 65536
+    argon2_parallelism: int = 4
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

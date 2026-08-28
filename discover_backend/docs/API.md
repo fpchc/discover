@@ -119,30 +119,7 @@
 
 ---
 
-### 1.3 会话用量汇总
-
-`GET /api/v1/conversations/{conversation_id}/usage`
-
-**响应 200**：
-
-```json
-{
-  "message_count": 5,
-  "prompt_tokens": 60000,
-  "completion_tokens": 4000,
-  "total_tokens": 64000,
-  "cached_read_tokens": 45000,
-  "cached_write_tokens": 6000
-}
-```
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `message_count` | int | 回合数 |
-| `prompt_tokens` / `completion_tokens` / `total_tokens` | int | 会话级聚合 |
-| `cached_read_tokens` / `cached_write_tokens` | int | 会话级缓存命中/写入聚合 |
-
-### 1.4 删除会话
+### 1.3 删除会话
 
 `DELETE /api/v1/conversations/{conversation_id}`
 

@@ -54,6 +54,7 @@ x-common-env: &common-env
 
   # ---------- MCP ----------
   ALIBABA_SEARCH_TOKEN: ${ALIBABA_SEARCH_TOKEN:-}
+  YUANBAO_SEARCH_TOKEN: ${YUANBAO_SEARCH_TOKEN:-}
 
   # ---------- 会话 ----------
   ARTIFACT_MAX_SIZE_BYTES: ${ARTIFACT_MAX_SIZE_BYTES:-104857600}
@@ -100,6 +101,14 @@ x-common-env: &common-env
   HOST: ${HOST:-0.0.0.0}
   PORT: ${PORT:-8000}
 
+  # ---------- 账号认证（JWT + Argon2id） ----------
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+  JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  JWT_EXPIRES_MINUTES: ${JWT_EXPIRES_MINUTES:-10080}
+  ARGON2_TIME_COST: ${ARGON2_TIME_COST:-3}
+  ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-65536}
+  ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-4}
+
 name: discover
 
 services:
@@ -129,7 +138,7 @@ services:
     depends_on:
       - discover_backend
     ports:
-      - "3000:3000"
+      - "5173:5173"
     volumes:
       # 源码热挂载 + node_modules 匿名卷
       - ./discover_frontend:/app

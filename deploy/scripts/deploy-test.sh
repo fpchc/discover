@@ -2,7 +2,7 @@
 # ===== 测试环境一键启动（在服务器仓库根目录执行；不涉及 git 操作）=====
 # 前置：
 #   1) 服务器已装 Docker + Docker Compose v2，代码已就位（rsync / scp / 手动覆盖均可，无需 git pull）；
-#   2) 根目录 .env 已按 .env.example 填写（LLM_API_KEY / ALIBABA_SEARCH_TOKEN / DB_*）；
+#   2) 根目录 .env 已按 .env.example 填写（LLM_API_KEY / YUANBAO_SEARCH_TOKEN / DB_*）；
 #      未填写也能启动，但 LLM / 搜索工具不可用，DB 走 compose 内置默认值（远程库 175.178.45.21）。
 #   3) 域名 research.elecnest.cn 的 DNS 已指向本机，网关配置见 deploy/nginx/gateway-research.conf。
 #   4) test 环境不内置 postgres，连远程库；数据库迁移不自动执行（避免误改远程库），
@@ -38,7 +38,7 @@ if [ -f .env ]; then
 else
   warn "根目录未找到 .env，将以 compose 内置默认值启动："
   warn "  · LLM_API_KEY 为空 → 对话不可用"
-  warn "  · ALIBABA_SEARCH_TOKEN 为空 → 搜索工具不可用"
+  warn "  · YUANBAO_SEARCH_TOKEN 为空 → 搜索工具不可用（ALIBABA_SEARCH_TOKEN 为备选）"
   warn "  · DB_* 走默认远程库 175.178.45.21"
   warn "建议先配置：cp .env.example .env 后填写真实密钥，再执行本脚本。"
 fi

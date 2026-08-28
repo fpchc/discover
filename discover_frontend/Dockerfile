@@ -10,7 +10,7 @@ FROM base AS dev
 # pnpm-workspace.yaml 为 pnpm 11 设置文件（allowBuilds.esbuild），install 必须包含它
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
-EXPOSE 3000
+EXPOSE 5173
 CMD ["pnpm", "dev", "--host", "0.0.0.0"]
 
 # 阶段三 build：安装依赖并构建静态产物
@@ -26,7 +26,7 @@ ARG VITE_SSE_TIMEOUT_MS=900000
 ENV VITE_APP_ENV=$VITE_APP_ENV \
     VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_SSE_TIMEOUT_MS=$VITE_SSE_TIMEOUT_MS
-# pnpm build = nuxt typecheck + nuxt generate（SPA 静态产物输出到 .output/public）
+# pnpm build = tsc --noEmit + vite build（SPA 静态产物输出到 dist/）
 RUN pnpm build
 
 # 阶段四 runtime：nginx 静态服务 + 后端反代（SSE 优化）
@@ -35,7 +35,7 @@ FROM nginx:1.27-alpine AS runtime
 # 将 ${BACKEND_PROXY_PASS} 替换为后端地址
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY security-headers.conf /etc/nginx/security-headers.conf
-COPY --from=build /app/.output/public /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1

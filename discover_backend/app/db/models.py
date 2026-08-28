@@ -4,17 +4,57 @@
 100% 入库（upload_files）；去重历史入 dedup_clues；对话历史入
 conversations（会话头）+ messages（回合明细）。ORM 与 pydantic DTO
 分离（CLAUDE.md §3），跨边界传递用 DTO，持久化用 ORM。
+
+账号体系（2026-08-28）：accounts 表按用户 DDL（uuid PK + gen_random_uuid
+默认值、username 唯一索引、is_system 标注超级用户）；既有表以 from_account_id /
+created_by（varchar(36) 存 uuid 文本）关联账号。账号 ID 在领域层一律用
+str(uuid.UUID) 虚线形式（36 字符）。
 """
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, local_now
+
+# 系统遗留账号（迁移回填既有数据归属；is_system=true 标注超级用户）
+SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000001"
+
+
+class Account(Base):
+    """登录账号（accounts 表，用户 DDL 2026-08-28）。
+
+    密码存 Argon2id PHC 自含编码串（含算法/参数/盐/哈希，无需单独盐列）。
+    is_system=true 标注超级用户（可访问管理接口，如全量用量列表）。
+    """
+
+    __tablename__ = "accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    avatar: Mapped[str | None] = mapped_column(String(255))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    last_login_ip: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    initialized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=local_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=local_now)
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=local_now)
+    username: Mapped[str] = mapped_column(String(64), default="")
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # 索引名与用户 DDL 对齐（迁移已按此手写建表）
+    __table_args__ = (
+        Index("account_phone_idx", "phone"),
+        Index("accounts_username_index", "username", unique=True),
+    )
 
 
 class Conversation(Base):
@@ -28,6 +68,8 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     conversation_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid4 hex
+    # 归属账号（accounts.id 的 uuid 文本）；会话隔离与 token 审计按此过滤
+    from_account_id: Mapped[str] = mapped_column(String(36), index=True)
     agent_id: Mapped[str | None] = mapped_column(String(64), index=True)
     model_provider: Mapped[str | None] = mapped_column(String(64))
     model_id: Mapped[str | None] = mapped_column(String(64))
@@ -53,6 +95,8 @@ class Message(Base):
 
     message_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid4 hex
     conversation_id: Mapped[str] = mapped_column(String(32), index=True)
+    # 归属账号（免 join 直接按账号聚合 token 用量）
+    created_by: Mapped[str] = mapped_column(String(36), index=True)
     agent_id: Mapped[str | None] = mapped_column(String(64), index=True)
     provider: Mapped[str | None] = mapped_column(String(64))
     model: Mapped[str | None] = mapped_column(String(64))
@@ -88,6 +132,8 @@ class UploadFileRecord(Base):
     media_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     hash: Mapped[str | None] = mapped_column(String(128))
+    # 归属账号（会话产物由会话账号自然携带）；created_by_role 仍区分 agent/user 消费方
+    created_by: Mapped[str] = mapped_column(String(36), index=True)
     created_by_role: Mapped[str] = mapped_column(String(32))
     used: Mapped[bool] = mapped_column(default=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -95,10 +141,16 @@ class UploadFileRecord(Base):
 
 
 class DedupClue(Base):
-    """推荐历史线索（去重历史持久化，跨会话共享）。"""
+    """推荐历史线索（去重历史持久化，按账号隔离）。
+
+    组合主键 (created_by, clue_id)：不同账号同日同产品可生成相同 clue_id 而不冲突；
+    去重逻辑只注入当前账号的线索（load_history(account_id)）。
+    """
 
     __tablename__ = "dedup_clues"
 
+    # 先声明 created_by，主键列序即 (created_by, clue_id)
+    created_by: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
     clue_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     product_keywords: Mapped[list[str]] = mapped_column(JSONB)
     target_industry: Mapped[str] = mapped_column(Text, default="")

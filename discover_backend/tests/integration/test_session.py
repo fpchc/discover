@@ -1,5 +1,6 @@
 """Step 5 会话层测试。"""
 
+import uuid
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from app.session.service import SessionService, file_preview_path
 
 # 测试共享同一数据库引擎（连接池有界；假脚本场景不触 DB，产物场景才连接）。
 _DATABASE = Database(Settings(_env_file=None))
+# 测试会话/产物归属账号（无外键，任意 uuid 文本）
+_ACCOUNT_ID = str(uuid.uuid4())
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -39,7 +42,7 @@ def _service(tmp_path: Path, **overrides: object) -> tuple[SessionService, Local
 
 async def test_create_session_creates_record(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
-    record = await service.create_session()
+    record = await service.create_session(_ACCOUNT_ID)
     assert record.session_id
     assert record.status == SessionStatus.ACTIVE
 
@@ -52,7 +55,7 @@ async def test_get_unknown_session_raises(tmp_path: Path) -> None:
 
 async def test_bind_assistant_updates_record(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
-    record = await service.create_session()
+    record = await service.create_session(_ACCOUNT_ID)
     target = AssistantTarget(type=TargetType.EXPERT, id="finder")
     updated = service.bind_assistant(record.session_id, target)
     assert updated.assistant_target == target
@@ -61,7 +64,7 @@ async def test_bind_assistant_updates_record(tmp_path: Path) -> None:
 
 async def test_delete_session_removes_record(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
-    record = await service.create_session()
+    record = await service.create_session(_ACCOUNT_ID)
     assert service.delete_session(record.session_id) is True
     with pytest.raises(SessionNotFoundError):
         service.get_session(record.session_id)
@@ -74,8 +77,8 @@ async def test_delete_session_missing_returns_false(tmp_path: Path) -> None:
 
 async def test_workspace_agent_keyed_shared_across_sessions(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
-    await service.create_session()
-    await service.create_session()
+    await service.create_session(_ACCOUNT_ID)
+    await service.create_session(_ACCOUNT_ID)
     ws1 = await service.workspace_for("finder")
     ws2 = await service.workspace_for("finder")
     assert ws1.root == ws2.root  # 同一智能体跨会话共享工作区
@@ -99,7 +102,9 @@ async def test_register_artifact_and_preview(tmp_path: Path) -> None:
     ws = await service.workspace_for("finder")
     src = ws.root / "报告.docx"
     src.write_bytes(b"hello")
-    record = await service.register_artifact(source_path=src, filename="报告.docx")
+    record = await service.register_artifact(
+        account_id=_ACCOUNT_ID, source_path=src, filename="报告.docx"
+    )
     assert record.size_bytes == 5
     assert record.media_type.startswith("application/vnd")
     assert not src.exists()  # 源文件已清入存储层
@@ -118,7 +123,9 @@ async def test_register_artifact_rejects_non_regular_source(tmp_path: Path) -> N
     directory = tmp_path / "adir"
     directory.mkdir()
     with pytest.raises(SessionError):
-        await service.register_artifact(source_path=directory, filename="x.txt")
+        await service.register_artifact(
+            account_id=_ACCOUNT_ID, source_path=directory, filename="x.txt"
+        )
 
 
 async def test_register_artifact_rejects_oversize(tmp_path: Path) -> None:
@@ -127,7 +134,7 @@ async def test_register_artifact_rejects_oversize(tmp_path: Path) -> None:
     src = ws.root / "big.txt"
     src.write_text("x" * 20, encoding="utf-8")
     with pytest.raises(SessionError):
-        await service.register_artifact(source_path=src, filename="big.txt")
+        await service.register_artifact(account_id=_ACCOUNT_ID, source_path=src, filename="big.txt")
 
 
 @pytest.mark.parametrize(
@@ -140,7 +147,7 @@ async def test_register_artifact_rejects_bad_filenames(tmp_path: Path, bad: str)
     src = ws.root / "src.bin"
     src.write_bytes(b"x")
     with pytest.raises(SessionError):
-        await service.register_artifact(source_path=src, filename=bad)
+        await service.register_artifact(account_id=_ACCOUNT_ID, source_path=src, filename=bad)
 
 
 def test_file_preview_path() -> None:
@@ -155,7 +162,9 @@ def test_file_preview_path() -> None:
 
 async def test_upload_file_creates_record(tmp_path: Path) -> None:
     service, storage = _service(tmp_path)
-    resp = await service.upload_file(filename="pic.png", content=b"\x89PNG", mimetype="image/png")
+    resp = await service.upload_file(
+        account_id=_ACCOUNT_ID, filename="pic.png", content=b"\x89PNG", mimetype="image/png"
+    )
     assert resp.file_id
     assert resp.name == "pic.png"
     assert resp.size_bytes == 4
@@ -168,11 +177,16 @@ async def test_upload_rejects_disallowed_extension(tmp_path: Path) -> None:
     service, _ = _service(tmp_path, storage_upload_allowed_extensions="png,jpg")
     with pytest.raises(SessionError):
         await service.upload_file(
-            filename="evil.exe", content=b"MZ", mimetype="application/octet-stream"
+            account_id=_ACCOUNT_ID,
+            filename="evil.exe",
+            content=b"MZ",
+            mimetype="application/octet-stream",
         )
 
 
 async def test_upload_rejects_oversize(tmp_path: Path) -> None:
     service, _ = _service(tmp_path, storage_upload_file_size_limit_mb=0)
     with pytest.raises(SessionError):
-        await service.upload_file(filename="a.txt", content=b"x", mimetype="text/plain")
+        await service.upload_file(
+            account_id=_ACCOUNT_ID, filename="a.txt", content=b"x", mimetype="text/plain"
+        )

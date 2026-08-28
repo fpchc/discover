@@ -1,89 +1,131 @@
-# discover_frontend 需求说明（v1）
+# 需求文档 — Discover Chat（React 重构版）
 
-> 目标：模仿 ChatGPT 页面，基于后端多智能体承载平台已有 API，实现单用户对话功能。
-> 后端契约以 `discover_backend` 为准（`POST /api/v1/chat-messages`、`GET /api/v1/sessions/{sid}/artifacts/{aid}`）。
+> 本文是前端**功能需求与验收标准**的唯一来源。后端接口契约见 `API.md`；结构分层见
+> `.claude/commands/architecture.md`；性能/状态粒度红线见 `.claude/commands/performance.md`。
+> 本目录（`.claude/feature/`）按 `CLAUDE.md` 第 12 节为只读参考，仅用户明确提及时才读取。
 
-## 1. 产品目标与边界
+## 1. 产品定位
 
-* **在**：ChatGPT 风格对话页 + 会话侧边栏 + 流式打字机 + Markdown 渲染 + 高级事件（思考/工具/产物）展示。
-* **不在（v1 明确不做）**：登录鉴权、多用户、后端新增接口、会话改名、模型切换 UI、文件上传。
+ChatGPT 风格的对话页，作为 `discover_backend`（多智能体承载平台）的前端。单用户、无鉴权演示。
+页面目标是**好看、贴流行方向**：现代排版、品牌渐变 + 光效、流畅微交互、明暗双主题。
 
-## 2. 功能点清单
+## 2. 页面结构
 
-### 2.1 对话（核心）
-| # | 功能 | 说明 |
+```
+┌─────────────────────────────────────────────┐
+│ 侧栏（可折叠 / 移动端抽屉）        │ 对话主区   │
+│ ┌─────────────────────┐           │ ┌───────┐ │
+│ │ 品牌区 Discover      │           │ │ 头部   │ │
+│ │ 新对话 [Ctrl K]      │           │ │ 标题栏 │ │
+│ │ 技能与助手（专家列表）│           │ ├───────┤ │
+│ │ 最近对话（会话列表）  │           │ │ 消息流 │ │
+│ │ 底部 主题切换/环境徽标│           │ ├───────┤ │
+│ └─────────────────────┘           │ │ 输入区 │ │
+│                                   │ └───────┘ │
+└─────────────────────────────────────────────┘
+```
+
+- 桌面（≥768px）：侧栏 260px，可折叠（折叠后主区头部显示展开钮）。
+- 移动（<768px）：侧栏变抽屉（`translateX` 滑出），配遮罩，头部汉堡钮打开。
+
+## 3. 功能需求
+
+### 3.1 对话发送（核心）
+
+- 输入框：多行 textarea，Enter 发送、Shift+Enter 换行、合成输入（IME）中 Enter 不发送。
+- 字数上限 `VITE_CHAT_QUERY_MAX`（默认 4000），超限 `sonner.warning` 提示，不发送。
+- 发送后追加用户气泡 + 空助手气泡（流式态），输入框清空、进入 `streaming`。
+- 流式期间发送钮变为「停止」钮；点击停止 = `AbortController.abort()`，**保留已收正文**，
+  空内容则移除该半条消息（不留空气泡）。
+- 失败/重试：消息错误态显示文案 + 「重试」钮；重试移除上一条失败助手消息，重开一条流式消息。
+  重试优先走 `blocking` 兜底（`VITE_FEATURE_BLOCKING_FALLBACK` 开关），成功后按完整回复渲染。
+- 流式异常（未到 `message_end` 即断）：提示重试并**保留已收内容**。
+- 整体超时 `VITE_SSE_TIMEOUT_MS`（默认 15 分钟）→ `AbortController` 触发，显示超时文案。
+
+### 3.2 思考分区
+
+- `thinking_started` 打开思考分区；`thinking_delta` 增量追加；`thinking_ended` 收起并显示耗时。
+- 思考可多段（思考→工具→再思考），全部追加同一分区，首个 start 打开、末次 end 收起。
+- 思考进行中分区强制展开（顶部带 shimmer）；结束后可点击折叠/展开，展示 `已思考 N 秒`。
+- 思考**不进正文**；`blocking` 模式无思考帧（后端不返回）。
+
+### 3.3 助手选择
+
+- 输入区胶囊选择器：显示当前助手名；点击弹出下拉（通用对话 + 专家目录）。
+- 通用对话为保留项（id=`generic`），目录外固定渲染，描述「日常问答与随手提问」。
+- 目录来自 `GET /assistants`（专家：`id/type/name/description/capabilities`）。
+- 选中项随下一次 `/chat-messages` 生效（`agent_id` 显式绑定）；目录未加载时发送不带 `agent_id`。
+- 回合结束回显：`message_end.metadata.assistant` → 同步选择器（缺失 = 新会话未绑定，保持现状）。
+- 打开历史会话：以会话绑定助手（`ConversationRecord.agent_id`）校准选择器；未绑定 → 通用。
+- 新建会话：选择器回落到通用对话。
+
+### 3.4 文件上传（受 `VITE_FEATURE_FILES` 开关）
+
+- 上传前 `GET /files/upload` 拉限制，本地校验扩展名 + 大小，失败 `sonner.warning`。
+- 成功后文件进入输入框上方列表（缩略图/图标 + 名称 + 大小），支持预览（新窗口）与下载
+  （`a[download]` 指向 `/files/{id}/preview`）。
+- 单个文件逐个上传，上传中禁用附件钮；失败 `sonner.error`（走统一错误映射）。
+- 文件不挂到对话消息（后端 `files` 字段暂不处理）。
+
+### 3.5 会话历史
+
+- 侧栏「最近对话」列表来自 `GET /conversations`（唯一事实源），按 `updated_at` 倒序，
+  显示 `对话数 · HH:mm`（当天）或 `对话数 · M/D`。
+- 加载中显示骨架屏；空列表显示空态文案。
+- 点击会话 → `GET /conversations/{id}/messages` 拉历史，渲染用户+助手气泡（query+answer 同行）。
+  切换会话前先 `abort()` 作废旧流（turn 作废防幽灵增量）。
+- 新对话：首次发送后乐观入列（标题取首条 query 截断 `VITE_CONVERSATION_TITLE_MAX`），
+  回合结束后用后端权威列表静默校准。
+- 删除：调 `DELETE /conversations/{id}`；`204`/`404` 均按已删除处理并本地移除，其余错误保留条目。
+  删除当前会话后清空消息区、选择器回落通用。
+
+### 3.6 明暗主题
+
+- 三态偏好：`light` / `dark` / `system`（默认跟随系统），记忆于 `localStorage['disf_theme']`。
+- 底部切换钮：单键在明暗间翻转（system 态先落到当前实际值再翻转，结果写为显式偏好）。
+- 首屏防 FOUC：`index.html` 内经典脚本同步执行（`public/theme-init.js`），CSP 兼容、非内联。
+- `html.dark` class + `color-scheme` 由 `useTheme` 维护；组件只读 `isDark`，禁止直接改 class。
+
+### 3.7 快捷键与健壮性
+
+- `Ctrl/Cmd+K`：新建会话（与侧栏按钮提示一致）。
+- 断网：顶部提示 / 暂停发送（`navigator.onLine` + online/offline 监听）。
+- 环境徽标：非 production 在侧栏底部显示 `development` / `test`。
+
+### 3.8 全局错误边界
+
+- 捕获 `window.error` 与 `unhandledrejection`，统一结构化日志（`[discover][ERROR]` 前缀）。
+
+## 4. SSE 事件表（后端契约，不可臆造）
+
+| 事件 | 载荷 | 前端行为 |
 |---|---|---|
-| F1 | 发送消息 | 输入框 `Enter` 发送，`Shift+Enter` 换行；`query` 长度 ≤ 4000（后端上限，前端同样校验并提示） |
-| F2 | 流式回复 | `POST /chat-messages`，`response_mode=streaming`，`fetch` 流式读 SSE，逐帧追加正文，打字机效果 |
-| F3 | 会话自动创建 | 首次发送 `conversation_id=""`，后端自动建会话；从响应头 `X-Conversation-Id`（优先）/ 响应体取回会话 ID 并存入 store |
-| F4 | 续聊 | 后续发送携带当前会话 ID，后端复用会话状态（历史服务端持有） |
-| F5 | 停止生成 | 发送中可停止：`AbortController.abort()`，同步复位流式状态，保留已收内容 |
-| F6 | 阻塞兜底 | 流式失败时可切换 `response_mode=blocking`（环境开关 + 手动重试路径），返回 JSON `{message_id, answer, metadata, conversation_id, created_at}` |
-| F7 | 错误态 | SSE `error` 帧 / HTTP 非 2xx → 消息气泡错误态 + 可读文案；错误体 `{error:{category,message}}` 与 `{status,code,message}` 统一映射 |
+| `message` | `{answer, created_at}` | 正文增量，追加当前助手消息 |
+| `message_end` | `{metadata: {assistant?}, created_at}` | **流结束，无 `[DONE]`**；回显助手、完成消息 |
+| `thinking_started` | `{created_at}` | 打开思考分区 |
+| `thinking_delta` | `{content, created_at}` | 思考增量追加 |
+| `thinking_ended` | `{duration_ms, created_at}` | 收起思考分区并显示耗时 |
+| `ping` | — | 心跳，忽略 |
+| `error` | `{status, code, message}` | 错误态 + 统一文案 |
 
-### 2.2 会话侧边栏
-| # | 功能 | 说明 |
-|---|---|---|
-| S1 | 会话列表 | 展示本地持久化的会话（`conversation_id` + `title` + `updated_at`） |
-| S2 | 新建会话 | 清空当前输入与消息区，重置会话 ID；进入待发送状态 |
-| S3 | 切换会话 | 点击切换展示该会话本地消息快照；无快照时提示空会话（后端无历史查询接口） |
-| S4 | 删除会话 | 删除本地记录（仅前端，无后端删除接口）；当前会话被删则复位到空会话 |
-| S5 | 本地持久化 | `localStorage` key 前缀 `disf_`；写入失败降级内存态（隐私模式） |
+所有帧（除 `ping`/`error`）带 `conversation_id`、`message_id`；会话 ID 以响应头
+`X-Conversation-Id` 为优先，帧内 `conversation_id` 兜底。
 
-### 2.3 消息渲染
-| # | 功能 | 说明 |
-|---|---|---|
-| M1 | Markdown | `markdown-it` 渲染回复；代码块 `highlight.js` 高亮；渲染结果必须 `DOMPurify.sanitize` |
-| M2 | 思考块 | `thinking_started` / `thinking_delta` / `thinking_ended` 事件 → 折叠的「思考」块，流式追加 `text`，可展开/收起；默认收起 |
-| M3 | 工具调用卡 | `tool_call_started`（工具名 + 参数摘要）→ 进行中；`tool_call_completed`（`ok`、结果摘要、耗时）→ 完成/失败态；`gate_checked` 失败提示 |
-| M4 | 产物链接 | `artifact_ready` → 可下载链接（文件名 + 大小），指向 `GET /api/v1/sessions/{sid}/artifacts/{aid}`，`a[download]` 下载 |
-| M5 | 用量展示 | `message_end.metadata.usage`（`prompt_tokens`/`completion_tokens`/`total_tokens`）→ 消息角标或页脚轻量展示 |
-| M6 | 复制 | 消息区「复制」按钮复制纯文本 |
+## 5. 性能要求（防坑点，见 performance.md 详细策略）
 
-### 2.4 交互与 UI（ChatGPT 风格）
-| # | 功能 | 说明 |
-|---|---|---|
-| U1 | 布局 | 左侧窄侧边栏（会话列表 + 新建按钮），右侧对话区（消息流 + 底部输入区） |
-| U2 | 空态 | 无消息时居中欢迎语 + 提示输入，ChatGPT 首页风格 |
-| U3 | 输入态 | 发送中禁用发送、显示「停止」；输入框自适应高度 |
-| U4 | 响应式 | 窄屏（<768px）侧边栏抽屉式折叠，保持可用 |
+- [ ] 历史消息绝不随流式增量重渲（`MessageBubble` `React.memo`）
+- [ ] 流式消息 Markdown 视图节流（30–50ms）+ `useDeferredValue`；高亮仅 `message_end` 后执行
+- [ ] 侧栏等无关组件不订阅 `activeMessages`
+- [ ] 卸载 / 切换会话时 `abort()`，无后台幽灵请求
 
-## 3. SSE 事件处理表（后端契约）
+## 6. 验收标准
 
-流以 `message_end` 收尾，**无 `[DONE]`**；`data:` 帧按空行分隔，`event` 字段判别。
-
-| 事件 | 处理 |
-|---|---|
-| `message` | 追加 `answer` 增量到当前回复文本 |
-| `message_end` | 收尾：读取 `metadata.usage`，标记消息完成，流结束 |
-| `ping` | 心跳，忽略 |
-| `error` | 展示错误态（`status` / `code` / `message`） |
-| （内部事件 `thinking_*` / `tool_call_*` / `gate_checked` / `artifact_ready` 等由后端以 `message` 帧正文聚合输出，前端**不直接消费**；前端消费的是对外判别帧 `message` / `message_end` / `ping` / `error`） |
-
-> ⚠️ 契约澄清：对外 SSE 判别帧仅 `message` / `message_end` / `ping` / `error` 四种。思考/工具/产物是后端在 `message` 帧正文中以文本形式呈现的，前端**渲染正文即可**；若正文中不含结构化标记，则 M2–M4 依赖后端正文输出中的可识别片段。实现前需与后端确认正文是否携带结构化片段（如特殊标记 / JSON 块），据此决定 M2–M4 为「解析正文」还是「保持纯正文展示」。
-
-## 4. 环境变量（`.env.example`，提交模板）
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `VITE_API_BASE_URL` | `http://127.0.0.1:8000/api/v1` | 后端 base URL |
-| `VITE_SSE_TIMEOUT_MS` | `300000` | 流式请求整体超时 |
-| `VITE_CHAT_QUERY_MAX` | `4000` | 前端 query 长度上限（对齐后端） |
-| `VITE_FEATURE_THINKING` | `true` | 思考块展示开关 |
-| `VITE_FEATURE_TOOL_CALLS` | `true` | 工具调用卡展示开关 |
-| `VITE_FEATURE_ARTIFACTS` | `true` | 产物链接展示开关 |
-
-## 5. 验收标准（v1）
-
-1. 首条消息自动创建会话，`X-Conversation-Id` 正确解析，续聊复用同一会话。
-2. 流式回复逐字追加，`message_end` 后消息完成、用量可见；无残留 loading。
-3. 停止生成后状态干净，可继续发新消息或重试。
-4. Markdown 代码块高亮正确；含 `javascript:` 链接 / `<script>` 的恶意正文被清洗（不执行、不弹出）。
-5. 刷新页面后会话列表保留；切换/删除会话行为正确。
-6. 后端不可用 / 4xx / SSE error 帧 → 均展示可读错误文案，不白屏。
-7. `pnpm vue-tsc --noEmit`、`pnpm lint` 零错误；自检清单全过。
-
-## 6. 风险与依赖
-
-* **依赖后端正文结构**：M2–M4 高级事件展示依赖后端在正文中输出可识别片段（见 §3 契约澄清），需先确认。
-* **无历史接口**：会话历史不在前端本地则刷新后只留元数据，消息区为空 —— 属已知限制，不阻塞 v1。
+- [ ] `pnpm typecheck` / `pnpm lint` / `pnpm test:run` 全绿
+- [ ] 流式对话：正文逐字渲染、停止保留已收、超时/断线正确提示、重试可用
+- [ ] 思考分区：多段思考正确累积、进行中展开带 shimmer、结束可折叠且显示耗时
+- [ ] 助手选择：通用+专家渲染、选择随下次发送生效、历史会话绑定校准、回显同步
+- [ ] 文件：本地校验、上传、预览、下载全链路可用（开关关闭时入口隐藏）
+- [ ] 历史：列表/打开/删除/新会话乐观入列 + 静默校准
+- [ ] 主题：三态切换、FOUC 无闪白、`localStorage` 记忆、system 跟随
+- [ ] 移动端：抽屉侧栏 + 遮罩、头部汉堡；桌面折叠/展开正常
+- [ ] 无未经清洗的 HTML 渲染（`dangerouslySetInnerHTML` 必经 DOMPurify）

@@ -38,9 +38,9 @@ class SessionService:
         self._files = FileService(settings, db, storage)
 
     # ---- 会话生命周期 ----
-    async def create_session(self) -> SessionRecord:
+    async def create_session(self, from_account_id: str) -> SessionRecord:
         """建会话：仅注册记录（工作区按智能体键控，不再建会话目录）。"""
-        return self._store.create_session()
+        return self._store.create_session(from_account_id)
 
     def get_session(self, session_id: str) -> SessionRecord:
         return self._store.get(session_id)
@@ -61,22 +61,28 @@ class SessionService:
     async def register_artifact(
         self,
         *,
+        account_id: str,
         source_path: Path,
         filename: str,
     ) -> ArtifactRecord:
-        """登记工具产物（源文件须为普通文件；注册表全局共享）。"""
-        return await self._files.register(source_path=source_path, filename=filename)
+        """登记工具产物（归属会话账号；注册表全局可预览）。"""
+        return await self._files.register(
+            source_path=source_path, filename=filename, created_by=account_id
+        )
 
     # ---- 文件上传 / 预览 ----
     async def upload_file(
         self,
         *,
+        account_id: str,
         filename: str,
         content: bytes,
         mimetype: str,
     ) -> FileResponse:
-        """上传文件（用户上传，字节入存储层，used=false 待消费）。"""
-        return await self._files.upload(filename=filename, content=content, mimetype=mimetype)
+        """上传文件（归属账号，字节入存储层，used=false 待消费）。"""
+        return await self._files.upload(
+            filename=filename, content=content, mimetype=mimetype, created_by=account_id
+        )
 
     async def resolve_preview(self, file_id: str) -> tuple[AsyncIterator[bytes], str, str]:
         """解析文件预览：字节流 + media_type + 原始文件名；不存在抛 404。

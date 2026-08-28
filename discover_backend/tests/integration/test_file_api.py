@@ -16,10 +16,14 @@ async def test_upload_config(api_ctx: tuple[object, httpx.AsyncClient]) -> None:
     assert config.file_type_limit
 
 
-async def test_upload_then_preview(api_ctx: tuple[object, httpx.AsyncClient]) -> None:
+async def test_upload_then_preview(
+    api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
+) -> None:
     app, client = api_ctx
     response = await client.post(
         "/api/v1/files/upload",
+        headers=auth_headers,
         files={"file": ("报告.md", "# 报告".encode(), "text/markdown")},
     )
     assert response.status_code == 200
@@ -38,10 +42,12 @@ async def test_upload_then_preview(api_ctx: tuple[object, httpx.AsyncClient]) ->
 
 async def test_upload_rejects_disallowed_extension(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     _app, client = api_ctx
     response = await client.post(
         "/api/v1/files/upload",
+        headers=auth_headers,
         files={"file": ("evil.exe", b"MZ", "application/octet-stream")},
     )
     assert response.status_code == 400

@@ -41,7 +41,12 @@ class TurnUsage(BaseModel):
 
 
 class TurnRecord(BaseModel):
-    """一回合的落库载荷（路由回合结束时组装，含聚合 usage）。"""
+    """一回合的落库载荷（路由回合结束时组装，含聚合 usage）。
+
+    account_id 为回合归属账号（会话 from_account_id 与消息 created_by 同源）；
+    落库时由 ConversationService 分别写入 conversations.from_account_id 与
+    messages.created_by。
+    """
 
     message_id: str
     query: str
@@ -56,6 +61,20 @@ class TurnRecord(BaseModel):
     usage: TurnUsage = Field(default_factory=TurnUsage)
     # 仅首回合创建会话行时用作标题；续聊保留原 name 不覆盖
     conversation_name: str = ""
+    # 归属账号（uuid 文本，来自会话创建者）
+    account_id: str = ""
+
+
+class UsageAggregate(BaseModel):
+    """账号 token 用量聚合（messages.created_by 维度；AuthService 组装 UserUsage）。"""
+
+    conversation_count: int = 0
+    message_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cached_read_tokens: int = 0
+    cached_write_tokens: int = 0
 
 
 class ConversationRecord(BaseModel):

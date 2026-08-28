@@ -54,6 +54,7 @@ x-common-env: &common-env
 
   # ---------- MCP ----------
   ALIBABA_SEARCH_TOKEN: ${ALIBABA_SEARCH_TOKEN:-}
+  YUANBAO_SEARCH_TOKEN: ${YUANBAO_SEARCH_TOKEN:-}
 
   # ---------- 会话 ----------
   ARTIFACT_MAX_SIZE_BYTES: ${ARTIFACT_MAX_SIZE_BYTES:-104857600}
@@ -100,6 +101,14 @@ x-common-env: &common-env
   HOST: ${HOST:-0.0.0.0}
   PORT: ${PORT:-8000}
 
+  # ---------- 账号认证（JWT + Argon2id） ----------
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+  JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  JWT_EXPIRES_MINUTES: ${JWT_EXPIRES_MINUTES:-10080}
+  ARGON2_TIME_COST: ${ARGON2_TIME_COST:-3}
+  ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-65536}
+  ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-4}
+
 name: discover-test
 
 services:
@@ -110,6 +119,8 @@ services:
       dockerfile: Dockerfile
     image: discover-backend:test
     restart: unless-stopped
+    ports:
+      - "8001:8000"
     environment:
       <<: *common-env
     volumes:  
@@ -118,8 +129,6 @@ services:
       - ./workspaces:/app/workspaces
     networks:
       - discover-net
-    expose:
-      - "8000"
 
   discover_frontend:
     build:

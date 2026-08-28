@@ -20,6 +20,7 @@ import anyio
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 
+from app.auth.deps import get_current_account_id
 from app.catalog.models import GENERIC_ASSISTANT_ID, AssistantTarget, TargetType
 from app.container import AppServices, get_services
 from app.conversations.models import MessageStatus, TurnRecord, TurnUsage
@@ -92,11 +93,14 @@ class _TurnCollector:
 async def chat_messages(
     body: ChatMessageRequest,
     response: Response,
+    account_id: str = Depends(get_current_account_id),
     services: AppServices = Depends(get_services),
 ) -> StreamingResponse | ChatMessageResponse:
-    """对话：会话缺省自动创建，续聊带 conversation_id。"""
+    """对话：会话缺省自动创建（归属当前账号），续聊带 conversation_id。"""
     assert services.sessions is not None
-    conversation_id = await _resolve_conversation(services, body.conversation_id, body.agent_id)
+    conversation_id = await _resolve_conversation(
+        services, account_id, body.conversation_id, body.agent_id
+    )
     response.headers["X-Conversation-Id"] = conversation_id
     message_id = uuid.uuid4().hex
     created_at = int(time.time())
@@ -113,8 +117,10 @@ async def chat_messages(
     return await _blocking(services, body.query, conversation_id, message_id, created_at)
 
 
-async def _resolve_conversation(services: AppServices, conversation_id: str, agent_id: str) -> str:
-    """会话解析：空串自动创建；显式传入则校验存在（不存在 → 404）。
+async def _resolve_conversation(
+    services: AppServices, account_id: str, conversation_id: str, agent_id: str
+) -> str:
+    """会话解析：空串自动创建（归属当前账号）；显式传入则校验存在（不存在 → 404）。
 
     纯内存校验（内存会话是流转事实来源；历史落库为只读审计，续聊不查 DB）。
     agent_id 为用户显式助手选择：非空 → 目录校验（未知 404）+ 转换 AssistantTarget
@@ -122,11 +128,14 @@ async def _resolve_conversation(services: AppServices, conversation_id: str, age
     """
     assert services.sessions is not None
     if not conversation_id.strip():
-        record = await services.sessions.create_session()
+        record = await services.sessions.create_session(account_id)
         session_id = record.session_id
     else:
         session_id = conversation_id.strip()
-        services.sessions.get_session(session_id)
+        session = services.sessions.get_session(session_id)
+        # 续聊归属校验：仅会话创建账号可续（跨账号会话 → 404，不泄露存在性）
+        if session.from_account_id != account_id:
+            raise NotFoundError(f"未知会话：{conversation_id}")
     target = _resolve_target(services, agent_id)
     if target is not None:
         services.sessions.bind_assistant(session_id, target)
@@ -250,6 +259,7 @@ async def _persist_turn(
         conversation_name=_conversation_title(
             user_input, services.settings.conversation_name_max_chars
         ),
+        account_id=session.from_account_id,
     )
     await services.history.record_turn(conversation_id, turn)
 

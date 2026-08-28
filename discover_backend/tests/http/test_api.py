@@ -114,10 +114,12 @@ async def test_chat_messages_streaming_auto_creates_conversation() -> None:
 
 async def test_chat_messages_blocking_returns_json(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     _app, client = api_ctx
     response = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "你好", "response_mode": "blocking"},
     )
     assert response.status_code == 200
@@ -137,15 +139,18 @@ async def test_chat_messages_blocking_returns_json(
 
 async def test_chat_messages_reuses_conversation(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     _app, client = api_ctx
     first = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "第一轮", "response_mode": "blocking"},
     )
     conversation_id = ChatMessageResponse.model_validate(first.json()).conversation_id
     second = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={
             "query": "第二轮",
             "response_mode": "blocking",
@@ -158,17 +163,45 @@ async def test_chat_messages_reuses_conversation(
     # 未知会话 → 404
     missing = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "hi", "response_mode": "blocking", "conversation_id": "nope"},
     )
     assert missing.status_code == 404
 
 
+async def test_chat_cross_account_continuation_404(
+    api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
+    auth_headers_other: dict[str, str],
+) -> None:
+    """A 创建的会话，B 续聊 → 404（跨账号隔离，不泄露存在性）。"""
+    _app, client = api_ctx
+    first = await client.post(
+        "/api/v1/chat-messages",
+        headers=auth_headers,
+        json={"query": "第一轮", "response_mode": "blocking"},
+    )
+    conversation_id = ChatMessageResponse.model_validate(first.json()).conversation_id
+    other = await client.post(
+        "/api/v1/chat-messages",
+        headers=auth_headers_other,
+        json={
+            "query": "第二轮",
+            "response_mode": "blocking",
+            "conversation_id": conversation_id,
+        },
+    )
+    assert other.status_code == 404
+
+
 async def test_chat_messages_empty_query_rejected(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     _app, client = api_ctx
     response = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "", "response_mode": "blocking"},
     )
     assert response.status_code == 422
@@ -192,11 +225,13 @@ async def test_assistants_catalog_lists_experts_only(
 
 async def test_chat_binds_expert_by_agent_id(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     """首轮显式选择专家 → 响应 metadata.assistant 携带 type+id。"""
     _app, client = api_ctx
     response = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "帮我找客户", "response_mode": "blocking", "agent_id": "finder"},
     )
     assert response.status_code == 200
@@ -206,11 +241,13 @@ async def test_chat_binds_expert_by_agent_id(
 
 async def test_chat_unknown_agent_returns_404(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     """未知 agent_id → 404（目录校验失败）。"""
     _app, client = api_ctx
     response = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "hi", "response_mode": "blocking", "agent_id": "nope"},
     )
     assert response.status_code == 404
@@ -218,11 +255,13 @@ async def test_chat_unknown_agent_returns_404(
 
 async def test_chat_generic_agent_id_selects_generic(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     """agent_id=generic（保留字）→ 通用对话目标。"""
     _app, client = api_ctx
     response = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "你好", "response_mode": "blocking", "agent_id": "generic"},
     )
     assert response.status_code == 200
@@ -232,16 +271,19 @@ async def test_chat_generic_agent_id_selects_generic(
 
 async def test_chat_rebind_switches_assistant(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     """续聊携带新 agent_id → 切换绑定（专家 → 通用）。"""
     _app, client = api_ctx
     first = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={"query": "hi", "response_mode": "blocking", "agent_id": "finder"},
     )
     conversation_id = ChatMessageResponse.model_validate(first.json()).conversation_id
     second = await client.post(
         "/api/v1/chat-messages",
+        headers=auth_headers,
         json={
             "query": "hi",
             "response_mode": "blocking",
@@ -253,6 +295,20 @@ async def test_chat_rebind_switches_assistant(
     assert payload.metadata["assistant"] == {"type": "generic", "id": None}
 
 
+async def test_chat_requires_auth(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """受保护对话接口缺 token → 401；非法 token → 401。"""
+    _app, client = api_ctx
+    assert (await client.post("/api/v1/chat-messages", json={"query": "hi"})).status_code == 401
+    bad = await client.post(
+        "/api/v1/chat-messages",
+        headers={"Authorization": "Bearer not-a-jwt"},
+        json={"query": "hi", "response_mode": "blocking"},
+    )
+    assert bad.status_code == 401
+
+
 # ---- 会话删除（DELETE /conversations/{id}） ----
 class _FakeHistoryService:
     """路由测试桩：替身历史服务，隔离真实 DB（CLAUDE.md §12 Mock 红线）。"""
@@ -260,26 +316,29 @@ class _FakeHistoryService:
     def __init__(self, exists: bool) -> None:
         self._exists = exists
 
-    async def soft_delete_conversation(self, conversation_id: str) -> bool:
+    async def soft_delete_conversation(self, account_id: str, conversation_id: str) -> bool:
+        del account_id
         return self._exists
 
 
 async def test_delete_conversation_returns_204(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     """DB 有历史 → 删除并返回 204 空体。"""
     app, client = api_ctx
     app.state.services.history = _FakeHistoryService(exists=True)
-    response = await client.delete("/api/v1/conversations/cafebabe")
+    response = await client.delete("/api/v1/conversations/cafebabe", headers=auth_headers)
     assert response.status_code == 204
     assert response.content == b""
 
 
 async def test_delete_conversation_unknown_returns_404(
     api_ctx: tuple[object, httpx.AsyncClient],
+    auth_headers: dict[str, str],
 ) -> None:
     """DB 历史与内存会话皆无 → 404。"""
     app, client = api_ctx
     app.state.services.history = _FakeHistoryService(exists=False)
-    response = await client.delete("/api/v1/conversations/nope")
+    response = await client.delete("/api/v1/conversations/nope", headers=auth_headers)
     assert response.status_code == 404

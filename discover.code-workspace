@@ -13,7 +13,7 @@
       "path": "discover_backend"
     },
     {
-      "name": "frontend (Nuxt / Vue)",
+      "name": "frontend (React / vite)",
       "path": "discover_frontend"
     }
   ]

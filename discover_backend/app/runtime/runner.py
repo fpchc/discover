@@ -130,6 +130,7 @@ class Runtime:
         self._usage = UsageAggregator()
         self._graph: CompiledStateGraph[GraphState] | None = None
         self._turn_started = 0.0
+        self._account_id: str = ""  # 会话归属账号（去重/产物登记据此隔离）
 
     async def close(self) -> None:
         """会话结束：释放工具代理持有的 MCP 引用。"""
@@ -143,6 +144,7 @@ class Runtime:
         self._emitter = emitter
         self._turn_started = time.perf_counter()
         self._usage = UsageAggregator()  # 回合级 usage 归零（修复多调用覆盖）
+        self._account_id = self._sessions.get_session(session_id).from_account_id
         user_message = ChatMessage(role="user", content=user_input)
         base = self._last_state
         state = base.model_copy(
@@ -244,6 +246,7 @@ class Runtime:
             skill_dir=skill_dir,
             workspace=workspace.root,
             session_id=state.session_id,
+            account_id=self._account_id,
         )
         self._assembled_skill = state.active_skill
         if not activation.ok:
@@ -379,6 +382,7 @@ class Runtime:
                 )
             for rel in result.produced_files:
                 record = await self._sessions.register_artifact(
+                    account_id=self._account_id,
                     source_path=workspace / rel,
                     filename=Path(rel).name,
                 )

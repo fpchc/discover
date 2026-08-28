@@ -33,6 +33,8 @@ class SessionRecord(BaseModel):
     """
 
     session_id: str
+    # 会话归属账号（uuid 文本）；创建时从认证依赖注入，落库/去重/产物据此隔离
+    from_account_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     assistant_target: AssistantTarget | None = None

@@ -1,7 +1,7 @@
 {
   "recommendations": [
-    // Vue 3 语言支持（Volar，官方）
-    "Vue.volar",
+    // Tailwind CSS IntelliSense（Tailwind v4 工具类提示）
+    "bradlc.vscode-tailwindcss",
     // Biome：唯一 lint / format 规则源
     "biomejs.biome",
     // Vitest 测试资源管理器
@@ -10,6 +10,8 @@
   "unwantedRecommendations": [
     // ESLint / Prettier 已被 Biome 取代（单一规则源，见 CLAUDE.md）
     "dbaeumer.vscode-eslint",
-    "esbenp.prettier-vscode"
+    "esbenp.prettier-vscode",
+    // 已切换 React 栈，不再需要 Vue 语言服务（Volar）
+    "Vue.volar"
   ]
 }

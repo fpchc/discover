@@ -235,7 +235,7 @@ async def _runtime(
         default_provider_id="qwen-max",
     )
     sessions = SessionService(settings, _DATABASE, LocalStorage(tmp_path / "storage"))
-    record = await sessions.create_session()
+    record = await sessions.create_session("00000000-0000-0000-0000-0000000000cc")
     if bind:
         sessions.bind_assistant(
             record.session_id, AssistantTarget(type=TargetType.EXPERT, id="finder")

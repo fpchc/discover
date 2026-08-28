@@ -2,7 +2,9 @@
 
 > P1 状态（2026-08）：12 步构建完成，discover 智能体已迁移接入。对话接口为
 > 对话接口 `POST /chat-messages`（会话自动创建）；审批机制、`/models`、`/agents`、
-> 会话删除接口已按用户决策移除。脚本执行已去容器化（2026-08-21 用户决策）：
+> 会话删除接口已按用户决策移除。账号认证已接入（2026-08-28）：accounts 表
+> （手机号+密码 Argon2id + JWT）、既有表按 from_account_id/created_by 隔离、
+> 用量按账号聚合、无注册接口（CLI 预置）。脚本执行已去容器化（2026-08-21 用户决策）：
 > 宿主 subprocess 本地直跑，Docker 不再是前置条件。持久化已入 PostgreSQL
 > （SQLAlchemy async + Alembic）；对话历史落库（conversations 会话头 + messages
 > 回合明细，usage 含缓存 token 聚合）；产物/文件走 Blob Engine（字节入存储层、
@@ -50,7 +52,9 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 报告数据端归一化 | LLM 产出的报告 JSON 形状不稳定（平铺字符串 / 错位字段名 / list 当 HTML 直出 / cover·appendix 缺字段 / 顶层非对象），在 `render_report` 渲染前经 `normalize_report` 统一转成模板 `eitia-cfr.html` 期望的 V5 结构化形态：字符串→结构化、list/dict→HTML 片段；缺失内容用「P1 数据受限」显式占位，消除 `[{'...'}]` repr 泄漏与大片空白。模板为唯一契约，对已结构化数据幂等，`main()` 与 `render()` 均先归一化。**全文件安全检查**：`_load_json_file` 拦截顶层非对象 JSON（argv/stdin 文件路径）；`normalize_report` 对非 dict 入参返回空对象；保证 cover/appendix 为 dict、appendix.version 缺省 V1；`main()` 输出文件名 `.get()` 兜底——渲染成功后文件名不再因缺字段抛 KeyError 丢弃整份报告（实测修复 2026-08-24）。配套单测 `tests/unit/test_report_normalize.py` | 用户决策 2026-08-24，归一化收敛于渲染前单点，不向模板扩散 if-elif（OCP） |
 | 脚本失败诊断 | 脚本契约错误信息走 stdout JSON，broker 失败时透出 stdout 错误载荷（回落 stderr 尾部、再回落退出码占位），避免模型只见「退出码非 0」 | 实测修复 2026-08-23 |
 | 持久化 | PostgreSQL + SQLAlchemy(async) + Alembic；迁移唯一通道（改模型 → `autogenerate` → `upgrade`）；引擎连接按会话即开即关（NullPool） | 用户决策 2026-08，CLAUDE.md §1 |
-| 对话历史落库 | conversations 会话头 + messages 回合明细（query/answer/thinking 一行，usage 聚合到回合）；`ConversationService.record_turn` 回合结束单次落库，**DB 降级内部消化**（舱壁：失败记日志返回 bool，路由无 try/except、无 DB 感知）；首回合会话行由 record_turn 内部 upsert（name=截断首条 query，续聊保留）；会话接口 `GET /conversations`、`/messages`、`/usage`、`DELETE /conversations/{id}`（**软删除**标记独立 `is_delete=true`，业务状态 status 不被覆盖、行与 token 保留、仅列表隐藏、不可续聊；释放内存会话/运行时，两者皆无 → 404） | 用户决策 2026-08，评审采纳 |
+| 对话历史落库 | conversations 会话头 + messages 回合明细（query/answer/thinking 一行，usage 聚合到回合）；`ConversationService.record_turn` 回合结束单次落库，**DB 降级内部消化**（舱壁：失败记日志返回 bool，路由无 try/except、无 DB 感知）；首回合会话行由 record_turn 内部 upsert（name=截断首条 query，续聊保留）；会话接口 `GET /conversations`、`/messages`、`DELETE /conversations/{id}`（**软删除**标记独立 `is_delete=true`，业务状态 status 不被覆盖、行与 token 保留、仅列表隐藏、不可续聊；释放内存会话/运行时，两者皆无 → 404） | 用户决策 2026-08，评审采纳 |
+| 账号认证 | accounts 表按用户 DDL（`id uuid DEFAULT uuid_generate_v4()` 需 pgcrypto、phone 索引、username 唯一索引、`is_system` 标注超级用户）；手机号+密码登录，密码存 **Argon2id PHC 自含编码**（参数 time_cost=3 / memory_cost=65536 / parallelism=4，CPU 密集经 anyio 线程池，无单独盐列）；会话用 **JWT HS256**（sub=account_id，密钥必须环境注入缺失即 ConfigError）；**无注册接口**，用户经 `python -m app.auth.provision` CLI 预置；认证恒启用无开关；`/users/me`、`/users/me/usage` 个人，`GET /users`（超级用户）全量用量 | 用户决策 2026-08-28 |
+| 数据按账号隔离 | conversations.`from_account_id` + messages/upload_files/dedup_clues.`created_by`（varchar(36) 存 uuid 文本、无外键，平台惯例）；会话列表/消息/删除按账号过滤，跨账号 404；upload_files 预览**保持全局**（file_id 不可猜测）；dedup_clues 主键改 **(created_by, clue_id)** 按账号隔离，消除「两账号同日同产品生成相同 clue_id 互相覆盖」冲突；token 用量按 created_by **聚合 messages**（无汇总表，读时 SUM） | 用户决策 2026-08-28 |
 | usage 防腐层 | `StreamParser` 把三种提供方缓存字段统一为平台标准（OpenAI `prompt_tokens_details.cached_tokens` / DeepSeek `prompt_cache_hit_tokens` / Anthropic `cache_read_input_tokens`+`cache_creation_input_tokens` → cached_read/cached_write）；`UsageAggregator` 回合聚合，Runner 各 LLM 调用点只调 `add()`，修复「后一次覆盖前一次」；DoneEvent 事件驱动携带聚合 usage + provider/model，消费方（路由/未来计费）只监听事件 | 评审采纳 |
 | 文件系统 | `upload_files` 多消费方共享注册表（agent 产物 / 用户上传 / 知识库），**删 session/agent 强绑定**，`created_by_role` 宽松消费方标识，`used`/`used_at` 强制标注使用状态供清理；`/files` API：`GET /files/upload`（上传限制配置）、`POST /files/upload`（字节上传，校验大小+扩展名）、`GET /files/{file_id}/preview`（按 record id 流式 inline 预览，预览即标记 used）；`FileService`（register 磁盘产物 / upload 字节上传 / get_content_stream_by_id 预览） | 用户决策 2026-08 |
 | 去重历史 | 结构化状态入 PG `dedup_clues`，脚本改纯计算：平台注入 `history`、add 模式经 `_upsert` 回写（声明 `history_store: true`） | 用户决策 2026-08 |

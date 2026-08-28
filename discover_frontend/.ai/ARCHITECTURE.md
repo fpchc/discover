@@ -1,65 +1,104 @@
 # 架构快照
 
 > 模型记忆：反映**当前**代码结构，与 `.claude/commands/architecture.md`（规范）互补。
-> 结构变化后必须同步更新（见 `CLAUDE.md` 第 9 节）。
+> 结构变化后必须同步更新（见 `CLAUDE.md` 第 10 节）。
 
-## 当前结构（2026-08-26 Nuxt 4 迁移落地）
+## 当前结构（2026-08-28 React 全量重构落地）
 
 ```
 discover_frontend/
-├── nuxt.config.ts            Nuxt 装配：ssr:false、nitro.devProxy（读 VITE_PROXY_TARGET）、modules（@pinia/nuxt、@element-plus/nuxt）、全局 CSS、app.head
-├── env/                      环境模板（脚本 --dotenv 加载）：.env.example / .development / .test / .production
-├── app/                      客户端代码（Nuxt 4 srcDir）
-│   ├── app.vue               应用壳层（NuxtPage）
-│   ├── pages/index.vue       对话页（文件路由，底层 vue-router）
+├── index.html                 入口 HTML（theme-init.js / lang=zh-CN / 标题）
+├── vite.config.ts             Vite 装配：envDir ./env、server.proxy（读 VITE_PROXY_TARGET）、build.outDir=dist
+├── src/
+│   ├── main.tsx               应用入口（createRoot + Root 根层 Toaster + 全局错误边界 + 样式）
+│   ├── App.tsx                应用壳层 + 页面编排（侧栏 / 主区 / 输入区串联 + Cmd+K + 主题切换）
+│   ├── index.css              Tailwind + 双主题设计令牌 + 自定义工具类 + Markdown 全局样式
+│   ├── types.ts               后端契约类型（pydantic 映射，禁止组件内散落）
+│   ├── env.ts                 环境配置唯一入口（类型化 VITE_*，禁止直读 import.meta.env）
+│   ├── lib/                   纯逻辑层（叶子，无 React 依赖，可单测）
+│   │   ├── api.ts             axios 实例 + 对话/历史/文件/助手接口封装 + 认证（login / fetchMe）+ Bearer 拦截器 + 全局 401 回调（HTTP 唯一出口）
+│   │   ├── auth.ts            登录令牌持久化（localStorage `disf_auth_token`，唯一事实源）
+│   │   ├── errors.ts          错误映射（HTTP + SSE error 帧 → 可读文案）
+│   │   ├── history.ts         MessageRecord → ChatMessage 映射（纯函数）
+│   │   ├── sse.ts             SSE 帧解析原语（纯函数，data: 行 → 判别联合帧）
+│   │   ├── stream.ts          流读取 + 帧分发（ReadableStream → 回调）
+│   │   ├── structure.ts       「【键】值」结构化参数解析（纯函数：全文块 / 开头参数段剥离）
+│   │   └── utils.ts           cn()（clsx + tailwind-merge）
+│   ├── hooks/                 React 生命周期相关逻辑
+│   │   ├── useChatStream.ts   对话发送 / 会话列表 / 助手目录 / 历史加载编排 + 卸载 abort 清理
+│   │   ├── useTheme.ts        明暗主题 hook（只读壳：维护 html.dark / system 监听，状态在 stores/theme.ts）
+│   │   ├── useFileUpload.ts   文件上传（配置校验 / 上传 / 列表 / 预览 URL）
+│   │   ├── useNetworkStatus.ts 网络状态（online/offline）
+│   │   └── useThrottledValue.ts 尾沿节流（流式 Markdown 降载）
+│   ├── stores/                Zustand 单一事实源（跨组件共享状态唯一通道）
+│   │   ├── chat.ts            当前会话：activeMessages（独立切片）/ conversationId / isStreaming / loadingHistory
+│   │   ├── conversations.ts   会话列表（后端 GET /conversations 为唯一事实源）
+│   │   ├── assistants.ts      助手目录 + 当前选择（agent_id）
+│   │   ├── auth.ts            账号认证（status/account；resolveSession / login / logout / expire；登出重置三 store）
+│   │   └── theme.ts           主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享）
 │   ├── components/
-│   │   ├── layout/           AppSidebar（品牌左栏）/ ChatWindow（消息窗 + 空态欢迎区）
-│   │   ├── chat/             AssistantMenu（输入卡内助手选择器）/ ChatInput（含 AssistantMenu）/ MessageBubble（头像 + 渐变气泡 + 思考卡）
-│   │   └── common/           AppIcon（手写内联 SVG，无图标依赖）
-│   ├── composables/          useChatStream / useMarkdown / useFileUpload / useNetworkStatus / useTheme
-│   ├── stores/               assistants / chat / conversations
-│   ├── api/                  client / chat / history / files / assistants / types / errors
-│   ├── utils/                sse / history / logger
-│   ├── config/env.ts         环境配置唯一入口（类型化 VITE_*，禁止直读 import.meta.env）
-│   ├── styles/               theme.css（双主题令牌）/ main.css（全局 + Markdown 正文）
-│   ├── plugins/globalErrorHandler.ts  全局错误边界（客户端插件）
-│   └── env.d.ts              VITE_* 类型声明
-├── public/theme-init.js      首屏防主题闪白（CSP 兼容经典脚本，读取 disf_theme）
-└── 根配置                    package.json / vitest.config.ts / tsconfig.json（extends .nuxt）/ biome.json
+│   │   ├── ui/                shadcn 拷入组件（button / dropdown-menu / input / skeleton / sonner）
+│   │   ├── AuthGate.tsx       认证闸门（loading → 登录页 → 主界面；main.tsx 包裹层）
+│   │   ├── LoginScreen.tsx    登录页（手机号 + 密码 → POST /auth/login）
+│   │   ├── Sidebar.tsx        品牌左栏（品牌 / 新对话 Ctrl+K / 助手 / 最近对话 / 底部账号区 + 退出 / 底部主题；桌面折叠 → 64px 图标轨道）
+│   │   ├── ChatWindow.tsx     消息窗（顶栏 + turn 分组消息流 + 回合细线分隔 + 历史加载态）
+│   │   ├── EmptyState.tsx     空态（时段问候 + 探索方向助手卡片）
+│   │   ├── ChatInput.tsx      悬浮输入区 composer（Enter 发送 / 停止 / 长度校验 / 文件上传 / 助手胶囊 / 免责声明）
+│   │   ├── AssistantMenu.tsx  输入卡内助手选择器（shadcn 下拉）
+│   │   ├── MessageBubble.tsx  消息气泡（React.memo + 节流/deferred 降载；思考分区 / 结构化参数卡片 / 状态徽章 / 复制 / 重新生成 / 重试）
+│   │   ├── ThinkingPanel.tsx  思考分区（进行中粒子流 + shimmer / 可折叠 / 结束显示耗时）
+│   │   ├── StructuredParams.tsx 结构化参数展示（【键】值 → KV 卡片网格 / 胶囊流）
+│   │   ├── StatusBadge.tsx    状态徽章（thinking / generating / done / error / stopped，发光点）
+│   │   └── Markdown.tsx       react-markdown + remark-gfm + hljs 按需高亮 + DOMPurify（代码块复制钮）
+│   └── test/setup.ts          Vitest 环境（jest-dom + matchMedia mock）
+├── env/                       环境模板（vite envDir 加载）：.env.example / .development / .test / .production
+├── public/theme-init.js       首屏防主题闪白（CSP 兼容经典脚本，读取 disf_theme）
+└── 根配置                      package.json / tsconfig.json / vitest.config.ts / biome.json / Dockerfile / nginx.conf
 ```
 
 ## 关键设计决策
 
 | 决策 | 选型 | 理由 |
 |---|---|---|
-| 框架层 | **Nuxt 4（SPA 模式，`ssr: false` 固定）** | 构建 / dev / 文件路由 / 模块装配唯一入口；渲染在浏览器端，部署保持 nginx 静态托管（产物 `.output/public`） |
-| 状态共享 | Pinia store（`@pinia/nuxt`） | 单一事实源；流式增量只写 store，组件只渲染 |
-| SSE | fetch + ReadableStream | POST 语义；解析原语在 `utils/sse.ts`，读取在 `composables/useChatStream.ts` |
-| 流式编排 | `useChatStream` composable 驱动 store | store 只做状态与变更，HTTP/SSE/取消/超时/retry 全在编排层；turn token 作废旧流防幽灵增量 |
-| Markdown | markdown-it + highlight.js + DOMPurify | 安全红线：渲染结果必须 sanitize |
-| 错误映射 | `api/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
-| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 模型不再自动路由（`select_agent`/`select_skill` 已移除）；用户显式选专家 / 通用对话，选择随下一次发送生效（API.md §6）；选择入口统一在输入卡内 `AssistantMenu`（通用 + 专家下拉），侧栏「技能与助手」为新建绑定专家会话的快捷入口 |
-| 历史数据源 | 后端历史接口（`GET /conversations`、`/conversations/{id}/messages`、`/conversations/{id}/usage`，见 `.claude/feature/API.md`） | 会话列表 / 消息 / 用量以后端为唯一事实源，前端不持久化；新会话乐观入列，回合结束后 `loadList` 校准 |
-| 文件上传 | `useFileUpload` composable + ChatInput 附件（`GET|POST /files/upload`、`GET /files/{id}/preview`） | 上传前本地校验扩展名 / 大小；图片内联缩略、其余新窗口 / `a[download]` |
-| 环境 | VITE_* 收容 `env/`，经脚本 `--dotenv ./env/.env.{development,test,production}` 注入 process.env 流入 `import.meta.env` | Nuxt 不采纳 `vite.envDir`；配置驱动、无硬编码、无密钥模板提交 |
-| 视觉体系 | 品牌渐变（靛蓝→紫→淡紫）主强调 + 明暗双主题（`useTheme` 维护 `html.dark`，记忆 `disf_theme`）；主按钮 / 发送钮 / 选中态 / Logo 用品牌渐变，空态光晕氛围；暗色下主操作保持高对比（避免以 `--text-1` 作按钮底色导致暗色反白失焦） | 双栏 Left-Nav + Main-Chat（品牌左栏 + 消息窗）；EP 变量映射到主题令牌；`theme-init.js` 首屏防闪白 |
-| 代码块 | highlight.js 统一 `github-dark`，`pre.codeblock` 深色外壳 + `::before` 语言标签 | 明暗主题一致；markdown-it highlight 返回以 `<pre` 开头避免二次包裹 |
-| 校验 | Biome（Rust，lint+format 单一源）+ `nuxt typecheck`（vue-tsc） | 类型检查基线；lint 排除 `.nuxt/`、`.output/` |
-| 部署 | 多阶段 Docker + nginx（静态托管 `.output/public`，`/api` 反代 SSE 优化） | 同源 SSE 反代、hash 长缓存、CSP；`Dockerfile` / `nginx.conf` 在项目根，全栈 compose 在仓库根 |
+| 框架层 | **Vite + React 19（纯客户端 SPA）** | 构建 / dev 唯一入口；渲染在浏览器端，静态产物 `dist/`，部署保持 nginx 静态托管；无 SSR / 水合负担 |
+| 样式 | **Tailwind CSS 4**（`@theme`，CSS-first，无 tailwind.config.js） | 设计令牌全走 CSS 变量；`@utility` 封装品牌渐变 / 辉光阴影 |
+| 组件原语 | **shadcn/ui**（Radix + Tailwind，拷入 `src/components/ui/`） | 样式归本项目、a11y 由 Radix 兜底；toast 用 sonner，图标用 lucide-react |
+| 状态共享 | **Zustand**（`src/stores/`） | 粒度订阅；`activeMessages` 独立切片与历史列表解耦（性能红线） |
+| SSE | fetch + ReadableStream | POST 语义；解析原语在 `lib/sse.ts`，读取/分发在 `lib/stream.ts` |
+| 流式编排 | `useChatStream` hook 驱动 store | store 只做状态与变更，HTTP/SSE/取消/超时/retry 全在编排层；turn token 作废旧流防幽灵增量；**组件卸载 useEffect cleanup 调 abort()** |
+| 流式渲染降载 | `MessageBubble` React.memo + `useThrottledValue`（40ms 尾沿节流）+ `useDeferredValue` | 历史消息绝不随流式重渲；Markdown 高亮仅在收尾后执行（performance.md §2） |
+| Markdown | react-markdown + remark-gfm + highlight.js 按需注册 7 语言 + DOMPurify | 默认不渲染原始 HTML（安全收敛）；代码块深色外壳 + 语言标签头 + 复制钮 |
+| 错误映射 | `lib/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
+| 账号认证 | JWT（`POST /auth/login`）+ axios Bearer 拦截器 + `AuthGate` 闸门 + 侧栏账号区/退出 + 全局 401 过期 | 后端 `ACCOUNT_API.md` 引入账号体系（手机号+密码登录，数据按账号隔离）；令牌存 localStorage `disf_auth_token`，启动 `resolveSession` 用 `GET /users/me` 校验；登出/过期重置 chat / conversations / assistants 三 store 防跨账号数据泄漏 |
+| Toast 挂载 | Toaster 常驻根层（`main.tsx` Root，在 `AuthGate` 之上） | 登录页与主界面互斥挂载，toast 若挂在任一侧，登录成功切屏即随卸载消失；根层保证登录错误 / 成功提示跨屏可见。主题经 `stores/theme.ts` 全局共享，根层 Toaster 与任一屏的主题切换实时同步 |
+| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 用户显式选专家 / 通用对话，选择随下一次发送生效（API.md §3）；入口统一在输入卡内 `AssistantMenu`（通用 + 专家下拉），侧栏「技能与助手」为新建绑定专家会话的快捷入口 |
+| 历史数据源 | 后端历史接口（`GET /conversations`、`/conversations/{id}/messages`，见 `.claude/feature/API.md`） | 会话列表 / 消息以后端为唯一事实源，前端不持久化；新会话乐观入列，回合结束后 `reconcileList` 校准 |
+| 文件上传 | `useFileUpload` hook + ChatInput 附件（`GET|POST /files/upload`、`GET /files/{id}/preview`） | 上传前本地校验扩展名 / 大小；图片内联缩略、其余新窗口 / `a[download]` |
+| 环境 | VITE_* 收容 `env/`，vite `envDir` 原生注入 `import.meta.env`（`src/env.ts` 收窄） | 与 Nuxt 不同无需 `--dotnet`；配置驱动、无硬编码、无密钥模板提交 |
+| 视觉体系 | 深蓝黑科技（dark 旗舰：`#0F172A` 系 + 荧光青 `#22d3ee` 点亮）+ 极简冷白（light：`#FAFAFA`）双主题；玻璃拟态（`@utility glass-panel/surface/sidebar`：`backdrop-filter: blur()` + 1px 微发光边框 + 内顶高光）落在输入区 / 侧栏 / 思考分区 / 登录卡；对话主体 800px 居中；会话 HUD 数据卡条（助手 / 消息数 / 回合数 / 生成状态，纯前端真实状态）；「【键】值」结构化参数自动渲染为 KV 卡片网格 / 胶囊（`lib/structure.ts` → `StructuredParams`），不再露出 【】 字符；侧栏会话项悬停渐变微光（`.conv-item`）；AI 回复流式阶段 / 完成态用 `StatusBadge` | 品牌渐变只落主按钮 / 发送钮 / 头像 / 选中态；shadcn 变量映射主题令牌；`theme-init.js` 首屏防闪白；全部色值走 `--xxx` 令牌，不硬编码 |
+| 代码块 | highlight.js 统一 `github-dark`，`.codeblock` 深色外壳 + 语言标签头 + 复制钮 | 明暗主题一致；`Markdown.tsx` 自定义 `pre` 渲染器（流式期不高亮，收尾后高亮 + 可复制） |
+| 校验 | Biome（Rust，lint+format 单一源）+ `tsc --noEmit` | 类型检查基线；`--error-on-warnings` 门禁 |
+| 部署 | 多阶段 Docker + nginx（静态托管 `dist/`，`/assets/` hash 长缓存，`/api` 反代 SSE 优化） | 同源 SSE 反代、长缓存、CSP；`Dockerfile` / `nginx.conf` 在项目根，全栈 compose 在仓库根 |
 
-## 关键契约确认（2026-08-24，与后端对齐）
+## 关键契约确认（2026-08-24 起与后端对齐，React 重构后保持不变）
+
+* **账号认证（ACCOUNT_API.md，2026-08-28 新增）**：`POST /api/v1/auth/login`（手机号+密码）返回 JWT
+  `{account_id, token, name}`；除 `/auth/login`、`GET /assistants`、`GET /files/upload`、
+  `GET /files/{file_id}/preview` 外，**数据接口一律需 `Authorization: Bearer <JWT>` 且按账号隔离**
+  （跨账号读/删/续聊 → 404，不泄露存在性）。令牌存 localStorage `disf_auth_token`，有效期默认 7 天；
+  启动用 `GET /users/me` 校验恢复，任何受保护接口 401 全局回登录页（`setUnauthorizedHandler` → `expire`）。
+* **登录失败** 统一 401 `{detail: "手机号或密码错误"}`（防账号枚举）；非 `is_system` 访问 `GET /users` → 403。
 
 * **SSE 判别帧共 7 种**：`message` / `message_end` / `ping` / `error` + 思考三帧
   `thinking_started` / `thinking_delta` / `thinking_ended`（`chat.py:_stream_sse` 映射）。
 * **思考已对外**：`thinking_*` 帧携带思考过程（`thinking_delta.content` 增量、`thinking_ended.duration_ms`），
-  前端渲染为可折叠思考分区（ThinkingBlock），由 `VITE_FEATURE_THINKING` 开关控制显示。工具走 `tool_call_*`、
+  前端渲染为可折叠思考分区（`MessageBubble` 内），由 `VITE_FEATURE_THINKING` 开关控制显示。工具走 `tool_call_*`、
   产物走 `artifact_ready` 仍为后端**内部**事件，不进入对外正文；ToolCallCard / ArtifactLink 保持不在 v1。
 * **HTTP 错误体**：PlatformError `{error:{category,message}}` / FastAPI `{detail}`。
 * **SSE 帧 `created_at` 为 epoch 秒**；历史接口记录 `created_at` 为 ISO 8601（pydantic 序列化）。
-* **`message_end.metadata.usage` = 5 键**：`{prompt_tokens, completion_tokens, total_tokens, cached_read_tokens, cached_write_tokens}`（API.md §3）。
-* **历史 / 文件接口**（API.md §1 / §2）：会话列表、消息流、用量汇总由后端提供；产物下载接口
-  `/sessions/{sid}/artifacts/{aid}` 已移除，预览 / 下载改走 `GET /api/v1/files/{file_id}/preview`（§3 / §4）。
-* **助手选择**（API.md §6）：`GET /assistants` 返回 `{id,type,name,description,capabilities}`（expert + generic，
+* **历史 / 文件接口**（API.md §1 / §2）：会话列表、消息流由后端提供；产物下载接口
+  `/sessions/{sid}/artifacts/{aid}` 已移除，预览 / 下载改走 `GET /api/v1/files/{file_id}/preview`。
+* **助手选择**（API.md §3）：`GET /assistants` 返回 `{id,type,name,description,capabilities}`（expert + generic，
   generic 为保留字）；请求体可选 `agent_id`（首轮绑定 / 续聊沿用 / `"generic"` 切回通用 / 未知 id → 404）；
   `message_end` 与 blocking 的 `metadata.assistant` 回显当前回合生效助手
   （`{"type":"expert","id":"discover"}` / `{"type":"generic","id":null}` / 缺失 = 新会话未绑定）。
@@ -67,11 +106,9 @@ discover_frontend/
 
 ## 已知限制
 
-- **Biome 对 Vue**：暂不识别 `<script setup>` 模板绑定，故 `biome.json` 对 `.vue` 关闭
-  `noUnusedVariables` / `noUnusedImports`（避免误删模板引用变量）；TS 文件仍启用。
-- `@element-plus/nuxt` 的 Vite `optimizeDeps.include` 需 `dayjs` / `lodash-unified` 可解析，
-  故作为 devDependencies 直装（避免 pnpm 严格隔离下 dev 警告）。
-- `@element-plus/icons-vue` 不引入（AppIcon 手写 SVG，CLAUDE.md 第 1 节硬约束）。
+- **react-markdown 不渲染原始 HTML**（安全收敛），故模型输出中的原生 HTML 标签会被跳过而非渲染。
+- **单 chunk 785KB（gzip 251KB）**：react-dom + motion + radix 体积合理；`chunkSizeWarningLimit` 已调至 800。
+  若后续继续增大，可考虑 `build.rolldownOptions.output.codeSplitting` 拆 vendor 或按路由懒加载。
 - 本机开发若配置了系统代理（`HTTP_PROXY`），访问 localhost 需经 `--noproxy` 或浏览器 `NO_PROXY`。
 
 ## 当前能力边界（v1 功能已落地）
@@ -79,27 +116,27 @@ discover_frontend/
 对话全流程可用：发送（Enter/Shift+Enter、长度校验）、流式打字机、思考过程展示（`thinking_*` 帧 →
 可折叠思考分区，多段思考合并、结束后显示耗时）、会话自动创建与续聊
 （`X-Conversation-Id` 优先 / 帧内 id 兜底）、停止生成（保留已收内容）、错误态与可读文案、
-阻塞模式兜底重试、Markdown 渲染（sanitize + 高亮、代码块深色外壳）、复制、用量展示（单条 + 会话级汇总角标）、
-会话侧边栏（新建 / 切换 / 删除，列表来自后端 `GET /conversations`）、历史消息加载（`GET /conversations/{id}/messages` 映射渲染）、
+阻塞模式兜底重试、Markdown 渲染（sanitize + 高亮、代码块语言标签头 + 复制钮）、
+消息流 turn 分组（用户 + 助手一回合，回合间细线分隔）、流式状态行（深度思考 / 生成中）、
+最后一条已完成助手消息可「重新生成」、会话侧边栏（新建 / 切换 / 删除 / 桌面折叠图标轨道，
+列表来自后端 `GET /conversations`）、空态（时段问候 + 探索方向卡片点选即建绑定会话）、
+历史消息加载（`GET /conversations/{id}/messages` 映射渲染）、
 文件上传（本地校验 → 上传 → 预览 / 下载 / 删除）、<768px 响应式抽屉。
-历史数据源切换（2026-08-26）：会话列表与消息快照的 localStorage 持久化已移除，改由后端历史接口提供。
 
-**显式助手选择（2026-08-26，入口布局 2026-08-27 调整）**：`GET /assistants` 目录为选择来源，用户显式选专家 / 通用对话，
-每次发消息带 `agent_id`（首轮绑定 / 续聊切换），回合结束按 `metadata.assistant` 回显选择器；
-打开历史会话按 `ConversationRecord.agent_id` 对齐选择器；旧「多智能体自动路由」文案与徽标已移除。
-**首选入口统一为输入卡内 `AssistantMenu`（2026-08-27）**：输入框 footer 左侧胶囊触发钮（当前助手图标 + 名称 + chevron）
-点击展开下拉（通用对话 + 专家，各带一行描述），选中写入 Pinia `selectedId`、随下一次发送绑定 `agent_id`；会话中 / 空态均可切换。
-空态欢迎区回归「品牌标题 + 光晕」，不再放助手胶囊 / 模式开关；侧栏「技能与助手」点选专家 = 新建绑定该助手的工作会话。
-各入口同源（Pinia `selectedId`）；顶部选择器、`EmptyHero`、`AssistantGallery` 均已移除。
+**显式助手选择**：`GET /assistants` 目录为选择来源，用户显式选专家 / 通用对话，每次发消息带 `agent_id`
+（首轮绑定 / 续聊切换），回合结束按 `metadata.assistant` 回显选择器；打开历史会话按 `ConversationRecord.agent_id` 对齐选择器。
+首选入口统一为输入卡内 `AssistantMenu`（下拉），侧栏「技能与助手」点选专家 = 新建绑定该助手的工作会话。
 
-**框架迁移（2026-08-26）**：由 Vue 3 + Vite 迁移至 **Nuxt 4（SPA `ssr:false`）**——`app/` 目录结构、
-文件路由、`@pinia/nuxt` + `@element-plus/nuxt` 模块装配、`nuxt typecheck` 类型检查基线、
-`nuxt generate` 静态产物（`.output/public`）nginx 托管；业务代码（components/composables/stores/api/utils）逻辑零改动。
+**性能红线落地（React 重构）**：`MessageBubble` `React.memo`（App 事件回调 `useCallback` 稳定引用，保证 memo 生效）；
+流式正文 `useThrottledValue`（40ms）+ `useDeferredValue` 双重降载 + 收尾才高亮；
+`activeMessages` 独立切片，侧栏只订阅 `items/loading/selectedId`；`useChatStream` 卸载 `abort()` + turn 作废防幽灵增量。
 
-**视觉重构（2026-08-25 首版，2026-08-27 品牌回归）**：明暗双主题 + 一键切换（默认跟随系统、记忆偏好、
-首屏防闪白）、桌面侧栏折叠、玻璃输入卡、助手渐变头像 / 用户渐变气泡 / 思考卡 shimmer、空态光晕。
-2026-08-27 按品牌主题回归定稿：主按钮 / 发送钮 / 选中态 / Logo 统一品牌渐变，恢复页面淡光晕 + 空态 aurora；
-选择入口收敛到输入卡内 `AssistantMenu`；顶部选择器与空态建议卡已移除；功能与数据流零改动。
+**视觉 / 排版升级（2026-08-28 整体 UI 重构）**：双主题令牌改版（dark `#0F172A` 深蓝黑 + 荧光青，
+light `#FAFAFA` 极简冷白）；玻璃拟态工具类（`glass-panel / glass-surface / glass-sidebar`）落地输入区 /
+侧栏 / 思考分区 / 登录卡 / 空态卡；对话主体收紧 800px 居中 + 会话 HUD 数据卡条；
+「【键】值」结构化参数 → KV 卡片 / 胶囊（用户输入全文解析、AI 回复开头参数段剥离，`lib/structure.ts`
+纯函数 + `StructuredParams`）；AI 回复流式阶段 / 完成态 `StatusBadge`；
+思考分区抽成 `ThinkingPanel`（粒子流 + 可折叠 + 耗时）；侧栏会话项 `.conv-item` 悬停渐变微光。
 
 **不在 v1**：ToolCallCard / ArtifactLink 高级事件卡片——工具 / 产物事件仍为后端内部事件，不进入
 对外正文（见关键契约确认）；若后端后续开放，再按 feature 开关接入。

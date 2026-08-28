@@ -78,6 +78,20 @@ class NotFoundError(PlatformError):
         super().__init__(message, category=ErrorCategory.NOT_FOUND, retryable=False)
 
 
+class UnauthorizedError(PlatformError):
+    """未认证 / 令牌无效过期（账号体系）。HTTP 401。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category=ErrorCategory.AUTH, retryable=False)
+
+
+class ForbiddenError(PlatformError):
+    """认证通过但无权限（如非超级用户访问管理接口）。HTTP 403。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category=ErrorCategory.DENIED, retryable=False)
+
+
 class LLMError(PlatformError):
     """LLM 客户端错误基类。"""
 
