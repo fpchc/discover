@@ -10,7 +10,9 @@
 - add：计算新线索并经结果 `_upsert` 字段返回，平台据此持久化回写历史。
 
 用法：
-  echo '{"history":{"version":"1.0","product_clues":[]},"mode":"exclude","product_keywords":["高速背板连接器"],"target_industry":"数据中心交换机"}' | python dedup_manager.py
+  echo '{"history":{"version":"1.0","product_clues":[]},"mode":"exclude",'
+  '"product_keywords":["高速背板连接器"],"target_industry":"数据中心交换机"}' \
+  | python dedup_manager.py
 """
 
 from __future__ import annotations
@@ -41,9 +43,7 @@ def jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-def _similarity(
-    input_keywords: set[str], input_industry: str, clue: dict[str, Any]
-) -> float:
+def _similarity(input_keywords: set[str], input_industry: str, clue: dict[str, Any]) -> float:
     clue_keywords = normalize_keywords(clue.get("product_keywords", []))
     clue_industry = str(clue.get("target_industry", "")).strip().lower()
     kw_sim = jaccard_similarity(input_keywords, clue_keywords)
@@ -150,9 +150,13 @@ def add_recommendations(clue_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def activate_reserve_pool(cache: dict[str, Any], clue_id: str) -> dict[str, Any]:
-    """后备池激活排序：原分 × 0.9 + 时间衰减补偿（每 30 天 +0.1，上限 1.0）。"""
+    """后备池激活排序：原分 * 0.9 + 时间衰减补偿（每 30 天 +0.1，上限 1.0）。"""
     clue = next(
-        (c for c in cache.get("product_clues", []) if isinstance(c, dict) and c.get("clue_id") == clue_id),
+        (
+            c
+            for c in cache.get("product_clues", [])
+            if isinstance(c, dict) and c.get("clue_id") == clue_id
+        ),
         None,
     )
     if clue is None:
@@ -205,15 +209,23 @@ def main() -> None:
     elif mode == "exclude":
         print(
             json.dumps(
-                generate_exclude_lists(cache, data.get("product_keywords", []), data.get("target_industry", "")),
+                generate_exclude_lists(
+                    cache, data.get("product_keywords", []), data.get("target_industry", "")
+                ),
                 ensure_ascii=False,
                 indent=2,
             )
         )
     elif mode == "add":
-        print(json.dumps(add_recommendations(data.get("clue_data", {})), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(add_recommendations(data.get("clue_data", {})), ensure_ascii=False, indent=2)
+        )
     elif mode == "activate":
-        print(json.dumps(activate_reserve_pool(cache, data.get("clue_id", "")), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                activate_reserve_pool(cache, data.get("clue_id", "")), ensure_ascii=False, indent=2
+            )
+        )
     else:
         _emit_error(f"未知模式: {mode}，支持 match/exclude/add/activate")
 

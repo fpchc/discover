@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 PCB 客户账期评估 — 账期授信模型计算器
 
 综合授信分 CS = 0.5·F(财务健康) + 0.3·R(信用风险) + 0.2·S(经营稳定性)
 账期档位：90/60/45/30 天，叠加硬约束 建议账期 ≤ min(档位, 客户自身应收周转天数)
-信用额度 M = (PCB年盘子P/12) × 账期月数 × 授信系数
+信用额度 M = (PCB年盘子P/12) * 账期月数 * 授信系数
 红线门禁：任一触发 → 综合分置 None，标"阻断/现金交易"
 
 输入：JSON（stdin 或 SCORE_INPUT_FILE 环境变量）
@@ -18,6 +17,7 @@ PCB 客户账期评估 — 账期授信模型计算器
 import json
 import os
 import sys
+from typing import Any
 
 # ═══════════════════════════════════════════════════════════
 # 账期量化模型核心
@@ -26,19 +26,28 @@ import sys
 # 财务健康 F 子维度（满分合计 10）
 F_SUB_DIMENSIONS = {
     "偿债能力": {"max": 3, "说明": "负债率<40%且流动比>2→3; 40-60%且1-2→2; 60-80%→1; >80%或<1→0"},
-    "盈利能力": {"max": 2.5, "说明": "毛利率>35%且净利率>15%→2.5; 25-35%或10-15%→2; 15-25%→1.5; <15%或亏损→1"},
-    "现金流质量": {"max": 2, "说明": "OCF/营收>0.15且连续为正→2; 0.05-0.15→1.5; 0-0.05→1; OCF为负→0.5"},
-    "增长势头": {"max": 1.5, "说明": "营收增速>30%且净利增速>50%→1.5; 15-30%→1; 0-15%→0.5; 负增长→0"},
+    "盈利能力": {
+        "max": 2.5,
+        "说明": "毛利率>35%且净利率>15%→2.5; 25-35%或10-15%→2; 15-25%→1.5; <15%或亏损→1",
+    },
+    "现金流质量": {
+        "max": 2,
+        "说明": "OCF/营收>0.15且连续为正→2; 0.05-0.15→1.5; 0-0.05→1; OCF为负→0.5",
+    },
+    "增长势头": {
+        "max": 1.5,
+        "说明": "营收增速>30%且净利增速>50%→1.5; 15-30%→1; 0-15%→0.5; 负增长→0",
+    },
     "营运效率": {"max": 1, "说明": "应收周转≤90天→1; ≤120天→0.5; >120天→0"},
 }
 
 # 信用风险 R（基础 10 分扣减）
 R_BASE = 10
 R_PENALTIES = {
-    "在册被执行": 3,        # 每条 3 分，≥2 条归零
-    "欠税/税务违法": 2,     # 每条 2 分
-    "票据违约": 2,          # 每条 2 分
-    "合同纠纷涉诉": 0.5,    # 每条 0.5 分，上限 3 分
+    "在册被执行": 3,  # 每条 3 分，≥2 条归零
+    "欠税/税务违法": 2,  # 每条 2 分
+    "票据违约": 2,  # 每条 2 分
+    "合同纠纷涉诉": 0.5,  # 每条 0.5 分，上限 3 分
 }
 
 # 经营稳定性 S（基础 10 分扣减）
@@ -60,7 +69,7 @@ CREDIT_TIERS = [
     {"min_cs": 4.0, "min_f": 0, "days": 30, "label": "30天账期"},
 ]
 
-# 授信等级 → 授信系数（额度 = 月盘子 × 账期月数 × 系数）
+# 授信等级 → 授信系数（额度 = 月盘子 * 账期月数 * 系数）
 CREDIT_FACTOR = {"S": 1.0, "A": 0.85, "B": 0.7, "C": 0.4, "D": 0.0}
 
 # ═══════════════════════════════════════════════════════════
@@ -89,7 +98,7 @@ RED_LINES = [
 ]
 
 
-def _classify(cs):
+def _classify(cs: float | None) -> str:
     """授信等级 S/A/B/C/D。"""
     if cs is None:
         return "D"
@@ -104,7 +113,7 @@ def _classify(cs):
     return "D"
 
 
-def _check_red_lines(item):
+def _check_red_lines(item: dict[str, Any]) -> tuple[list[str], str]:
     """红线检测，返回 (触发列表, 阻断原因)。"""
     triggered = []
     for rl in RED_LINES:
@@ -113,7 +122,7 @@ def _check_red_lines(item):
     return triggered, "；".join(triggered)
 
 
-def compute_credit_score(item):
+def compute_credit_score(item: dict[str, Any]) -> dict[str, Any]:
     """
     输入 item: 含 tier(T1-T4)、F/R/S 子分、AR 应收周转天数、P PCB年盘子、红线状态
     输出: 完整评分结果
@@ -123,7 +132,7 @@ def compute_credit_score(item):
     # 客户类型分层（默认 T1 上市/大型）
     tier = item.get("tier", "T1")
     weights = TIER_WEIGHTS.get(tier, TIER_WEIGHTS["T1"])
-    is_listed = (tier == "T1")
+    is_listed = tier == "T1"
     result["tier"] = tier
     result["tier_label"] = weights["label"]
 
@@ -191,7 +200,7 @@ def compute_credit_score(item):
     ar_days = item.get("ar_days", 365)  # 客户自身应收周转天数
     tier_days = 0
     for tier in CREDIT_TIERS:
-        if CS >= tier["min_cs"] and F >= tier["min_f"]:
+        if tier["min_cs"] <= CS and tier["min_f"] <= F:
             tier_days = tier["days"]
             break
     if CS < 4.0:
@@ -218,7 +227,7 @@ def compute_credit_score(item):
     return result
 
 
-def run(data):
+def run(data: dict[str, Any]) -> dict[str, Any]:
     items = data.get("items", [])
     results = []
     for item in items:
@@ -233,9 +242,10 @@ def run(data):
     }
 
 
-def main():
+def main() -> None:
     # Windows 控制台默认 GBK，统一重定向 stdout 为 UTF-8 避免 ✓/中文打印报错
     import io
+
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     if "--test" in sys.argv:
@@ -252,7 +262,7 @@ def main():
         out_file = os.environ.get("SCORE_OUTPUT_FILE")
 
     if in_file:
-        with open(in_file, "r", encoding="utf-8") as f:
+        with open(in_file, encoding="utf-8") as f:
             data = json.load(f)
     else:
         raw = sys.stdin.buffer.read().decode("utf-8")
@@ -273,11 +283,12 @@ def main():
 # 冒烟测试
 # ═══════════════════════════════════════════════════════════
 
-def _run_tests():
+
+def _run_tests() -> None:
     passed = 0
     total = 0
 
-    def check(label, cond):
+    def check(label: str, cond: bool) -> None:
         nonlocal passed, total
         total += 1
         if cond:
@@ -289,7 +300,13 @@ def _run_tests():
     # 测试 1: 优质客户（凯格精机场景）
     good = {
         "name": "凯格精机",
-        "f_scores": {"偿债能力": 3, "盈利能力": 2.5, "现金流质量": 1.5, "增长势头": 1.5, "营运效率": 1},
+        "f_scores": {
+            "偿债能力": 3,
+            "盈利能力": 2.5,
+            "现金流质量": 1.5,
+            "增长势头": 1.5,
+            "营运效率": 1,
+        },
         "r_penalties": {"在册被执行": 0, "欠税/税务违法": 0, "票据违约": 0, "合同纠纷涉诉": 0},
         "s_penalties": {},
         "ar_days": 44,
@@ -307,7 +324,13 @@ def _run_tests():
     red = {
         "name": "失信企业",
         "失信被执行人在册": True,
-        "f_scores": {"偿债能力": 3, "盈利能力": 2.5, "现金流质量": 2, "增长势头": 1.5, "营运效率": 1},
+        "f_scores": {
+            "偿债能力": 3,
+            "盈利能力": 2.5,
+            "现金流质量": 2,
+            "增长势头": 1.5,
+            "营运效率": 1,
+        },
     }
     r = compute_credit_score(red)
     check("红线触发状态阻断", r["status"] == "阻断")
@@ -318,7 +341,13 @@ def _run_tests():
     bad = {
         "name": "被执行企业",
         "r_penalties": {"在册被执行": 2, "欠税/税务违法": 0, "票据违约": 0, "合同纠纷涉诉": 3},
-        "f_scores": {"偿债能力": 2, "盈利能力": 1.5, "现金流质量": 1, "增长势头": 0.5, "营运效率": 0.5},
+        "f_scores": {
+            "偿债能力": 2,
+            "盈利能力": 1.5,
+            "现金流质量": 1,
+            "增长势头": 0.5,
+            "营运效率": 0.5,
+        },
         "s_penalties": {},
         "ar_days": 60,
         "pcb_annual_spend": 800,
@@ -337,7 +366,13 @@ def _run_tests():
     kaige_t1 = {
         "name": "凯格精机",
         "tier": "T1",
-        "f_scores": {"偿债能力": 3, "盈利能力": 2.5, "现金流质量": 1.0, "增长势头": 1.5, "营运效率": 1},
+        "f_scores": {
+            "偿债能力": 3,
+            "盈利能力": 2.5,
+            "现金流质量": 1.0,
+            "增长势头": 1.5,
+            "营运效率": 1,
+        },
         "r_penalties": {"在册被执行": 0, "欠税/税务违法": 0, "票据违约": 0, "合同纠纷涉诉": 0},
         "s_penalties": {},
         "ar_days": 44,
@@ -353,7 +388,13 @@ def _run_tests():
     t2 = {
         "name": "非上市民营中型",
         "tier": "T2",
-        "f_scores": {"偿债能力": 3, "盈利能力": 2.5, "现金流质量": 2, "增长势头": 1.5, "营运效率": 1},
+        "f_scores": {
+            "偿债能力": 3,
+            "盈利能力": 2.5,
+            "现金流质量": 2,
+            "增长势头": 1.5,
+            "营运效率": 1,
+        },
         "r_penalties": {"在册被执行": 0, "欠税/税务违法": 0, "票据违约": 0, "合同纠纷涉诉": 0},
         "s_penalties": {},
         "ar_days": 60,
@@ -362,13 +403,22 @@ def _run_tests():
     r = compute_credit_score(t2)
     # 盈利2.5→1.25、现金流2→1.0、增长1.5→0.75 三项强制中性；偿债3、营运1保留
     check("T2 非上市 F 强制降级=7.0", abs(r["F"] - 7.0) < 0.01)
-    check("T2 权重生效(CS≠T1算法)", abs(r["composite_score"] - (0.3*7.0 + 0.35*10 + 0.35*10)) < 0.01)
+    check(
+        "T2 权重生效(CS≠T1算法)",
+        abs(r["composite_score"] - (0.3 * 7.0 + 0.35 * 10 + 0.35 * 10)) < 0.01,
+    )
 
     # 测试 7: T3 贸易/小型非上市——信用为王权重
     t3 = {
         "name": "非上市贸易小型",
         "tier": "T3",
-        "f_scores": {"偿债能力": 2, "盈利能力": 2.5, "现金流质量": 2, "增长势头": 1.5, "营运效率": 1},
+        "f_scores": {
+            "偿债能力": 2,
+            "盈利能力": 2.5,
+            "现金流质量": 2,
+            "增长势头": 1.5,
+            "营运效率": 1,
+        },
         "r_penalties": {"在册被执行": 0, "欠税/税务违法": 0, "票据违约": 0, "合同纠纷涉诉": 0},
         "s_penalties": {},
         "ar_days": 30,
@@ -378,7 +428,10 @@ def _run_tests():
     # 偿债2保留，盈利/现金流/增长强制中性
     expect_f = 2 + 1.25 + 1.0 + 0.75 + 1  # = 6.0
     check("T3 非上市 F=6.0", abs(r["F"] - expect_f) < 0.01)
-    check("T3 权重 0.2/0.45/0.35", abs(r["composite_score"] - (0.2*expect_f + 0.45*10 + 0.35*10)) < 0.01)
+    check(
+        "T3 权重 0.2/0.45/0.35",
+        abs(r["composite_score"] - (0.2 * expect_f + 0.45 * 10 + 0.35 * 10)) < 0.01,
+    )
 
     print(f"\n{'✓' if passed == total else '✗'} 总计 {passed}/{total} 通过")
 

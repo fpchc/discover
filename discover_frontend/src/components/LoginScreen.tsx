@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 
 /**
  * 登录页（ACCOUNT_API.md §1.1）：手机号 + 密码 → POST /auth/login 得 JWT。
- * 平台无注册接口（账号由管理侧预置），故底部提示联系管理员。
+ * 平台无注册接口（账号由管理侧预置）；页面不展示额外说明文案，仅品牌 + 表单。
  * 登录成功弹 toast 并让 auth store 进入 authenticated，由 AuthGate 切到主界面；
  * toast 由根层 Toaster 常驻（main.tsx Root），切屏后成功提示依然可见。
  * 明暗主题经 theme store 全局共享（登录页在 App 壳之外挂载，不持有独立主题态）。
@@ -56,17 +56,12 @@ export default function LoginScreen() {
       </Button>
 
       <div className="w-full max-w-sm rounded-2xl border border-border bg-surface-1 p-6 shadow-composer">
-        <div className="mb-6 flex items-center gap-2.5">
+        <div className="mb-6 flex items-center justify-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-glow-brand ring-1 ring-brand-2/25">
             <Sparkles className="h-4 w-4" />
           </span>
           <span className="text-xl font-bold tracking-wide text-brand-gradient">Discover</span>
         </div>
-
-        <h1 className="text-base font-semibold text-text-1">登录账号</h1>
-        <p className="mb-5 mt-1 text-[13px] leading-relaxed text-text-2">
-          手机号 + 密码登录，会话与文件按账号隔离
-        </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <label className="block" htmlFor="login-phone">

@@ -426,17 +426,28 @@ class Runtime:
         )
         request = ChatRequest(
             messages=[ChatMessage(role="system", content=system), *state.messages],
-            thinking=False,
+            thinking=self._settings.thinking_enabled,
         )
         text_parts: list[str] = []
+        thinking_open = False
+        start = time.perf_counter()
         async for chunk in self._llm.stream_chat(
             provider=provider, api_key=api_key, request=request
         ):
-            if isinstance(chunk, TextChunk):
+            if isinstance(chunk, ThinkingChunk):
+                if not thinking_open:
+                    await self._emit(ThinkingStartedEvent())
+                    thinking_open = True
+                self._emit_sync_guard().thinking_delta(chunk.text)
+            elif isinstance(chunk, TextChunk):
                 self._emit_sync_guard().text_delta(chunk.text)
                 text_parts.append(chunk.text)
             elif isinstance(chunk, UsageChunk):
                 self._usage.add(chunk)
+        if thinking_open:
+            await self._emit(
+                ThinkingEndedEvent(duration_ms=int((time.perf_counter() - start) * 1000))
+            )
         assistant = ChatMessage(role="assistant", content="".join(text_parts))
         return {"messages": [assistant]}
 

@@ -49,7 +49,7 @@ describe('mapMessageRecord', () => {
     expect(assistant?.errorMessage).toBe('服务内部错误')
   })
 
-  it('思考内容 → 助手消息 thinking 态（done，折叠展示）', () => {
+  it('思考内容 → 助手消息 thinking 态（done，ThinkingPanel 折叠展示）', () => {
     const [, assistant] = mapMessageRecord(makeRecord({ thinking: '让我想想…' }))
     expect(assistant?.thinking).toBe('让我想想…')
     expect(assistant?.thinkingStatus).toBe('done')

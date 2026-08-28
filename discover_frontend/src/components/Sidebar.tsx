@@ -158,14 +158,14 @@ export function Sidebar({
                 <li
                   key={item.conversation_id}
                   className={cn(
-                    'group/item relative min-w-0 rounded-lg transition-colors hover:bg-surface-hover',
+                    'flex min-w-0 items-center rounded-lg transition-colors hover:bg-surface-hover',
                     active && 'sidebar-active sidebar-active--bar',
                   )}
                 >
                   <button
                     type="button"
                     onClick={() => onSelect(item.conversation_id)}
-                    className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg py-2 pl-2.5 pr-1.5 text-left"
                   >
                     <MessageSquare
                       className={cn(
@@ -179,15 +179,15 @@ export function Sidebar({
                     >
                       {item.name}
                     </span>
-                    <span className="max-w-[45%] flex-shrink-0 truncate pr-6 text-[11px] text-text-3 transition-opacity md:pr-0 md:group-hover/item:opacity-0">
-                      {item.dialogue_count} · {formatTime(item.updated_at)}
+                    <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-text-3">
+                      {formatTime(item.updated_at)}
                     </span>
                   </button>
                   <button
                     type="button"
                     title="删除会话"
                     onClick={() => onDelete(item.conversation_id)}
-                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-text-3 transition-opacity hover:text-destructive md:opacity-0 md:group-hover/item:opacity-100"
+                    className="mr-1.5 flex h-6 w-6 flex-shrink-0 cursor-pointer items-center justify-center rounded-md text-text-3 transition-colors hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -199,19 +199,36 @@ export function Sidebar({
       </div>
 
       <footer className="border-t border-border px-3 pb-3 pt-2.5">
-        {/* 账号行：头像 + 显示名 + 退出登录 */}
-        <div className="flex items-center justify-between gap-2">
-          <div
-            className="flex min-w-0 flex-1 items-center gap-2"
+        {/* 账号行：头像 + 显示名 + 环境徽标（仅 dev）+ 主题 / 退出（统一图标钮） */}
+        <div className="flex items-center gap-2">
+          <span
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[12px] font-semibold text-white"
             title={accountPhone ?? accountName ?? ''}
           >
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[11px] font-semibold text-white">
-              {accountInitial}
+            {accountInitial}
+          </span>
+          <span
+            title={accountName ?? '未登录'}
+            className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-1"
+          >
+            {accountName ?? '未登录'}
+          </span>
+          {APP_ENV !== 'production' && (
+            <span
+              className="max-w-[56px] flex-shrink-0 truncate rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-3"
+              title={`环境：${APP_ENV}`}
+            >
+              {APP_ENV}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-1">
-              {accountName ?? '未登录'}
-            </span>
-          </div>
+          )}
+          <button
+            type="button"
+            title={isDark ? '切换为浅色模式' : '切换为深色模式'}
+            onClick={onToggleTheme}
+            className="flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-3 transition-colors hover:bg-surface-hover hover:text-text-1"
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
           <button
             type="button"
             title="退出登录"
@@ -220,21 +237,6 @@ export function Sidebar({
           >
             <LogOut className="h-4 w-4" />
           </button>
-        </div>
-        <div className="mt-1.5 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-text-2 transition-colors hover:bg-surface-hover hover:text-text-1"
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            {isDark ? '浅色模式' : '深色模式'}
-          </button>
-          {APP_ENV !== 'production' && (
-            <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-text-3">
-              {APP_ENV}
-            </span>
-          )}
         </div>
       </footer>
     </aside>
