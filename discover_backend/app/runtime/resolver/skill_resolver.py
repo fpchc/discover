@@ -28,7 +28,7 @@ class SkillStrategy(Protocol):
 
 
 class ExplicitSkillStrategy:
-    """用户显式指定技能（未来：session.skill_id）。"""
+    """用户显式指定技能（未来：对话记录 skill 字段）。"""
 
     def resolve(self, context: SkillResolutionContext) -> str | None:
         if context.explicit_skill is not None and context.explicit_skill in context.skill_ids:

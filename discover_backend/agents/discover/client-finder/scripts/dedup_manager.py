@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EITIA 推荐历史去重脚本（P1，无状态纯计算）。
+"""推荐历史去重脚本（P1，无状态纯计算）。
 
 契约：stdin 一次写入 UTF-8 JSON，stdout 输出 UTF-8 JSON，非 0 退出码表示失败。
 去重历史由平台经 stdin 的 `history` 字段注入（持久化在平台侧 dedup_clues 表），

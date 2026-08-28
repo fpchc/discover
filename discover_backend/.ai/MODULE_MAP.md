@@ -31,29 +31,29 @@
 | LocalStorage（UUID 扁平、anyio 线程池） | `app/extensions/storage/local_storage.py` |
 | S3 后端占位（扩展点，未实现） | `app/extensions/storage/aws_s3_storage.py` |
 
-## 会话历史（L0，conversations）
+## 业务服务层（L0/L1，services）
 
 | 职责 | 路径 |
 |------|------|
-| 对话历史落库/读取/删除（ConversationService，按账号隔离；DB 降级内部消化，舱壁）+ 账号 token 用量聚合（aggregate_user_usage / usage_by_account） | `app/conversations/service.py` |
-| 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord 含 account_id / UsageAggregate） | `app/conversations/models.py` |
+| 对话历史落库/读取/删除（ConversationService，按账号隔离；DB 降级内部消化，舱壁）+ 账号 token 用量聚合（aggregate_user_usage / usage_by_account） | `app/services/conversations.py` |
+| 文件注册表服务（register/upload/预览/使用标记，FileService + file_preview_path） | `app/services/files.py` |
+| 智能体工作区（创建/路径校验/防穿越，按 agent 键控跨会话共享，WorkspaceManager / Workspace） | `app/services/workspace.py` |
 
-## 去重历史（L0，dedup）
-
-| 职责 | 路径 |
-|------|------|
-| 去重历史注入/回写（dedup_clues 表按账号隔离 + 组合主键 (created_by, clue_id)，脚本纯计算契约，DedupStore） | `app/dedup/repo.py` |
-
-## 账号认证（L0/L4，auth）
+## 持久化仓库层（L0，repositories）
 
 | 职责 | 路径 |
 |------|------|
-| 认证 DTO（LoginRequest / LoginResponse / AccountRecord / UserUsage / AccountStatus） | `app/auth/models.py` |
-| Argon2id 密码哈希 + JWT 会话令牌（PasswordHasher / JwtService） | `app/auth/security.py` |
-| 账号认证门面（login / get_account / get_user_usage / list_users_with_usage，AuthService） | `app/auth/service.py` |
-| FastAPI 认证依赖（get_current_account_id / get_current_account / require_superuser） | `app/auth/deps.py` |
+| 去重历史注入/回写（dedup_clues 表按账号隔离 + 组合主键 (created_by, clue_id)，脚本纯计算契约，DedupStore） | `app/repositories/dedup.py` |
+
+## 账号认证（L0/L4，services/auth + api/deps）
+
+| 职责 | 路径 |
+|------|------|
+| 账号认证门面（login / get_account / get_user_usage / list_users_with_usage，AuthService） | `app/services/auth.py` |
+| Argon2id 密码哈希 + JWT 会话令牌（PasswordHasher / JwtService） | `app/services/auth_security.py` |
+| FastAPI 认证依赖（get_current_account_id / get_current_account / require_superuser） | `app/api/deps.py` |
 | 认证接口（/auth/login、/users/me、/users/me/usage、/users 超级用户） | `app/api/auth.py` |
-| 预置账号 CLI（python -m app.auth.provision，无注册接口） | `app/auth/provision.py` |
+| 预置账号 CLI（python -m app.services.auth_provision，无注册接口） | `app/services/auth_provision.py` |
 
 ## LLM 层（L1）
 
@@ -65,15 +65,14 @@
 | 流式分块解析（Text/Thinking/ToolCalls/Finish） | `app/llm/stream_parser.py` |
 | LLM 特定异常 | `app/llm/errors.py` |
 
-## 会话层（L0/L1）
+## 数据契约层（L0，schemas）
 
 | 职责 | 路径 |
 |------|------|
-| 会话/产物模型（SessionRecord 含 from_account_id 归属账号） | `app/session/models.py` |
-| 会话存储 | `app/session/store.py` |
-| workspace 创建/路径校验/防穿越（按 agent 键控） | `app/session/workspace.py` |
-| 文件服务（register/upload 带 created_by 归属账号；预览全局；多消费方注册表） | `app/session/files.py` |
-| 会话服务门面（会话/文件均携带归属账号） | `app/session/service.py` |
+| 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord 含 account_id / UsageAggregate / ConversationSession） | `app/schemas/conversations.py` |
+| 文件 DTO（ArtifactRecord 产物事件 / FileResponse / UploadConfig） | `app/schemas/files.py` |
+| 认证 DTO（LoginRequest / LoginResponse / AccountRecord / UserUsage / AccountStatus） | `app/schemas/auth.py` |
+| 对话 SSE / 请求响应模型（chat-messages 契约） | `app/schemas/chat.py` |
 
 ## 工具层（L1/L2）
 
@@ -151,8 +150,6 @@
 |------|------|
 | 全局异常中间件（领域异常 → 统一 JSON，泛型兜底 500 + traceback） | `app/middleware/exceptions.py` |
 | 请求日志中间件（request_id / X-Request-Id / trace_id / 耗时 / client_ip） | `app/middleware/request_logging.py` |
-| 请求/响应模型 | `app/schemas/chat.py` |
-| 文件 API DTO（FileResponse / UploadConfig） | `app/schemas/files.py` |
 | 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/chat.py` |
 | 文件路由（/files/upload 配置、上传、{id}/preview 流式预览，controller） | `app/api/files.py` |
 | 会话接口（/conversations 列表/消息/软删除，controller） | `app/api/conversations.py` |

@@ -1,6 +1,6 @@
 """render_report 数据端归一化（normalize_report）单元测试。
 
-覆盖：平铺/错位格式 → 模板 eitia-cfr.html 期望的 V5 结构化形态；
+覆盖：平铺/错位格式 → 模板 cfr.html 期望的 V5 结构化形态；
 已结构化数据幂等。模板是唯一契约（见 render_report.py normalize_report 注释）。
 不触达 jinja2 渲染，仅测数据形态转换。
 """
@@ -89,7 +89,7 @@ def _flat_report() -> dict[str, Any]:
             "top_n": 5,
             "industry": {
                 "market_size": "2024年全球服务器市场规模2164亿美元",
-                "eitia_position": "产业链中游服务器整机制造商成都派兹处于上游元器件层",
+                "position": "产业链中游服务器整机制造商成都派兹处于上游元器件层",
                 "customer_map": "A公司服务器全球第二B公司X86继承者",
                 "competitive_landscape": "华丰科技高速背板一供",
                 "key_trends": ["AI带动高速连接器需求", "国产替代加速"],

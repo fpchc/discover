@@ -1,4 +1,4 @@
-"""预置账号 CLI：`python -m app.auth.provision --phone … --name … --password …`
+"""预置账号 CLI：`python -m app.services.auth_provision --phone … --name … --password …`
 
 无公开注册接口（用户决策）；用户由管理侧经此脚本预置，密码经 Argon2id 哈希
 入库（明文不落盘、不出现在日志）。username 缺省取 phone（唯一索引约束）；
@@ -14,11 +14,11 @@ import uuid
 
 from sqlalchemy import select
 
-from app.auth.models import AccountStatus
-from app.auth.security import PasswordHasher
 from app.config.settings import Settings
 from app.db.engine import Database
 from app.db.models import Account
+from app.schemas.auth import AccountStatus
+from app.services.auth_security import PasswordHasher
 
 
 def _parse_args() -> argparse.Namespace:

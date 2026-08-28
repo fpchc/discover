@@ -13,11 +13,10 @@ from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
-from app.catalog.models import SelectionSource, TargetType
+from app.catalog.models import AssistantTarget, SelectionSource, TargetType
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
 from app.db.engine import Database
-from app.dedup.repo import DedupStore
 from app.errors.base import ConfigError, RegistryValidationError
 from app.llm.client import LLMClient
 from app.llm.models import (
@@ -52,15 +51,14 @@ from app.protocol.events import (
 )
 from app.protocol.sanitize import sanitize_tool_args, truncate
 from app.registry.registry import AgentRegistry
+from app.repositories.dedup import DedupStore
 from app.runtime.builder import build_graph
 from app.runtime.resolver.assistant_resolver import AssistantResolver, ExplicitSelectionResolver
 from app.runtime.resolver.skill_resolver import SkillResolutionContext, SkillResolver
 from app.runtime.state import GateStatus, GraphState
-from app.session.models import ArtifactRecord
-from app.session.service import (
-    SessionService,
-    file_preview_path,
-)
+from app.schemas.files import ArtifactRecord
+from app.services.files import FileService, file_preview_path
+from app.services.workspace import WorkspaceManager
 from app.tools.broker import ToolBroker, ToolCallRequest
 from app.tools.mcp_manager import MCPManager
 from app.tools.script_executor import ScriptExecutor
@@ -101,7 +99,8 @@ class Runtime:
         self,
         *,
         settings: Settings,
-        sessions: SessionService,
+        workspaces: WorkspaceManager,
+        files: FileService,
         registry: AgentRegistry,
         llm: LLMClient,
         providers: ProviderRegistry,
@@ -111,7 +110,8 @@ class Runtime:
         db: Database,
     ) -> None:
         self._settings = settings
-        self._sessions = sessions
+        self._workspaces = workspaces
+        self._files = files
         self._registry = registry
         self._llm = llm
         self._providers = providers
@@ -138,13 +138,22 @@ class Runtime:
 
     # ---- 单轮执行入口 ----
     async def run_turn(
-        self, *, session_id: str, user_input: str, emitter: QueueEmitter
+        self,
+        *,
+        session_id: str,
+        user_input: str,
+        emitter: QueueEmitter,
+        account_id: str,
+        assistant_target: AssistantTarget | None,
     ) -> GraphState:
-        """执行一轮：沿用上轮状态，追加用户消息，跑图并落回 last_state。"""
+        """执行一轮：沿用上轮状态，追加用户消息，跑图并落回 last_state。
+
+        account_id / assistant_target 由路由从对话记录解析结果传入（不再读会话注册表）。
+        """
         self._emitter = emitter
         self._turn_started = time.perf_counter()
         self._usage = UsageAggregator()  # 回合级 usage 归零（修复多调用覆盖）
-        self._account_id = self._sessions.get_session(session_id).from_account_id
+        self._account_id = account_id
         user_message = ChatMessage(role="user", content=user_input)
         base = self._last_state
         state = base.model_copy(
@@ -152,6 +161,7 @@ class Runtime:
                 "input": user_input,
                 "session_id": session_id,
                 "messages": [*base.messages, user_message],
+                "assistant_target": assistant_target,
                 "pending_calls": [],
                 "turn": 0,  # 推理轮次按单条消息重置，避免会话内累积后永久短路
             }
@@ -174,12 +184,11 @@ class Runtime:
 
     # ---- 节点：一级解析（用户显式选择，非 LLM 路由） ----
     async def resolve_assistant(self, state: GraphState) -> dict[str, object]:
-        """解析助手：读会话显式绑定（graph-runtime-spec §4/§8）。
+        """解析助手：读本回合对话记录绑定（graph-runtime-spec §4/§8）。
 
         绑定变更（含首次）→ 清旧装配快照、重发选定事件；绑定沿用 → 直接跳过。
         """
-        session = self._sessions.get_session(state.session_id)
-        target = self._assistant_resolver.resolve(session)
+        target = self._assistant_resolver.resolve(state.assistant_target)
         if state.active_target is not None and state.active_target == target:
             return {"resolve_reason": "沿用已装配助手"}
         # 绑定变更：清装配快照，确保 assemble 按新目标重建
@@ -215,11 +224,10 @@ class Runtime:
         skill_ids = tuple(package.skills.keys()) if package is not None else ()
         if not skill_ids:
             return {"active_skill": None, "resolve_reason": "该专家无可用技能"}
-        session = self._sessions.get_session(state.session_id)
         context = SkillResolutionContext(
             skill_ids=skill_ids,
             default_skill=package.manifest.default_skill if package is not None else None,
-            explicit_skill=session.skill_id,
+            explicit_skill=None,  # 显式技能选择为未来能力（对话记录 skill 字段）
         )
         skill_id = self._skill_resolver.resolve(context)
         if skill_id is None:
@@ -240,7 +248,7 @@ class Runtime:
             raise RegistryValidationError(f"未知智能体：{agent_id}")
         plan = self._registry.assemble(agent_id, state.active_skill)
         skill_dir = package.root / state.active_skill
-        workspace = await self._sessions.workspace_for(agent_id)
+        workspace = await self._workspaces.create(agent_id)
         activation = await self._broker.activate(
             plan=plan,
             skill_dir=skill_dir,
@@ -381,8 +389,8 @@ class Runtime:
                     GateCheckedEvent(gate_id=gate_id, passed=result.ok, failures=failures)
                 )
             for rel in result.produced_files:
-                record = await self._sessions.register_artifact(
-                    account_id=self._account_id,
+                record = await self._files.register(
+                    created_by=self._account_id,
                     source_path=workspace / rel,
                     filename=Path(rel).name,
                 )

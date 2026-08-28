@@ -36,7 +36,7 @@ documents:
     when: 数据采集维度与降级策略，P1 仅平台联网搜索（web_search 能力）
   - path: references/scoring-rules.md
     when: 八维评分子维度细则与权重
-  - path: references/eitia-architecture.md
+  - path: references/architecture.md
     when: 产业链层级推断与上下游定位
   - path: references/report-structure.md
     when: 报告 JSON 结构与各 section 填充要求
@@ -55,10 +55,10 @@ gates:
     schema_path: schemas/gate_input.json
     blocking: false
 templates:
-  - path: templates/eitia-cfr.html
+  - path: templates/cfr.html
     purpose: 客户发现报告 HTML 模板（Jinja2，下一阶段 HTML 渲染时启用）
 ---
-# EITIA 客户发现工作流（P1 数据受限版）
+# 客户发现工作流（P1 数据受限版）
 
 ## 0. 定位与场景
 
@@ -87,7 +87,7 @@ P1 数据源仅平台联网搜索（`web_search` 能力，具体提供方由平�
 - 排除过滤器生效。
 
 ### 3.2 深挖（尽力而为 + 显式标注）
-对深挖队列逐企采集公开信息，维度：① 工商速览 ② 主营与产品 ③ 采购规模线索（扩产/招聘/招标）④ 关键决策人（工商登记董监高；公开社交平台未能识别则标注降级）⑤ 动态信号（须带日期，超 6 个月标注「可能已过时」）⑥ 风险 ⑦ 竞品格局 ⑧ 产业链定位（`references/eitia-architecture.md`）。
+对深挖队列逐企采集公开信息，维度：① 工商速览 ② 主营与产品 ③ 采购规模线索（扩产/招聘/招标）④ 关键决策人（工商登记董监高；公开社交平台未能识别则标注降级）⑤ 动态信号（须带日期，超 6 个月标注「可能已过时」）⑥ 风险 ⑦ 竞品格局 ⑧ 产业链定位（`references/architecture.md`）。
 - 应尽可能批量并发搜索，覆盖多维度；P1 无硬性最低调用数。
 - 事实断言（技术来源 / 份额 / 客户关系 / 竞品对比）须 ≥2 独立来源；单源断言必须标注来源；推断用限定词。
 

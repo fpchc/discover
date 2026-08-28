@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import pytest
-from app.auth.security import JwtService, PasswordHasher
 from app.config.settings import Settings
 from app.errors.base import ConfigError, UnauthorizedError
+from app.services.auth_security import JwtService, PasswordHasher
 
 _ACCOUNT_ID = "00000000-0000-0000-0000-0000000000aa"
 

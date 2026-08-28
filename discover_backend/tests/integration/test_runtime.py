@@ -31,7 +31,8 @@ from app.registry.registry import AgentRegistry
 from app.runtime.builder import route_from_resolve_assistant
 from app.runtime.runner import Runtime
 from app.runtime.state import GraphState
-from app.session.service import SessionService
+from app.services.files import FileService
+from app.services.workspace import WorkspaceManager
 from app.tools.mcp_client import MCPCallResult, MCPToolInfo
 from app.tools.script_executor import ScriptExecution
 
@@ -212,6 +213,10 @@ def _mcp_registry() -> MCPRegistry:
 
 _DATABASE = Database(Settings(_env_file=None))
 
+# 图会话标识与归属账号（对话记录已由 ConversationService 管理，Runtime 只做透传）
+_SESSION_ID = "00000000-0000-0000-0000-0000000000cc"
+_ACCOUNT = "00000000-0000-0000-0000-0000000000cc"
+
 
 async def _runtime(
     tmp_path: Path,
@@ -220,7 +225,8 @@ async def _runtime(
     skill_md: str = SKILL_MD,
     max_turns: int = 40,
     bind: bool = True,
-) -> tuple[Runtime, SessionService, _FakeScriptExecutor, str]:
+) -> tuple[Runtime, _FakeScriptExecutor, str, AssistantTarget | None]:
+    """构建 Runtime 并返回 (runtime, fake_script, session_id, assistant_target)。"""
     _write_agent(tmp_path, skill_md=skill_md)
     settings = Settings(
         _env_file=None,
@@ -234,19 +240,14 @@ async def _runtime(
         # 而 Settings 默认值是 qwen3.7-max，不固定会解析失败。
         default_provider_id="qwen-max",
     )
-    sessions = SessionService(settings, _DATABASE, LocalStorage(tmp_path / "storage"))
-    record = await sessions.create_session("00000000-0000-0000-0000-0000000000cc")
-    if bind:
-        sessions.bind_assistant(
-            record.session_id, AssistantTarget(type=TargetType.EXPERT, id="finder")
-        )
     registry = AgentRegistry(settings, _mcp_registry())
     await registry.refresh()
     providers = ProviderRegistry(LLMRegistry(providers=[_provider()]))
     fake_script = _FakeScriptExecutor()
     runtime = Runtime(
         settings=settings,
-        sessions=sessions,
+        workspaces=WorkspaceManager(settings),
+        files=FileService(settings, _DATABASE, LocalStorage(tmp_path / "storage")),
         registry=registry,
         llm=fake_llm,
         providers=providers,
@@ -255,7 +256,8 @@ async def _runtime(
         script_executor=fake_script,
         db=_DATABASE,
     )
-    return runtime, sessions, fake_script, record.session_id
+    target = AssistantTarget(type=TargetType.EXPERT, id="finder") if bind else None
+    return runtime, fake_script, _SESSION_ID, target
 
 
 async def _collect(emitter: QueueEmitter) -> list[AgentEvent]:
@@ -282,9 +284,15 @@ def test_route_from_resolve_assistant() -> None:
 # ---- 端到端：解析 + 装配 + 推理 ----
 async def test_run_turn_resolves_bound_assistant(tmp_path: Path) -> None:
     fake_llm = FakeLLM()
-    runtime, _sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm)
     emitter = QueueEmitter(Settings(_env_file=None))
-    final = await runtime.run_turn(session_id=session_id, user_input="帮我找客户", emitter=emitter)
+    final = await runtime.run_turn(
+        session_id=session_id,
+        user_input="帮我找客户",
+        emitter=emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
     events = await _collect(emitter)
     assert final.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
     assert final.active_skill == "research"
@@ -298,14 +306,26 @@ async def test_run_turn_resolves_bound_assistant(tmp_path: Path) -> None:
 
 async def test_binding_persists_across_turns(tmp_path: Path) -> None:
     fake_llm = FakeLLM()
-    runtime, _sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm)
     first_emitter = QueueEmitter(Settings(_env_file=None))
-    await runtime.run_turn(session_id=session_id, user_input="帮我找客户", emitter=first_emitter)
+    await runtime.run_turn(
+        session_id=session_id,
+        user_input="帮我找客户",
+        emitter=first_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
     first_events = await _collect(first_emitter)
     selected_count = sum(isinstance(e, AgentSelectedEvent) for e in first_events)
     reason_after_first = fake_llm.reason_calls
     second_emitter = QueueEmitter(Settings(_env_file=None))
-    final = await runtime.run_turn(session_id=session_id, user_input="继续", emitter=second_emitter)
+    final = await runtime.run_turn(
+        session_id=session_id,
+        user_input="继续",
+        emitter=second_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
     second_events = await _collect(second_emitter)
     # 第二轮沿用绑定：不再发 AgentSelectedEvent、不重复装配，仅推理
     assert sum(isinstance(e, AgentSelectedEvent) for e in second_events) == 0
@@ -317,11 +337,16 @@ async def test_binding_persists_across_turns(tmp_path: Path) -> None:
 
 async def test_unbound_goes_generic_chat(tmp_path: Path) -> None:
     fake_llm = FakeLLM()
-    runtime, _sessions, _script, session_id = await _runtime(
-        tmp_path, fake_llm=fake_llm, bind=False
-    )
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm, bind=False)
+    assert target is None
     emitter = QueueEmitter(Settings(_env_file=None))
-    final = await runtime.run_turn(session_id=session_id, user_input="随便聊聊", emitter=emitter)
+    final = await runtime.run_turn(
+        session_id=session_id,
+        user_input="随便聊聊",
+        emitter=emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
     events = await _collect(emitter)
     assert final.active_target is None
     assert any(m.role == "assistant" and "你好" in (m.content or "") for m in final.messages)
@@ -330,28 +355,38 @@ async def test_unbound_goes_generic_chat(tmp_path: Path) -> None:
 
 async def test_switch_target_reassembles(tmp_path: Path) -> None:
     fake_llm = FakeLLM()
-    runtime, sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm)
     first_emitter = QueueEmitter(Settings(_env_file=None))
     first = await runtime.run_turn(
-        session_id=session_id, user_input="帮我找客户", emitter=first_emitter
+        session_id=session_id,
+        user_input="帮我找客户",
+        emitter=first_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
     )
     await _collect(first_emitter)
     assert first.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
     # 切换为通用对话
-    sessions.bind_assistant(session_id, AssistantTarget(type=TargetType.GENERIC))
     second_emitter = QueueEmitter(Settings(_env_file=None))
     second = await runtime.run_turn(
-        session_id=session_id, user_input="随便聊聊", emitter=second_emitter
+        session_id=session_id,
+        user_input="随便聊聊",
+        emitter=second_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=AssistantTarget(type=TargetType.GENERIC),
     )
     second_events = await _collect(second_emitter)
     assert second.active_target == AssistantTarget(type=TargetType.GENERIC)
     assert second.active_skill is None
     assert not any(isinstance(e, AgentSelectedEvent) for e in second_events)
     # 切回专家：重装配
-    sessions.bind_assistant(session_id, AssistantTarget(type=TargetType.EXPERT, id="finder"))
     third_emitter = QueueEmitter(Settings(_env_file=None))
     third = await runtime.run_turn(
-        session_id=session_id, user_input="帮我找客户", emitter=third_emitter
+        session_id=session_id,
+        user_input="帮我找客户",
+        emitter=third_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
     )
     third_events = await _collect(third_emitter)
     assert third.active_target == AssistantTarget(type=TargetType.EXPERT, id="finder")
@@ -362,9 +397,15 @@ async def test_switch_target_reassembles(tmp_path: Path) -> None:
 # ---- 工具流 ----
 async def test_tool_execution_flow(tmp_path: Path) -> None:
     fake_llm = FakeLLM(tool_call=("finder.research.script.run", {"input": "调研"}))
-    runtime, _sessions, fake_script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+    runtime, fake_script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm)
     emitter = QueueEmitter(Settings(_env_file=None))
-    final = await runtime.run_turn(session_id=session_id, user_input="执行调研", emitter=emitter)
+    final = await runtime.run_turn(
+        session_id=session_id,
+        user_input="执行调研",
+        emitter=emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
     events = await _collect(emitter)
     assert fake_script.calls  # 脚本已执行
     assert any(isinstance(e, ToolCallStartedEvent) for e in events)
@@ -376,18 +417,26 @@ async def test_tool_execution_flow(tmp_path: Path) -> None:
 async def test_turn_resets_between_messages(tmp_path: Path) -> None:
     """修复 A：推理轮次按单条消息重置，不跨消息累积。"""
     fake_llm = FakeLLM(tool_call=("finder.research.script.run", {"input": "x"}))
-    runtime, _sessions, _script, session_id = await _runtime(tmp_path, fake_llm=fake_llm)
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm)
     # 第一轮含一次工具调用：agent(turn1,tool) → tool → agent(turn2,text) → finish
     first_emitter = QueueEmitter(Settings(_env_file=None))
     final1 = await runtime.run_turn(
-        session_id=session_id, user_input="执行调研", emitter=first_emitter
+        session_id=session_id,
+        user_input="执行调研",
+        emitter=first_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
     )
     await _collect(first_emitter)
     assert final1.turn == 2
     # 第二轮纯文本：应重置为 0 起算（修复前会从 2 续增得到 turn=3）
     second_emitter = QueueEmitter(Settings(_env_file=None))
     final2 = await runtime.run_turn(
-        session_id=session_id, user_input="继续", emitter=second_emitter
+        session_id=session_id,
+        user_input="继续",
+        emitter=second_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
     )
     await _collect(second_emitter)
     assert final2.turn == 1
@@ -396,12 +445,14 @@ async def test_turn_resets_between_messages(tmp_path: Path) -> None:
 async def test_capped_turn_then_next_message_not_bricked(tmp_path: Path) -> None:
     """修复 A+B 组合：触顶后下一条消息不再被永久短路，能继续推理。"""
     fake_llm = FakeLLM(always_tool=True)
-    runtime, _sessions, _script, session_id = await _runtime(
-        tmp_path, fake_llm=fake_llm, max_turns=2
-    )
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm, max_turns=2)
     first_emitter = QueueEmitter(Settings(_env_file=None))
     final1 = await runtime.run_turn(
-        session_id=session_id, user_input="搜索客户", emitter=first_emitter
+        session_id=session_id,
+        user_input="搜索客户",
+        emitter=first_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
     )
     await _collect(first_emitter)
     assert final1.turn == 2
@@ -411,7 +462,11 @@ async def test_capped_turn_then_next_message_not_bricked(tmp_path: Path) -> None
     fake_llm._always_tool = False
     second_emitter = QueueEmitter(Settings(_env_file=None))
     final2 = await runtime.run_turn(
-        session_id=session_id, user_input="继续", emitter=second_emitter
+        session_id=session_id,
+        user_input="继续",
+        emitter=second_emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
     )
     await _collect(second_emitter)
     assert fake_llm.reason_calls == calls_after_cap + 1  # 未被短路，正常推理
@@ -422,11 +477,17 @@ async def test_capped_turn_then_next_message_not_bricked(tmp_path: Path) -> None
 # ---- 副作用工具（审批已移除，直接执行） ----
 async def test_side_effect_tool_runs_without_approval(tmp_path: Path) -> None:
     fake_llm = FakeLLM(tool_call=("finder.research.script.run", {}))
-    runtime, _sessions, fake_script, session_id = await _runtime(
+    runtime, fake_script, session_id, target = await _runtime(
         tmp_path, fake_llm=fake_llm, skill_md=SKILL_MD_DELETE
     )
     emitter = QueueEmitter(Settings(_env_file=None))
-    final = await runtime.run_turn(session_id=session_id, user_input="删除数据", emitter=emitter)
+    final = await runtime.run_turn(
+        session_id=session_id,
+        user_input="删除数据",
+        emitter=emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
     events = await _collect(emitter)
     assert fake_script.calls  # 删除副作用不再挂起审批，直接执行
     assert any(isinstance(e, DoneEvent) for e in events)

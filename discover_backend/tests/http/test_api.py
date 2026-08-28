@@ -139,8 +139,10 @@ async def test_chat_messages_blocking_returns_json(
 
 async def test_chat_messages_reuses_conversation(
     api_ctx: tuple[object, httpx.AsyncClient],
+    require_db: None,
     auth_headers: dict[str, str],
 ) -> None:
+    del require_db
     _app, client = api_ctx
     first = await client.post(
         "/api/v1/chat-messages",
@@ -171,9 +173,11 @@ async def test_chat_messages_reuses_conversation(
 
 async def test_chat_cross_account_continuation_404(
     api_ctx: tuple[object, httpx.AsyncClient],
+    require_db: None,
     auth_headers: dict[str, str],
     auth_headers_other: dict[str, str],
 ) -> None:
+    del require_db
     """A 创建的会话，B 续聊 → 404（跨账号隔离，不泄露存在性）。"""
     _app, client = api_ctx
     first = await client.post(
@@ -271,8 +275,10 @@ async def test_chat_generic_agent_id_selects_generic(
 
 async def test_chat_rebind_switches_assistant(
     api_ctx: tuple[object, httpx.AsyncClient],
+    require_db: None,
     auth_headers: dict[str, str],
 ) -> None:
+    del require_db
     """续聊携带新 agent_id → 切换绑定（专家 → 通用）。"""
     _app, client = api_ctx
     first = await client.post(
@@ -327,7 +333,7 @@ async def test_delete_conversation_returns_204(
 ) -> None:
     """DB 有历史 → 删除并返回 204 空体。"""
     app, client = api_ctx
-    app.state.services.history = _FakeHistoryService(exists=True)
+    app.state.services.conversation_service = _FakeHistoryService(exists=True)
     response = await client.delete("/api/v1/conversations/cafebabe", headers=auth_headers)
     assert response.status_code == 204
     assert response.content == b""
@@ -337,8 +343,56 @@ async def test_delete_conversation_unknown_returns_404(
     api_ctx: tuple[object, httpx.AsyncClient],
     auth_headers: dict[str, str],
 ) -> None:
-    """DB 历史与内存会话皆无 → 404。"""
+    """DB 无归属会话 → 404（不存在/已删/跨账号均不泄露）。"""
     app, client = api_ctx
-    app.state.services.history = _FakeHistoryService(exists=False)
+    app.state.services.conversation_service = _FakeHistoryService(exists=False)
     response = await client.delete("/api/v1/conversations/nope", headers=auth_headers)
     assert response.status_code == 404
+
+
+# 账号 id 与 tests/conftest.py 的 auth_headers / auth_headers_other 对齐
+_ACCOUNT_A = "00000000-0000-0000-0000-0000000000aa"
+_ACCOUNT_B = "00000000-0000-0000-0000-0000000000bb"
+
+
+async def test_delete_conversation_cross_account_404_preserves_row(
+    api_ctx: tuple[object, httpx.AsyncClient],
+    require_db: None,
+    auth_headers: dict[str, str],
+    auth_headers_other: dict[str, str],
+) -> None:
+    """B 删除 A 的会话 → 404，A 的会话行不被软删（跨账号隔离，不泄露存在性）。"""
+    del auth_headers, require_db
+    app, client = api_ctx
+    services = app.state.services
+    assert services.conversation_service is not None
+    session = await services.conversation_service.resolve(
+        account_id=_ACCOUNT_A, conversation_id="", agent_id="", query="A 的会话"
+    )
+    cid = session.conversation_id
+    response = await client.delete(f"/api/v1/conversations/{cid}", headers=auth_headers_other)
+    assert response.status_code == 404
+    # A 的会话行仍未被软删：仍在列表、可续聊
+    convos = await services.conversation_service.list_conversations(_ACCOUNT_A, limit=50, offset=0)
+    assert any(c.conversation_id == cid for c in convos)
+
+
+async def test_delete_conversation_owner_soft_deletes(
+    api_ctx: tuple[object, httpx.AsyncClient],
+    require_db: None,
+    auth_headers: dict[str, str],
+) -> None:
+    """本人删除：DB 软删 → 204，会话从列表隐藏（行与 token 保留可审计）。"""
+    del require_db
+    app, client = api_ctx
+    services = app.state.services
+    assert services.conversation_service is not None
+    session = await services.conversation_service.resolve(
+        account_id=_ACCOUNT_A, conversation_id="", agent_id="", query="A 的会话"
+    )
+    cid = session.conversation_id
+    response = await client.delete(f"/api/v1/conversations/{cid}", headers=auth_headers)
+    assert response.status_code == 204
+    assert response.content == b""
+    convos = await services.conversation_service.list_conversations(_ACCOUNT_A, limit=50, offset=0)
+    assert not any(c.conversation_id == cid for c in convos)

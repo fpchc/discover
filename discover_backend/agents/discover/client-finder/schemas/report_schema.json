@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "客户发现报告结构（V5.4）",
-  "description": "报告数据契约的单一事实来源。render_report 的字段齐全检查（check_completeness）与 references/report-structure.md 均以此为准。required_fields 为模板无条件访问的字段；optional_fields 为模板用 {% if %} 守卫的可选字段。字段形状以 templates/eitia-cfr.html 实际渲染为准（新旧格式兼容见 compat）。",
+  "description": "报告数据契约的单一事实来源。render_report 的字段齐全检查（check_completeness）与 references/report-structure.md 均以此为准。required_fields 为模板无条件访问的字段；optional_fields 为模板用 {% if %} 守卫的可选字段。字段形状以 templates/cfr.html 实际渲染为准（新旧格式兼容见 compat）。",
   "required_fields": {
     "": ["cover", "l0", "clients", "appendix"],
     "cover": ["title", "subtitle", "product", "scope", "date", "data_date", "summary"],
     "l0": ["funnel", "signal_heatmap", "top_table", "top_n"],
     "l0_industry": [
       "market_size",
-      "eitia_position",
+      "position",
       "customer_map",
       "competitive_landscape",
       "key_trends"
@@ -54,7 +54,7 @@
   },
   "compat": {
     "l0.industry.market_size": "新 {amount, unit, yoy_growth, year, source, sub_segments[]} 或旧 {value, source} 均渲染",
-    "l0.industry.eitia_position": "新 {my_tier, my_subcategory, upstream_layers[], downstream_direct[], downstream_indirect[]} 或旧 {tier, upstream, description} 均渲染",
+    "l0.industry.position": "新 {my_tier, my_subcategory, upstream_layers[], downstream_direct[], downstream_indirect[]} 或旧 {tier, upstream, description} 均渲染",
     "clients[].engagement": "新 positioning 优先，旧 elevator_pitch 兜底",
     "clients[].competition.entry_barrier": "dict（technical/certification/relationship/price）或 str 均接受",
     "clients[].competition.substitution_path": "steps 数组 / type 字段 / 纯文本 三种均渲染"

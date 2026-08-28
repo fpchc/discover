@@ -5,10 +5,11 @@ import anyio
 import httpx
 import pytest
 from app.application import create_app
-from app.auth.security import JwtService
 from app.config.settings import Settings
 from app.protocol.events import DoneEvent
 from app.runtime.state import GraphState
+from app.services.auth_security import JwtService
+from sqlalchemy import text
 
 # 测试固定 JWT 密钥（≥32 字节，避免 pyjwt 弱密钥警告；与 _build_settings 对齐）
 _TEST_JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef"
@@ -30,9 +31,7 @@ def auth_headers() -> dict[str, str]:
 @pytest.fixture()
 def auth_headers_other() -> dict[str, str]:
     """第二个账号的 Authorization 头（跨账号隔离用例）。"""
-    return {
-        "Authorization": f"Bearer {make_auth_token('00000000-0000-0000-0000-0000000000bb')}"
-    }
+    return {"Authorization": f"Bearer {make_auth_token('00000000-0000-0000-0000-0000000000bb')}"}
 
 
 # 目录 → marker 映射：四层测试结构，按目录自动打标（pytest 9 的 conftest pytestmark
@@ -124,8 +123,16 @@ class _FakeRuntime:
     消费者按帧到达追加即可看到打字机效果。
     """
 
-    async def run_turn(self, *, session_id: str, user_input: str, emitter: object) -> GraphState:
-        del session_id, user_input
+    async def run_turn(
+        self,
+        *,
+        session_id: str,
+        user_input: str,
+        emitter: object,
+        account_id: str,
+        assistant_target: object,
+    ) -> GraphState:
+        del session_id, user_input, account_id, assistant_target
         for chunk in ("你好，", "我是平台智能体，", "正在流式输出。"):
             emitter.text_delta(chunk)
             await anyio.sleep(0.05)
@@ -155,7 +162,7 @@ async def api_ctx(tmp_path: Path) -> AsyncIterator[tuple[object, httpx.AsyncClie
     """进程内测试上下文：(app, httpx 客户端)。
 
     httpx.ASGITransport 直连 ASGI 应用，无需真服务；手动跑 lifespan，
-    否则 services.sessions 等只在 startup() 里创建，路由会断言失败。
+    否则 services.conversation_service 等只在 startup() 里创建，路由会断言失败。
     """
     app = create_app(_build_settings(tmp_path))
     app.state.services.get_runtime = lambda _sid: _FakeRuntime()
@@ -165,3 +172,22 @@ async def api_ctx(tmp_path: Path) -> AsyncIterator[tuple[object, httpx.AsyncClie
             transport=transport, base_url="http://127.0.0.1:8000/"
         ) as client:
             yield app, client
+
+
+@pytest.fixture()
+async def require_db(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> AsyncIterator[None]:
+    """对话记录续聊/删除用例守卫：需要本地 PostgreSQL，不可达则 skip。
+
+    对话记录唯一事实来源为 DB；离线 http 集合不再提供内存会话注册表，
+    凡依赖「上一轮落库可读」的用例必须连库（docker compose 起 PG）。
+    """
+    app, _client = api_ctx
+    db = app.state.services.db
+    try:
+        async with db.session_factory() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        pytest.skip("本地 PostgreSQL 不可达（对话记录续聊/删除用例需 DB）")
+    yield

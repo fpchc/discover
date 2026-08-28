@@ -11,6 +11,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from app.catalog.models import AssistantTarget, TargetType
+
 
 class ConversationStatus(StrEnum):
     """会话生命周期状态（纯业务状态）。
@@ -90,6 +92,33 @@ class ConversationRecord(BaseModel):
     dialogue_count: int = 0
     created_at: datetime
     updated_at: datetime
+
+
+class ConversationSession(BaseModel):
+    """对话记录解析结果（resolve 返回）：会话身份 + 归属账号 + 助手绑定。
+
+    对话记录唯一事实来源为 DB conversations 行（app/db/models.py）；本 DTO
+    供路由透传 streaming/blocking/persist 与图运行时（assistant_target）。
+    """
+
+    conversation_id: str
+    account_id: str
+    assistant_target: AssistantTarget | None = None
+
+    @property
+    def assistant_meta(self) -> dict[str, str | None] | None:
+        """响应元数据中的 assistant 信息（type + id）；无绑定 → None。"""
+        if self.assistant_target is None:
+            return None
+        return {"type": self.assistant_target.type.value, "id": self.assistant_target.id}
+
+    @property
+    def agent_id_label(self) -> str | None:
+        """历史落库 agent 标签：expert 取 id；其余（通用/未绑定）None。"""
+        target = self.assistant_target
+        if target is None or target.type != TargetType.EXPERT:
+            return None
+        return target.id
 
 
 class MessageRecord(BaseModel):

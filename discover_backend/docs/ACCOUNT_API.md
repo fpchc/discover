@@ -183,7 +183,7 @@
 无注册接口（用户决策）。用户由管理侧经 CLI 预置：
 
 ```bash
-uv run python -m app.auth.provision --phone 13800138001 --name 张三 --password '***' --superuser
+uv run python -m app.services.auth_provision --phone 13800138001 --name 张三 --password '***' --superuser
 ```
 
 | 参数 | 说明 |

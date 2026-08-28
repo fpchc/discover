@@ -1,29 +1,37 @@
-"""会话历史服务（L0，ConversationService）。
+"""会话历史服务（L0，ConversationService）：对话记录唯一入口。
 
-对话历史持久化：record_turn 在回合结束把 query/answer/thinking/usage 落库
-（conversations 行 upsert + messages 行插入）。DB 降级全部内部消化（舱壁，
-评审采纳）：接口对外永远成功语义（bool），路由无需感知 DB 死活；读取方法不
-降级——读不到数据就该报错，经中间件走统一错误响应。
+对话记录生命周期在此统一管理（CLAUDE.md §13 内聚）：
+- resolve：空串创建 conversations 行（归属账号 + 首查标题 + 助手绑定）并返回
+  ConversationSession；显式 conversation_id 校验归属（未知/跨账号/已删 → 404）
+  并按 agent_id 更新绑定。创建为 best-effort（DB 降级内部消化，舱壁），读取严格。
+- record_turn：回合结束把 query/answer/thinking/usage 落库（行更新 + messages 插入）。
+
+读取方法（list/get/delete/usage）不降级——读不到数据就该报错，经中间件走统一错误响应。
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 
 from sqlalchemy import distinct, func, select
 
-from app.conversations.models import (
+from app.catalog.assistant_catalog import AssistantCatalog
+from app.catalog.models import AssistantTarget, TargetType
+from app.config.settings import Settings
+from app.db.base import local_now
+from app.db.engine import Database
+from app.db.models import Conversation, Message
+from app.errors.base import NotFoundError
+from app.schemas.conversations import (
     ConversationRecord,
+    ConversationSession,
     ConversationStatus,
     MessageRecord,
     MessageStatus,
     TurnRecord,
     UsageAggregate,
 )
-from app.db.base import local_now
-from app.db.engine import Database
-from app.db.models import Conversation, Message
-from app.errors.base import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +49,32 @@ def _conversation_to_record(row: Conversation) -> ConversationRecord:
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+def _conversation_title(query: str, max_chars: int) -> str:
+    """会话标题：首回合取首条 query 截断（续聊保留原 name 不覆盖）。"""
+    title = query.strip().replace("\n", " ")
+    if len(title) <= max_chars:
+        return title
+    cut = title[:max_chars]
+    # 避免截断在代理对中间（emoji 等），丢弃半个字符
+    if cut and 0xD800 <= ord(cut[-1]) <= 0xDBFF:
+        cut = cut[:-1]
+    return cut
+
+
+def _target_agent_id(target: AssistantTarget | None) -> str | None:
+    """AssistantTarget → conversations.agent_id：expert 取 id；其余（通用/未绑定）None。"""
+    if target is None or target.type != TargetType.EXPERT:
+        return None
+    return target.id
+
+
+def _target_from_row(row: Conversation) -> AssistantTarget | None:
+    """conversations.agent_id → AssistantTarget：非空即专家绑定；空 → 未绑定。"""
+    if row.agent_id:
+        return AssistantTarget(type=TargetType.EXPERT, id=row.agent_id)
+    return None
 
 
 def _message_to_record(row: Message) -> MessageRecord:
@@ -67,15 +101,92 @@ def _message_to_record(row: Message) -> MessageRecord:
 
 
 class ConversationService:
-    """历史记录仓库：会话/回合落库 + 读取。"""
+    """对话记录服务：生命周期（resolve）+ 历史落库/读取。"""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, settings: Settings, catalog: AssistantCatalog) -> None:
         self._db = db
+        self._name_max_chars = settings.conversation_name_max_chars
+        self._catalog = catalog
+
+    # ---- 对话记录生命周期 ----
+    async def resolve(
+        self,
+        *,
+        account_id: str,
+        conversation_id: str,
+        agent_id: str,
+        query: str,
+    ) -> ConversationSession:
+        """解析对话记录：空串创建（归属当前账号）；显式传入则校验存在与归属。
+
+        创建为 best-effort（DB 降级内部消化，舱壁，与 record_turn 一致）：写失败
+        仍返回有效 DTO；续聊读取严格——未知/跨账号/已软删 → 404（不泄露存在性）。
+        agent_id 为用户显式助手选择：非空 → 目录校验（未知 404）+ 更新绑定；
+        "generic"（保留字）→ 解除专家绑定走通用对话；空 → 沿用现有绑定。
+        """
+        target: AssistantTarget | None = None
+        if not conversation_id.strip():
+            conversation_id = uuid.uuid4().hex
+            if agent_id.strip():
+                target = self._catalog.resolve_target(agent_id)
+            try:
+                await self._create_conversation(
+                    conversation_id, account_id, _target_agent_id(target), query
+                )
+            except Exception as exc:
+                logger.warning("创建会话行失败（best-effort 忽略）：%s：%r", conversation_id, exc)
+        else:
+            conversation_id = conversation_id.strip()
+            row = await self._get_owned(account_id, conversation_id)
+            if agent_id.strip():
+                target = self._catalog.resolve_target(agent_id)
+                await self._update_binding(conversation_id, _target_agent_id(target))
+            else:
+                target = _target_from_row(row)
+        return ConversationSession(
+            conversation_id=conversation_id, account_id=account_id, assistant_target=target
+        )
+
+    async def _create_conversation(
+        self, conversation_id: str, account_id: str, agent_id: str | None, query: str
+    ) -> None:
+        """新建 conversations 行（标题取首查截断，绑定落 agent_id）。"""
+        async with self._db.session_factory() as session:
+            session.add(
+                Conversation(
+                    conversation_id=conversation_id,
+                    from_account_id=account_id,
+                    agent_id=agent_id,
+                    name=_conversation_title(query, self._name_max_chars),
+                    status=ConversationStatus.ACTIVE.value,
+                    dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
+                    is_delete=False,  # 同上：显式初始化软删除标记
+                )
+            )
+            await session.commit()
+
+    async def _get_owned(self, account_id: str, conversation_id: str) -> Conversation:
+        """按归属校验取会话行；未知/跨账号/已软删 → 404（不泄露存在性）。"""
+        async with self._db.session_factory() as session:
+            row = await session.get(Conversation, conversation_id)
+        if row is None or row.from_account_id != account_id or row.is_delete:
+            raise NotFoundError(f"未知会话：{conversation_id}")
+        return row
+
+    async def _update_binding(self, conversation_id: str, agent_id: str | None) -> None:
+        """更新会话行的助手绑定（切换同样走此方法）。"""
+        async with self._db.session_factory() as session:
+            row = await session.get(Conversation, conversation_id)
+            if row is not None:
+                row.agent_id = agent_id
+                row.updated_at = local_now()
+                await session.commit()
 
     async def record_turn(self, conversation_id: str, turn: TurnRecord) -> bool:
-        """落库一回合：conversation upsert + message 插入。
+        """落库一回合：conversation 行更新（计数/快照）+ message 插入。
 
-        conversation 行缺失则新建（首回合，name 取 turn.conversation_name），
+        conversation 行由 resolve 建好；此处行缺失为兜底重建（best-effort 场景
+        下 resolve 未落库），name 取 turn.conversation_name 或 query 截断。
         续聊保留原 name。DB 故障仅记日志返回 False（舱壁），不阻断主流程。
         """
         try:

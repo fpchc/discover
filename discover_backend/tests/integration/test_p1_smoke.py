@@ -46,7 +46,8 @@ from app.protocol.events import (
 from app.registry.loader import _find_absolute_path_literals
 from app.registry.registry import AgentRegistry
 from app.runtime.runner import Runtime
-from app.session.service import SessionService
+from app.services.files import FileService
+from app.services.workspace import WorkspaceManager
 from app.tools.mcp_client import MCPCallResult, MCPToolInfo
 from app.tools.script_executor import ScriptExecution
 
@@ -81,6 +82,10 @@ def _settings(tmp_path: Path) -> Settings:
 
 
 _DATABASE = Database(Settings(_env_file=None))
+
+# 图会话标识与归属账号（对话记录由 ConversationService 管理，Runtime 只做透传）
+_SESSION_ID = "00000000-0000-0000-0000-0000000000cc"
+_ACCOUNT = "00000000-0000-0000-0000-0000000000cc"
 
 
 async def _discover_registry(tmp_path: Path) -> AgentRegistry:
@@ -331,17 +336,13 @@ async def test_route_discover_end_to_end(tmp_path: Path) -> None:
     import anyio
 
     settings = _settings(tmp_path)
-    sessions = SessionService(settings, _DATABASE, LocalStorage(tmp_path / "storage"))
-    record = await sessions.create_session("00000000-0000-0000-0000-0000000000cc")
-    sessions.bind_assistant(
-        record.session_id, AssistantTarget(type=TargetType.EXPERT, id="discover")
-    )
     registry = await _discover_registry(tmp_path)
     # 真实提供方注册表：含 opus/sonnet → qwen-max 别名（discover AGENT 模型偏好）
     providers = ProviderRegistry(await load_llm_providers(LLM_PROVIDERS_PATH))
     runtime = Runtime(
         settings=settings,
-        sessions=sessions,
+        workspaces=WorkspaceManager(settings),
+        files=FileService(settings, _DATABASE, LocalStorage(tmp_path / "storage")),
         registry=registry,
         llm=_FakeLLM(),  # type: ignore[arg-type]
         providers=providers,
@@ -352,7 +353,11 @@ async def test_route_discover_end_to_end(tmp_path: Path) -> None:
     )
     emitter = QueueEmitter(Settings(_env_file=None))
     final = await runtime.run_turn(
-        session_id=record.session_id, user_input="我卖高速背板连接器，帮我找客户", emitter=emitter
+        session_id=_SESSION_ID,
+        user_input="我卖高速背板连接器，帮我找客户",
+        emitter=emitter,
+        account_id=_ACCOUNT,
+        assistant_target=AssistantTarget(type=TargetType.EXPERT, id="discover"),
     )
     await emitter.finish()
     events: list[AgentEvent] = []
@@ -582,7 +587,7 @@ def _sample_report() -> dict[str, object]:
                     "source": "公开搜索",
                     "sub_segments": [{"name": "数据中心", "share": "60%", "trend": "↑"}],
                 },
-                "eitia_position": {
+                "position": {
                     "my_tier": "L2",
                     "my_subcategory": "连接器",
                     "upstream_layers": [

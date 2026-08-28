@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EITIA 八维评分计算脚本（P1）。
+"""八维评分计算脚本（P1）。
 
 契约：stdin 一次写入 UTF-8 JSON，stdout 输出 UTF-8 JSON，非 0 退出码表示失败。
 纯计算逻辑，不做数据获取与语义判断；同一输入永远得同一输出。

@@ -245,13 +245,6 @@ class SessionError(PlatformError):
     """会话层错误基类。"""
 
 
-class SessionNotFoundError(SessionError):
-    """会话标识不存在。不可重试。"""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message, category=ErrorCategory.NOT_FOUND, retryable=False)
-
-
 class BadRequestError(SessionError):
     """请求非法（上传/输入校验失败）。HTTP 400。
 

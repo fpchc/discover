@@ -14,7 +14,7 @@ thinking_preference: medium
 skills:
   - client-finder
 ---
-# EITIA 全局约束
+# 客户发现全局约束
 
 你服务电子信息产业链销售人员，帮他们把「卖什么」翻译成「该卖给谁」，并量化打分、产出可交付报告。
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EITIA 报告渲染器（P1 数据受限版）— JSON 数据 → 校验 → 渲染 HTML。
+"""客户发现报告渲染器（P1 数据受限版）— JSON 数据 → 校验 → 渲染 HTML。
 
 契约（平台 stdin 优先，argv 兼容本地直跑）：
 - 平台：stdin 传 JSON，`{"data": {…}}` 内联传报告本体（首选，AI 无写文件工具）；
@@ -46,7 +46,7 @@ OUTPUT_DIR = WORKSPACE_DIR / "output"
 
 # 工具名泄漏检查（P1 保留，命中即警告）
 TOOL_LEAK_PATTERNS: list[tuple[str, str]] = [
-    (r"score_calculator\.py|render_report\.py|dedup_manager\.py|eitia-cfr\.html", "系统内部工具"),
+    (r"score_calculator\.py|render_report\.py|dedup_manager\.py|cfr\.html", "系统内部工具"),
     (r"\bmaimai\b|\bmaimai-prospect\b|\b脉脉\b", "公开职业社交平台"),
     (r"xxxx+[^;]|X{4,}|占位|待填|placeholder|\[TBD\]|\[TODO\]", "填充文字/占位符（报告不完整）"),
     (r"bocha|bocha_web_search|bocha_ai_search", "行业公开搜索"),
@@ -276,7 +276,7 @@ def check_density(data: dict[str, Any]) -> list[str]:
 
 # ---------------------------------------------------------------------------
 # 数据端归一化（normalize）
-# 模板 eitia-cfr.html 是唯一契约（templates/eitia-cfr.html + schemas/report_schema.json）。
+# 模板 cfr.html 是唯一契约（templates/cfr.html + schemas/report_schema.json）。
 # LLM 产出的报告 JSON 形状不稳定（平铺字符串 / 错位字段名 / list 当 HTML 直出），
 # 这里在渲染前统一转为模板期望的 V5 结构化形态：字符串 → 结构化、list/dict → HTML 片段。
 # 只做形态转换、不编造数据内容；确实缺失的内容用「P1 数据受限」显式占位，避免渲染成
@@ -414,7 +414,7 @@ def _normalize_market_size(raw: object) -> dict[str, object]:
     return {"value": text, "source": source}
 
 
-def _normalize_eitia_position(raw: object) -> dict[str, object]:
+def _normalize_position(raw: object) -> dict[str, object]:
     if isinstance(raw, dict):
         return raw
     text = str(raw or "")
@@ -732,7 +732,7 @@ def _normalize_client(c: dict[str, Any]) -> dict[str, Any]:
 def normalize_report(data: dict[str, Any]) -> dict[str, Any]:
     """报告数据归一化：平铺/错位格式 → 模板期望的 V5 结构化形态。
 
-    模板 eitia-cfr.html 是唯一契约。只做形态转换、不编造数据内容；确实缺失的内容用
+    模板 cfr.html 是唯一契约。只做形态转换、不编造数据内容；确实缺失的内容用
     「P1 数据受限」显式占位，避免渲染成 Python repr 泄漏或大片空白。同时保证顶层
     cover/appendix 为对象（version 缺省 V1），供下游文件名等严格访问兜底。对已结构化数据幂等。
     """
@@ -761,7 +761,7 @@ def normalize_report(data: dict[str, Any]) -> dict[str, Any]:
         if isinstance(industry, dict):
             norm = dict(industry)
             norm["market_size"] = _normalize_market_size(industry.get("market_size"))
-            norm["eitia_position"] = _normalize_eitia_position(industry.get("eitia_position"))
+            norm["position"] = _normalize_position(industry.get("position"))
             norm["customer_map"] = _normalize_customer_map(
                 industry.get("customer_map"), normalized_clients
             )
@@ -839,7 +839,7 @@ def render(data: dict[str, Any]) -> str:
     （P1 由平台配置 SCRIPT_IMAGE 提供，P2 支持技能专属镜像）。
     """
     env = _build_render_env()
-    template = env.get_template("eitia-cfr.html")
+    template = env.get_template("cfr.html")
     return template.render(**normalize_report(data))
 
 
@@ -947,7 +947,7 @@ def main() -> None:
     product = product.replace(" ", "_").replace("/", "-")[:30]
     ver = str(data.get("appendix", {}).get("version") or "V1")
     date_str = datetime.now().strftime("%Y%m%d")
-    output_path = OUTPUT_DIR / f"EITIA_{product}_{date_str}_{ver}.html"
+    output_path = OUTPUT_DIR / f"{product}_{date_str}_{ver}.html"
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"报告已生成: {output_path} ({len(html)} bytes)")

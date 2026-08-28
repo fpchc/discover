@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.catalog.models import AssistantTarget
 from app.llm.models import ChatMessage
-from app.session.models import ArtifactRecord
+from app.schemas.files import ArtifactRecord
 from app.tools.broker import ToolCallRequest
 
 
@@ -41,6 +41,8 @@ class GraphState(BaseModel):
     session_id: str = ""
     workspace_path: str = ""
     input: str = ""
+    # 本回合对话记录的助手绑定（resolve 结果，路由传入；assemble 前的解析依据）
+    assistant_target: AssistantTarget | None = None
     active_target: AssistantTarget | None = None
     active_skill: str | None = None
     resolve_reason: str | None = None

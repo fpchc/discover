@@ -1,5 +1,5 @@
 ---
-name: eitia-credit-assessment
+name: credit-assessment
 description: >
   客户账期评估——电子信息产业链客户信用与账期授信评估工具。
   面向销售和财务部门，用 独有数据源（天眼查+企查查企业数据库 + 四层产业链架构）

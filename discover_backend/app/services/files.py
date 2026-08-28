@@ -25,13 +25,20 @@ from app.db.engine import Database
 from app.db.models import UploadFileRecord
 from app.errors.base import BadRequestError, NotFoundError, SessionError
 from app.extensions.storage.base_storage import BaseStorage
-from app.schemas.files import FileResponse
-from app.session.models import ArtifactRecord
+from app.schemas.files import ArtifactRecord, FileResponse
 
 logger = logging.getLogger(__name__)
 
 _FALLBACK_MEDIA_TYPE = "application/octet-stream"
 _WINDOWS_FORBIDDEN = set('<>:"/\\|?*')
+
+
+def file_preview_path(record: ArtifactRecord) -> str:
+    """文件预览路由（相对路径；接入层按同一模式挂载，不硬编码主机）。
+
+    注册表全局可预览（凭 file_id，uuid4 hex 不可猜测），无会话归属段。
+    """
+    return f"/files/{record.artifact_id}/preview"
 
 
 def _validate_filename(filename: str) -> None:

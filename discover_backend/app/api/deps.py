@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from app.auth.models import AccountRecord
 from app.container import AppServices, get_services
 from app.errors.base import ForbiddenError, UnauthorizedError
+from app.schemas.auth import AccountRecord
 
 
 def _bearer_token(request: Request) -> str:

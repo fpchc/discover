@@ -1,8 +1,8 @@
-# 客户发现报告结构定义（
+# 客户发现报告结构定义
 
- — Jinja2 渲染引擎）
+— Jinja2 渲染引擎
 
-本文档定义客户发现报告的标准结构，对应模板 `templates/eitia-cfr.html` 中的变量。
+本文档定义客户发现报告的标准结构，对应模板 `templates/cfr.html` 中的变量。
 
 ## 版本变更（V4 → V5）
 
@@ -67,7 +67,7 @@ AI 生成，必须包含 5 项子组件：
 | 子组件 | 类型 | P1 最低要求 |
 |--------|------|-----------|
 | `market_size` | 结构体 {amount, unit, yoy_growth, year, source, sub_segments} | 含年份数字；数据不足标注「估算」 |
-| `eitia_position` | 多层结构体（my_tier/upstream_layers/downstream_direct） | 至少 my_tier + 直接下游 |
+| `position` | 多层结构体（my_tier/upstream_layers/downstream_direct） | 至少 my_tier + 直接下游 |
 | `customer_map` | 数组 ≥ 1 | 每个含 description |
 | `competitive_landscape` | 数组 ≥ 1 | — |
 | `key_trends` | 数组 ≥ 1 | 每个含 trend + driver |
@@ -102,7 +102,7 @@ AI 生成，格式沿用 V5。
 | 字段 | 结构形状 | 备注 |
 |------|---------|------|
 | `l0.industry.market_size` | `{amount, unit, yoy_growth, year, source, sub_segments:[{name, share, trend}]}` | `sub_segments` 每项须含 `name`/`share`/`trend`（mini-bar 渲染） |
-| `l0.industry.eitia_position` | `{my_tier, my_subcategory, upstream_layers:[{tier, category, products, company_examples:[...]}], downstream_direct:[...], downstream_indirect:[...]}` | 各 layer 按 `tier` 排序；`company_examples` 为示例企业数组（可为空） |
+| `l0.industry.position` | `{my_tier, my_subcategory, upstream_layers:[{tier, category, products, company_examples:[...]}], downstream_direct:[...], downstream_indirect:[...]}` | 各 layer 按 `tier` 排序；`company_examples` 为示例企业数组（可为空） |
 | `l0.industry.customer_map` | `[{sub_industry, description, potential, reason}]` | — |
 | `l0.industry.competitive_landscape` | `[{competitor, share, note}]` | — |
 | `l0.industry.key_trends` | `[{trend, driver, timeline}]` | — |

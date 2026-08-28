@@ -1,6 +1,6 @@
 {#
-  EITIA Client Finder — Kami 报告 Jinja2 模板
-  模板名: eitia-cfr
+  客户发现报告 — Kami 报告 Jinja2 模板
+  模板名: cfr
   版本: 5.0-structured
   用途: render_report.py 读取此模板 + JSON 数据 → 渲染完整 HTML
 
@@ -25,7 +25,7 @@
     "l0": {
       "industry": {
         "market_size": {amount, unit, yoy_growth, year, source, sub_segments[]} | 旧 {value, source},
-        "eitia_position": {my_tier, my_subcategory, upstream_layers[], downstream_direct[], downstream_indirect[]} | 旧 {tier, upstream, description},
+        "position": {my_tier, my_subcategory, upstream_layers[], downstream_direct[], downstream_indirect[]} | 旧 {tier, upstream, description},
         "customer_map": [{sub_industry, description, potential, reason}],
         "competitive_landscape": [{competitor, share, note}],
         "key_trends": [{trend, driver, timeline}]
@@ -67,7 +67,7 @@
 <head>
 <meta charset="UTF-8">
 <title>{{ cover.title }}</title>
-<meta name="author" content="EITIA·客户洞察">
+<meta name="author" content="客户洞察">
 <style>
  @font-face { font-family: "TsangerJinKai02"; src: url("../fonts/TsangerJinKai02-W04.ttf") format("truetype"), url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype"); font-weight: 400; font-style: normal; }
  @font-face { font-family: "TsangerJinKai02"; src: url("../fonts/TsangerJinKai02-W05.ttf") format("truetype"), url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype"); font-weight: 500; font-style: normal; }
@@ -248,33 +248,33 @@
  .mini-bar-label { font-size: 8pt; color: var(--dark-warm); vertical-align: middle; }
  .market-seg-table { margin-top: 8pt; }
  .market-size-fallback { margin: 10pt 0; }
- /* EITIA 产业链卡位 */
- .eitia-position-card { display: flex; gap: 16pt; background: var(--ivory); border-radius: 6pt; padding: 14pt 18pt; margin: 10pt 0; align-items: center; break-inside: avoid; }
- .eitia-position-left { flex: 0 0 170pt; text-align: center; border-right: 1pt solid var(--border-soft); padding-right: 16pt; }
- .eitia-position-tier { font-size: 16pt; font-weight: 500; color: var(--brand); line-height: 1.3; }
- .eitia-position-badge { display: inline-block; padding: 2pt 10pt; border-radius: 10pt; font-size: 7.5pt; font-weight: 500; background: #d4f0e0; color: #059669; margin: 6pt 0 8pt 0; letter-spacing: 0.5pt; }
-.eitia-position-flow { display: flex; align-items: center; justify-content: center; gap: 4pt; font-size: 8pt; color: var(--stone); margin-top: 4pt; }
-.eitia-position-flow-arrow { color: var(--brand); font-weight: 500; font-size: 10pt; }
-.eitia-position-right { flex: 1; font-size: 9pt; color: var(--dark-warm); line-height: 1.6; }
-.eitia-position-right p { margin-bottom: 0; }
-/* V5.4: EITIA 四层垂直堆叠 */
-.eitia-layers-stack { margin: 10pt 0; }
-.eitia-layer { display: flex; gap: 8pt; align-items: center; padding: 6pt 10pt; border-left: 3pt solid var(--border); margin: 3pt 0; border-radius: 0 4pt 4pt 0; }
-.eitia-layer-tier { flex: 0 0 32pt; font-size: 8pt; font-weight: 700; color: var(--stone); text-align: center; }
-.eitia-layer-body { flex: 1; }
-.eitia-layer-cat { font-size: 8pt; font-weight: 500; color: var(--dark-warm); }
-.eitia-layer-prods { font-size: 7.5pt; color: var(--stone); margin-top: 1pt; }
-.eitia-layer-examples { font-size: 7pt; color: var(--brand); margin-top: 1pt; }
-/* V5.4.1: EITIA 层级徽章 */
-.eitia-layer-badge { display: inline-block; font-size: 7pt; font-weight: 700; padding: 1pt 5pt; border-radius: 3pt; margin-right: 4pt; vertical-align: middle; }
-.eitia-layer-badge.l4 { background: #f3e8ff; color: #7c3aed; }
-.eitia-layer-badge.l3 { background: #fffbeb; color: #b45309; }
-.eitia-layer-badge.l2 { background: #d4f0e0; color: #047857; }
-.eitia-layer-badge.l1 { background: #e0e7ff; color: #3730a3; }
-.eitia-layer-upstream { border-left-color: #f59e0b; background: #fffbeb; }
-.eitia-layer-downstream { border-left-color: #3b82f6; background: #eff6ff; }
-.eitia-layer-indirect { border-left-color: #10b981; background: #ecfdf5; }
-.eitia-layer-self { border-left-color: var(--brand); background: #d4f0e0; }
+ /* 产业链卡位 */
+ .position-card { display: flex; gap: 16pt; background: var(--ivory); border-radius: 6pt; padding: 14pt 18pt; margin: 10pt 0; align-items: center; break-inside: avoid; }
+ .position-left { flex: 0 0 170pt; text-align: center; border-right: 1pt solid var(--border-soft); padding-right: 16pt; }
+ .position-tier { font-size: 16pt; font-weight: 500; color: var(--brand); line-height: 1.3; }
+ .position-badge { display: inline-block; padding: 2pt 10pt; border-radius: 10pt; font-size: 7.5pt; font-weight: 500; background: #d4f0e0; color: #059669; margin: 6pt 0 8pt 0; letter-spacing: 0.5pt; }
+.position-flow { display: flex; align-items: center; justify-content: center; gap: 4pt; font-size: 8pt; color: var(--stone); margin-top: 4pt; }
+.position-flow-arrow { color: var(--brand); font-weight: 500; font-size: 10pt; }
+.position-right { flex: 1; font-size: 9pt; color: var(--dark-warm); line-height: 1.6; }
+.position-right p { margin-bottom: 0; }
+/* V5.4: 四层垂直堆叠 */
+.layers-stack { margin: 10pt 0; }
+.layer { display: flex; gap: 8pt; align-items: center; padding: 6pt 10pt; border-left: 3pt solid var(--border); margin: 3pt 0; border-radius: 0 4pt 4pt 0; }
+.layer-tier { flex: 0 0 32pt; font-size: 8pt; font-weight: 700; color: var(--stone); text-align: center; }
+.layer-body { flex: 1; }
+.layer-cat { font-size: 8pt; font-weight: 500; color: var(--dark-warm); }
+.layer-prods { font-size: 7.5pt; color: var(--stone); margin-top: 1pt; }
+.layer-examples { font-size: 7pt; color: var(--brand); margin-top: 1pt; }
+/* V5.4.1: 层级徽章 */
+.layer-badge { display: inline-block; font-size: 7pt; font-weight: 700; padding: 1pt 5pt; border-radius: 3pt; margin-right: 4pt; vertical-align: middle; }
+.layer-badge.l4 { background: #f3e8ff; color: #7c3aed; }
+.layer-badge.l3 { background: #fffbeb; color: #b45309; }
+.layer-badge.l2 { background: #d4f0e0; color: #047857; }
+.layer-badge.l1 { background: #e0e7ff; color: #3730a3; }
+.layer-upstream { border-left-color: #f59e0b; background: #fffbeb; }
+.layer-downstream { border-left-color: #3b82f6; background: #eff6ff; }
+.layer-indirect { border-left-color: #10b981; background: #ecfdf5; }
+.layer-self { border-left-color: var(--brand); background: #d4f0e0; }
  
  .trend-item { display: flex; gap: 8pt; padding: 6pt 0; border-bottom: 0.2pt dotted var(--border); font-size: 9pt; }
  .trend-item:last-child { border-bottom: none; }
@@ -364,7 +364,7 @@
 </style>
 </head>
 <section class="cover">
-<div class="cover-eyebrow">EITIA · 客户洞察</div>
+<div class="cover-eyebrow">客户洞察</div>
 <h1 class="cover-title">{{ cover.title }}</h1>
 <p class="cover-sub">{{ cover.subtitle }}</p>
 {% if cover.company_name %}<p class="cover-company">{{ cover.company_name }}</p>{% endif %}
@@ -434,52 +434,52 @@
 
   <h3>产业链卡位</h3>
   {# V5.4.3: L1→L2→L3→L4 从上到下排列 #}
-  {% if l0.industry.eitia_position.upstream_layers %}
-  <div class="eitia-layers-stack">
-    {% for layer in l0.industry.eitia_position.downstream_direct | sort(attribute='tier') %}
-    <div class="eitia-layer eitia-layer-standard">
-      <div class="eitia-layer-tier"><span class="eitia-layer-badge {{ layer.tier | lower }}">{{ layer.tier }}</span></div>
-      <div class="eitia-layer-body">
-        <div class="eitia-layer-cat">{{ layer.category | replace("(间接上游)","") | replace("(直接上游)","") | replace("(直接客户)","") | replace("(间接客户)","") | replace("(上游)","") | replace("(下游)","") | trim }}</div>
-        <div class="eitia-layer-prods">{{ layer.products }}</div>
-        {% if layer.company_examples %}<div class="eitia-layer-examples">例：{{ layer.company_examples|join('、') }}</div>{% endif %}
+  {% if l0.industry.position.upstream_layers %}
+  <div class="layers-stack">
+    {% for layer in l0.industry.position.downstream_direct | sort(attribute='tier') %}
+    <div class="layer layer-standard">
+      <div class="layer-tier"><span class="layer-badge {{ layer.tier | lower }}">{{ layer.tier }}</span></div>
+      <div class="layer-body">
+        <div class="layer-cat">{{ layer.category | replace("(间接上游)","") | replace("(直接上游)","") | replace("(直接客户)","") | replace("(间接客户)","") | replace("(上游)","") | replace("(下游)","") | trim }}</div>
+        <div class="layer-prods">{{ layer.products }}</div>
+        {% if layer.company_examples %}<div class="layer-examples">例：{{ layer.company_examples|join('、') }}</div>{% endif %}
       </div>
     </div>
     {% endfor %}
-    {% for layer in l0.industry.eitia_position.downstream_indirect | sort(attribute='tier') %}
-    <div class="eitia-layer eitia-layer-standard">
-      <div class="eitia-layer-tier"><span class="eitia-layer-badge {{ layer.tier | lower }}">{{ layer.tier }}</span></div>
-      <div class="eitia-layer-body">
-        <div class="eitia-layer-cat">{{ layer.category | replace("(间接上游)","") | replace("(直接上游)","") | replace("(直接客户)","") | replace("(间接客户)","") | replace("(上游)","") | replace("(下游)","") | trim }}</div>
-        <div class="eitia-layer-prods">{{ layer.products }}</div>
-        {% if layer.company_examples %}<div class="eitia-layer-examples">例：{{ layer.company_examples|join('、') }}</div>{% endif %}
+    {% for layer in l0.industry.position.downstream_indirect | sort(attribute='tier') %}
+    <div class="layer layer-standard">
+      <div class="layer-tier"><span class="layer-badge {{ layer.tier | lower }}">{{ layer.tier }}</span></div>
+      <div class="layer-body">
+        <div class="layer-cat">{{ layer.category | replace("(间接上游)","") | replace("(直接上游)","") | replace("(直接客户)","") | replace("(间接客户)","") | replace("(上游)","") | replace("(下游)","") | trim }}</div>
+        <div class="layer-prods">{{ layer.products }}</div>
+        {% if layer.company_examples %}<div class="layer-examples">例：{{ layer.company_examples|join('、') }}</div>{% endif %}
       </div>
     </div>
     {% endfor %}
-    {% for layer in l0.industry.eitia_position.upstream_layers | sort(attribute='tier') %}
-    <div class="eitia-layer eitia-layer-standard">
-      <div class="eitia-layer-tier"><span class="eitia-layer-badge {{ layer.tier | lower }}">{{ layer.tier }}</span></div>
-      <div class="eitia-layer-body">
-        <div class="eitia-layer-cat">{{ layer.category | replace("(间接上游)","") | replace("(直接上游)","") | replace("(直接客户)","") | replace("(间接客户)","") | replace("(上游)","") | replace("(下游)","") | trim }}</div>
-        <div class="eitia-layer-prods">{{ layer.products }}</div>
+    {% for layer in l0.industry.position.upstream_layers | sort(attribute='tier') %}
+    <div class="layer layer-standard">
+      <div class="layer-tier"><span class="layer-badge {{ layer.tier | lower }}">{{ layer.tier }}</span></div>
+      <div class="layer-body">
+        <div class="layer-cat">{{ layer.category | replace("(间接上游)","") | replace("(直接上游)","") | replace("(直接客户)","") | replace("(间接客户)","") | replace("(上游)","") | replace("(下游)","") | trim }}</div>
+        <div class="layer-prods">{{ layer.products }}</div>
       </div>
     </div>
     {% endfor %}
-    <div class="eitia-layer eitia-layer-self">
-      <div class="eitia-layer-tier"><span class="eitia-layer-badge {{ l0.industry.eitia_position.my_tier | lower }}">{{ l0.industry.eitia_position.my_tier }}</span></div>
-      <div class="eitia-layer-body">
-        <div class="eitia-layer-cat">本产品位置</div>
-        <div class="eitia-layer-prods">{{ l0.industry.eitia_position.my_subcategory }}</div>
+    <div class="layer layer-self">
+      <div class="layer-tier"><span class="layer-badge {{ l0.industry.position.my_tier | lower }}">{{ l0.industry.position.my_tier }}</span></div>
+      <div class="layer-body">
+        <div class="layer-cat">本产品位置</div>
+        <div class="layer-prods">{{ l0.industry.position.my_subcategory }}</div>
       </div>
     </div>
   </div>
   {% else %}
-  <div class="eitia-position-card">
-    <div class="eitia-position-left">
-      <div class="eitia-position-tier">{{ l0.industry.eitia_position.tier }}</div>
-      <div class="eitia-position-badge">本产品位置</div>
+  <div class="position-card">
+    <div class="position-left">
+      <div class="position-tier">{{ l0.industry.position.tier }}</div>
+      <div class="position-badge">本产品位置</div>
     </div>
-    <div class="eitia-position-right"><p>{{ l0.industry.eitia_position.description }}</p></div>
+    <div class="position-right"><p>{{ l0.industry.position.description }}</p></div>
   </div>
   {% endif %}
   <h3>目标客户地图</h3>
@@ -521,7 +521,7 @@
   <div class="funnel">
   <div class="funnel-step f1"><div class="step-label">行业企业池</div><div class="step-detail">全国同类企业工商登记名录</div></div>
   <div class="funnel-step f2"><div class="step-label">初筛过滤</div><div class="step-detail">注册资金>=500万+经营正常+人员>=50人</div></div>
-  <div class="funnel-step f3"><div class="step-label">EITIA匹配</div><div class="step-detail">四层产业链卡位+产品关键词命中</div></div>
+  <div class="funnel-step f3"><div class="step-label">匹配</div><div class="step-detail">四层产业链卡位+产品关键词命中</div></div>
   <div class="funnel-step f4"><div class="step-label">八维评分</div><div class="step-detail">采购规模·技术匹配·需求强度·采购时机·竞争位置·触达可行·决策复杂度·信用安全</div></div>
   <div class="funnel-step f5"><div class="step-label">TOP {{ l0.top_n }}推荐</div><div class="step-detail">综合评分排序，进入深度画像</div></div>
   <div class="funnel-step f6"><div class="step-label">{{ l0.top_n }}家完整画像</div><div class="step-detail">关键决策人·切入策略·竞品替代·风险评估</div></div>
@@ -538,7 +538,7 @@
   <table class="compact" style="table-layout:fixed;">
   <tr><th style="width:16%;">维度</th><th style="width:10%;">权重</th><th style="width:74%;">含义</th></tr>
   <tr><td>采购规模</td><td>20%</td><td>客户对目标产品的潜在采购量级和增长趋势，基于产品线相关性、企业体量、增长信号综合评估</td></tr>
-  <tr><td>技术匹配</td><td>20%</td><td>客户技术需求与我方产品的契合度，基于EITIA层级关系、产品关键词命中、技术参数对位</td></tr>
+  <tr><td>技术匹配</td><td>20%</td><td>客户技术需求与我方产品的契合度，基于层级关系、产品关键词命中、技术参数对位</td></tr>
   <tr><td>需求强度</td><td>15%</td><td>客户当前的采购迫切程度，基于招标/扩产/招聘/展会等信号强度</td></tr>
   <tr><td>采购时机</td><td>15%</td><td>联系客户的最佳时间窗口，基于信号时效性和衰减系数（招标 &gt; 融资 &gt; 新品 &gt; 招聘 &gt; 趋势）</td></tr>
   <tr><td>竞争位置</td><td>10%</td><td>我方在竞品格局中的相对位置，基于客户供应商锁定程度、替代窗口、差异化匹配</td></tr>

@@ -11,16 +11,16 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from app.auth.models import LoginResponse
-from app.auth.security import PasswordHasher
-from app.auth.service import AuthService
 from app.config.settings import Settings
-from app.conversations.models import TurnRecord, TurnUsage
-from app.conversations.service import ConversationService
 from app.db.engine import Database
 from app.db.models import Account
-from app.dedup.repo import DedupStore
 from app.errors.base import UnauthorizedError
+from app.repositories.dedup import DedupStore
+from app.schemas.auth import LoginResponse
+from app.schemas.conversations import TurnRecord, TurnUsage
+from app.services.auth import AuthService
+from app.services.auth_security import PasswordHasher
+from app.services.conversations import ConversationService
 
 _DATABASE = Database(Settings(_env_file=None))
 _SECRET = "test-secret-0123456789abcdef0123456789abcdef"

@@ -32,7 +32,7 @@ from app.protocol.sanitize import (
 def test_event_round_trip() -> None:
     event: AgentEvent = AgentSelectedEvent(
         agent_id="discover",
-        display_name="EITIA",
+        display_name="客户发现",
         reason="匹配",
         confidence=0.9,
     )

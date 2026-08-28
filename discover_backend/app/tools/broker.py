@@ -19,7 +19,6 @@ import anyio
 from pydantic import BaseModel, Field
 
 from app.config.settings import Settings, SideEffectType
-from app.dedup.repo import DedupStore
 from app.errors.base import (
     ErrorCategory,
     PlatformError,
@@ -28,6 +27,7 @@ from app.errors.base import (
 from app.llm.models import ChatToolSpec
 from app.protocol.sanitize import sanitize_tool_args, truncate
 from app.registry.assemble import AssemblyPlan
+from app.repositories.dedup import DedupStore
 from app.tools.descriptor import (
     ToolDescriptor,
     ToolSource,

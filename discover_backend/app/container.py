@@ -1,8 +1,9 @@
 """接入层共享服务容器：应用生命周期内单例 + FastAPI 依赖。
 
 扩展系统统一加载基础设施（logging/db/storage/redis/mcp/llm），startup 从
-扩展访问器取类型化客户端并组装领域服务（session/registry/script_executor/
-runtime）；shutdown 逆序关停扩展。热重载开关开启时启动后台轮询任务。
+扩展访问器取类型化客户端并组装领域服务（conversation/registry/script_executor/
+workspace/files/runtime）；shutdown 逆序关停扩展。热重载开关开启时启动后台
+轮询任务。
 """
 
 import asyncio
@@ -11,11 +12,9 @@ from collections.abc import Callable
 import anyio
 from fastapi import FastAPI, Request
 
-from app.auth.service import AuthService
 from app.catalog.assistant_catalog import AssistantCatalog
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
-from app.conversations.service import ConversationService
 from app.db.engine import Database
 from app.extensions import shutdown_extensions, startup_extensions
 from app.extensions.ext_database import get_database
@@ -28,7 +27,10 @@ from app.llm.providers import ProviderRegistry
 from app.registry.hot_reload import HotReloader
 from app.registry.registry import AgentRegistry
 from app.runtime.runner import Runtime
-from app.session.service import SessionService
+from app.services.auth import AuthService
+from app.services.conversations import ConversationService
+from app.services.files import FileService
+from app.services.workspace import WorkspaceManager
 from app.tools.mcp_manager import MCPManager
 from app.tools.script_executor import ScriptExecutor
 
@@ -44,8 +46,10 @@ class AppServices:
         self.script_executor: ScriptExecutor | None = None
         self.db: Database | None = None
         self.storage: BaseStorage | None = None
-        self.sessions: SessionService | None = None
-        self.history: ConversationService | None = None
+        self.workspaces: WorkspaceManager | None = None
+        self.files: FileService | None = None
+        self.catalog: AssistantCatalog | None = None
+        self.conversation_service: ConversationService | None = None
         self.auth: AuthService | None = None
         self.registry: AgentRegistry | None = None
         self.runtimes: dict[str, Runtime] = {}
@@ -63,11 +67,13 @@ class AppServices:
         self._resolve_api_key = resolve_api_key
         self.mcp_manager = get_manager()
         self.script_executor = ScriptExecutor(self.settings)
-        self.sessions = SessionService(self.settings, self.db, self.storage)
-        self.history = ConversationService(self.db)
-        self.auth = AuthService(self.settings, self.db, self.history)
+        self.workspaces = WorkspaceManager(self.settings)
+        self.files = FileService(self.settings, self.db, self.storage)
         self.registry = AgentRegistry(self.settings, get_registry())
         await self.registry.refresh()
+        self.catalog = AssistantCatalog(self.registry)
+        self.conversation_service = ConversationService(self.db, self.settings, self.catalog)
+        self.auth = AuthService(self.settings, self.db, self.conversation_service)
         reloader = HotReloader(self.registry, self.settings)
         scope = anyio.CancelScope()
         self._reloader_scope = scope
@@ -96,8 +102,8 @@ class AppServices:
 
     def assistant_catalog(self) -> AssistantCatalog:
         """助手目录（复用注册表当前索引，热重载后即最新）。"""
-        assert self.registry is not None
-        return AssistantCatalog(self.registry)
+        assert self.catalog is not None
+        return self.catalog
 
     def get_runtime(self, session_id: str) -> Runtime:
         """获取（或创建）会话级运行时。创建后复用同一工具代理。"""
@@ -106,14 +112,16 @@ class AppServices:
             assert self.providers is not None
             assert self.mcp_manager is not None
             assert self.script_executor is not None
-            assert self.sessions is not None
+            assert self.workspaces is not None
+            assert self.files is not None
             assert self.registry is not None
             assert self.db is not None
             assert self.llm is not None
             assert self._resolve_api_key is not None
             runtime = Runtime(
                 settings=self.settings,
-                sessions=self.sessions,
+                workspaces=self.workspaces,
+                files=self.files,
                 registry=self.registry,
                 llm=self.llm,
                 providers=self.providers,
@@ -125,11 +133,13 @@ class AppServices:
             self.runtimes[session_id] = runtime
         return runtime
 
-    async def discard_runtime(self, session_id: str) -> None:
-        """释放并移除会话运行时（存在则关停，回收 MCP 引用）。"""
+    async def discard_runtime(self, session_id: str) -> bool:
+        """释放并移除会话运行时；存在则关停并回收 MCP 引用，返回 True；否则 False。"""
         runtime = self.runtimes.pop(session_id, None)
         if runtime is not None:
             await runtime.close()
+            return True
+        return False
 
 
 def get_services(request: Request) -> AppServices:

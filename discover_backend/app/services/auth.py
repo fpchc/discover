@@ -14,20 +14,20 @@ from typing import cast
 import anyio
 from sqlalchemy import select
 
-from app.auth.models import (
+from app.config.settings import Settings
+from app.db.base import local_now
+from app.db.engine import Database
+from app.db.models import Account
+from app.errors.base import UnauthorizedError
+from app.schemas.auth import (
     AccountRecord,
     AccountStatus,
     LoginResponse,
     UserUsage,
 )
-from app.auth.security import JwtService, PasswordHasher
-from app.config.settings import Settings
-from app.conversations.models import UsageAggregate
-from app.conversations.service import ConversationService
-from app.db.base import local_now
-from app.db.engine import Database
-from app.db.models import Account
-from app.errors.base import UnauthorizedError
+from app.schemas.conversations import UsageAggregate
+from app.services.auth_security import JwtService, PasswordHasher
+from app.services.conversations import ConversationService
 
 logger = logging.getLogger(__name__)
 

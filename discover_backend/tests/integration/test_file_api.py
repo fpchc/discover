@@ -36,7 +36,7 @@ async def test_upload_then_preview(
     assert preview.content == "# 报告".encode()
     assert "inline" in preview.headers["content-disposition"]
     # 预览即标记 used（供后续清理）
-    row = await app.state.services.sessions._files.get(payload.file_id)
+    row = await app.state.services.files.get(payload.file_id)
     assert row is not None and row.used
 
 

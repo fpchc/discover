@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.catalog.models import TargetType
+from app.catalog.models import GENERIC_ASSISTANT_ID, AssistantTarget, TargetType
+from app.errors.base import NotFoundError
 from app.registry.registry import AgentRegistry
 
 
@@ -49,3 +50,19 @@ class AssistantCatalog:
     def resolve(self, assistant_id: str) -> AssistantCatalogEntry | None:
         """按 id 查目录（wire 校验用）。未知 id → None。"""
         return next((entry for entry in self.list() if entry.id == assistant_id), None)
+
+    def resolve_target(self, agent_id: str) -> AssistantTarget | None:
+        """wire agent_id → AssistantTarget；空串 → None（沿用/不绑定）；未知 → 404。
+
+        "generic"（保留字）→ 通用对话目标；其余按目录校验，命中 → 专家目标。
+        目录外 id 抛 NotFoundError（不泄露存在性，与续聊归属校验一致）。
+        """
+        agent_id = agent_id.strip()
+        if not agent_id:
+            return None
+        if agent_id == GENERIC_ASSISTANT_ID:
+            return AssistantTarget(type=TargetType.GENERIC)
+        entry = self.resolve(agent_id)
+        if entry is None:
+            raise NotFoundError(f"未知助手：{agent_id}")
+        return AssistantTarget(type=TargetType.EXPERT, id=entry.id)

@@ -1,6 +1,6 @@
 # 客户账期评估 — 打分规则细则
 
-> 本文件是 eitia-credit-assessment Skill 的**评分核心规范**。AI 逐维分析 → 填写原始分 + sub_scores + raw_data + source → `scripts/credit_calculator.py` 加权计算 → 输出综合授信分、授信等级、建议账期、建议额度。
+> 本文件是 credit-assessment Skill 的**评分核心规范**。AI 逐维分析 → 填写原始分 + sub_scores + raw_data + source → `scripts/credit_calculator.py` 加权计算 → 输出综合授信分、授信等级、建议账期、建议额度。
 > 评分必须可追溯：每维 ↔ sub_scores ↔ raw_data ↔ source 链路完整。
 
 ---
@@ -268,4 +268,4 @@ else:
 
 ---
 
-> **数据来源**：子维度满分分配和评分锚定基于 eitia-credit-assessment Skill 的核心模型。工具调用路径见 `references/data-source-mapping.md`。T1-T4 权重矩阵见 `references/tier-weights.md`。需求盘子估算见 `references/demand-estimation.md`。
+> **数据来源**：子维度满分分配和评分锚定基于 credit-assessment Skill 的核心模型。工具调用路径见 `references/data-source-mapping.md`。T1-T4 权重矩阵见 `references/tier-weights.md`。需求盘子估算见 `references/demand-estimation.md`。

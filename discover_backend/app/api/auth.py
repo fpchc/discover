@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.auth.deps import get_current_account, get_current_account_id, require_superuser
-from app.auth.models import AccountRecord, LoginRequest, LoginResponse, UserUsage
+from app.api.deps import get_current_account, get_current_account_id, require_superuser
 from app.container import AppServices, get_services
 from app.errors.base import UnauthorizedError
+from app.schemas.auth import AccountRecord, LoginRequest, LoginResponse, UserUsage
 
 router = APIRouter(tags=["auth"])
 
