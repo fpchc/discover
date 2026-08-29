@@ -45,7 +45,7 @@ CI（`.github/workflows/ci.yml`）将以上四项**并行**执行。
 
 ```
 discover_frontend/
-├── Dockerfile              多阶段：base → dev → build → runtime(nginx)，产物 dist/
+├── Dockerfile              多阶段：base → deps → dev → build → runtime(nginx)，产物 dist/
 ├── nginx.conf              SSE 反代(proxy_buffering off) + /assets/ hash 长缓存（envsubst 模板）
 ├── security-headers.conf   CSP / X-Frame-Options 等安全头 snippet
 └── .dockerignore

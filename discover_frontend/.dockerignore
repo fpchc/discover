@@ -12,6 +12,11 @@ coverage
 .ai
 README.md
 .github
+# 仅构建无关的 dev 配置 / 杂项文件，不进镜像上下文
+vitest.config.ts
+biome.json
+components.json
+Snipaste_*.png
 *.pem
 *.key
 env/.env.local
