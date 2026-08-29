@@ -6,15 +6,18 @@
 """
 
 import uuid
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+import pytest
 import pytest_asyncio
 from app.catalog.assistant_catalog import AssistantCatalog
 from app.catalog.models import AssistantTarget, TargetType
 from app.config.loader import MCPRegistry
 from app.config.settings import Settings
 from app.db.engine import Database
-from app.db.models import Conversation
+from app.db.models import Conversation, Message
 from app.errors.base import NotFoundError
 from app.registry.registry import AgentRegistry
 from app.schemas.conversations import ConversationStatus, MessageStatus, TurnRecord, TurnUsage
@@ -68,6 +71,41 @@ async def _finder_service(tmp_path: Path) -> ConversationService:
     return ConversationService(_DATABASE, settings, AssistantCatalog(registry))
 
 
+def _wall(day: date, hour: int = 10) -> datetime:
+    """GMT+8 墙钟时间（naive，与 local_now() 落库口径一致）。"""
+    return datetime.combine(day, time(hour))
+
+
+async def _insert_message(
+    account_id: str,
+    *,
+    day: date,
+    conversation_id: str,
+    prompt: int = 0,
+    completion: int = 0,
+    total: int = 0,
+    cached_read: int = 0,
+    cached_write: int = 0,
+) -> None:
+    """直接落库一条指定日期的消息（构造逐日聚合测试数据）。"""
+    async with _DATABASE.session_factory() as session:
+        session.add(
+            Message(
+                message_id=uuid.uuid4().hex,
+                conversation_id=conversation_id,
+                created_by=account_id,
+                query="q",
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=total,
+                cached_read_tokens=cached_read,
+                cached_write_tokens=cached_write,
+                created_at=_wall(day),
+            )
+        )
+        await session.commit()
+
+
 async def test_record_turn_creates_conversation_and_message() -> None:
     service = _service()
     cid = uuid.uuid4().hex
@@ -105,8 +143,18 @@ async def test_record_turn_creates_conversation_and_message() -> None:
     assert msg.answer == "已找到 5 家"
     assert msg.thinking == "先搜索再评分"
     assert msg.agent_id == "finder"
-    assert msg.cached_read_tokens == 80
-    assert msg.cached_write_tokens == 10
+    # 读取接口不下发 token 用量与模型信息（仅落库内部审计）
+    dumped = msg.model_dump()
+    for hidden in (
+        "provider",
+        "model",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "cached_read_tokens",
+        "cached_write_tokens",
+    ):
+        assert hidden not in dumped
 
 
 async def test_record_turn_increments_dialogue_and_preserves_name() -> None:
@@ -263,6 +311,95 @@ async def test_aggregate_user_usage() -> None:
     assert (await service.aggregate_user_usage(str(uuid.uuid4()))).message_count == 0
 
 
+async def test_aggregate_daily_usage_groups_by_day_and_zero_fills() -> None:
+    """逐日用量：按 GMT+8 自然日归组、同会话去重、窗口外排除、零填充升序。"""
+    service = _service()
+    account = str(uuid.uuid4())
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    cid = uuid.uuid4().hex
+    await _insert_message(
+        account,
+        day=today,
+        conversation_id=cid,
+        prompt=10,
+        completion=5,
+        total=15,
+        cached_read=3,
+        cached_write=1,
+    )
+    await _insert_message(
+        account,
+        day=today,
+        conversation_id=cid,
+        prompt=20,
+        completion=10,
+        total=30,
+        cached_read=6,
+        cached_write=2,
+    )
+    await _insert_message(
+        account,
+        day=today - timedelta(days=1),
+        conversation_id=uuid.uuid4().hex,
+        prompt=100,
+        completion=50,
+        total=150,
+    )
+    await _insert_message(
+        account,
+        day=today - timedelta(days=10),
+        conversation_id=uuid.uuid4().hex,
+        total=999,
+    )
+
+    items = await service.aggregate_daily_usage(account, days=7)
+    assert len(items) == 7
+    assert [i.date for i in items] == [
+        today - timedelta(days=offset) for offset in range(6, -1, -1)
+    ]
+    today_item = items[-1]
+    assert today_item.conversation_count == 1  # 同一会话两条消息去重
+    assert today_item.message_count == 2
+    assert today_item.total_tokens == 45
+    assert today_item.cached_read_tokens == 9
+    assert today_item.cached_write_tokens == 3
+    yesterday = next(i for i in items if i.date == today - timedelta(days=1))
+    assert yesterday.message_count == 1
+    assert yesterday.total_tokens == 150
+    # 其余天零填充；10 天前在 7 天窗口外不计
+    for item in items:
+        if item.date not in (today, today - timedelta(days=1)):
+            assert item.message_count == 0
+            assert item.total_tokens == 0
+    # 其他账号不受影响
+    assert all(
+        i.message_count == 0 for i in await service.aggregate_daily_usage(str(uuid.uuid4()), days=7)
+    )
+
+
+async def test_aggregate_daily_usage_window_and_days() -> None:
+    """days 控制窗口：起点 = 今天 - days + 1，窗口外消息不计。"""
+    service = _service()
+    account = str(uuid.uuid4())
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    await _insert_message(
+        account,
+        day=today - timedelta(days=40),
+        conversation_id=uuid.uuid4().hex,
+        total=1,
+    )
+
+    items30 = await service.aggregate_daily_usage(account, days=30)
+    assert len(items30) == 30
+    assert items30[0].date == today - timedelta(days=29)
+    assert all(i.total_tokens == 0 for i in items30)  # 40 天前在 30 天窗口外
+
+    items90 = await service.aggregate_daily_usage(account, days=90)
+    assert len(items90) == 90
+    assert items90[0].date == today - timedelta(days=89)
+    assert next(i for i in items90 if i.date == today - timedelta(days=40)).total_tokens == 1
+
+
 # ---- 对话记录生命周期（resolve）----
 async def test_resolve_creates_row_with_binding(tmp_path: Path) -> None:
     """空 conversation_id 建行：标题取首查截断、绑定落 agent_id。"""
@@ -359,3 +496,82 @@ async def test_resolve_cross_account_continuation_404(tmp_path: Path) -> None:
     except NotFoundError:
         raised = True
     assert raised is True
+
+
+# ---- 会话记忆 L1（get_history_messages：模型上下文恢复）----
+async def test_get_history_messages_returns_user_assistant_pairs() -> None:
+    """历史还原为 user(query)/assistant(answer) 消息对，thinking 不进上下文。"""
+    service = _service()
+    cid = uuid.uuid4().hex
+    await service.record_turn(
+        cid,
+        TurnRecord(
+            message_id=uuid.uuid4().hex,
+            query="找潜在客户",
+            answer="已找到 5 家",
+            thinking="审计内容不进模型上下文",
+            account_id=_ACCOUNT_ID,
+        ),
+    )
+    hist = await service.get_history_messages(_ACCOUNT_ID, cid, limit=50)
+    assert [(m.role, m.content) for m in hist] == [
+        ("user", "找潜在客户"),
+        ("assistant", "已找到 5 家"),
+    ]
+
+
+async def test_get_history_messages_error_turn_keeps_query_only() -> None:
+    """错误回合（answer 为空）：只产出 user 消息，不产出 assistant。"""
+    service = _service()
+    cid = uuid.uuid4().hex
+    await service.record_turn(
+        cid,
+        TurnRecord(
+            message_id=uuid.uuid4().hex,
+            query="会报错",
+            status=MessageStatus.ERROR,
+            error="限流",
+            account_id=_ACCOUNT_ID,
+        ),
+    )
+    hist = await service.get_history_messages(_ACCOUNT_ID, cid, limit=50)
+    assert [(m.role, m.content) for m in hist] == [("user", "会报错")]
+
+
+async def test_get_history_messages_takes_most_recent_limit() -> None:
+    """取最近 limit 条且按时间升序返回（desc 取数后反转，非最旧 N 条）。"""
+    service = _service()
+    cid = uuid.uuid4().hex
+    base = datetime.now()
+    for i in range(3):
+        async with _DATABASE.session_factory() as session:
+            session.add(
+                Message(
+                    message_id=uuid.uuid4().hex,
+                    conversation_id=cid,
+                    created_by=_ACCOUNT_ID,
+                    query=f"问题{i}",
+                    answer=f"回答{i}",
+                    created_at=base + timedelta(seconds=i),
+                )
+            )
+            await session.commit()
+    hist = await service.get_history_messages(_ACCOUNT_ID, cid, limit=2)
+    assert [(m.role, m.content) for m in hist] == [
+        ("user", "问题1"),
+        ("assistant", "回答1"),
+        ("user", "问题2"),
+        ("assistant", "回答2"),
+    ]
+
+
+async def test_get_history_messages_cross_account_404() -> None:
+    """跨账号读历史上下文 → NotFoundError（与 get_messages 同源隔离）。"""
+    service = _service()
+    cid = uuid.uuid4().hex
+    await service.record_turn(
+        cid,
+        TurnRecord(message_id=uuid.uuid4().hex, query="A 的历史", account_id=_ACCOUNT_ID),
+    )
+    with pytest.raises(NotFoundError):
+        await service.get_history_messages(str(uuid.uuid4()), cid, limit=50)

@@ -1,0 +1,58 @@
+{
+  "header": {
+    "customer": "东莞市凯格精机股份有限公司",
+    "stock_code": "301338.SZ",
+    "assessment_date": "2026-08-29",
+    "assessment_type": "账期评估（P1 数据受限版）",
+    "version": "v1",
+    "report_title": "东莞市凯格精机股份有限公司 · 账期评估"
+  },
+  "cover": {
+    "tier": "T1",
+    "tier_label": "上市/大型",
+    "credit_grade": "S",
+    "credit_grade_label": "S级 · 战略级 · 回款风险极低",
+    "recommended_credit_days": 44,
+    "recommended_credit_days_label": "44天账期",
+    "credit_limit": 59,
+    "credit_limit_label": "59 万元"
+  },
+  "score": {
+    "F": 9.0,
+    "R": 10.0,
+    "S": 10.0,
+    "weights": { "F": 0.5, "R": 0.3, "S": 0.2 },
+    "composite_score": 9.5,
+    "ar_days": 44,
+    "annual_spend": 480,
+    "red_line_status": "全部未触发",
+    "status": "通过",
+    "formula": "CS = 0.5F + 0.3R + 0.2S = 0.5×9.0 + 0.3×10 + 0.2×10 = 9.5"
+  },
+  "recommendation": "建议给予 44 天账期、授信额度约 59 万元（基于年盘子 480 万中值，S 级系数 1.0）。建议账期受 AR 硬约束（客户应收周转 44 天）约束为 44 天。首次合作建议小额试单验证，季度滚动评估额度。",
+  "report": {
+    "sections": {
+      "cover": "委托方：销售部；客户：凯格精机；日期：2026-08-29；数据来源：P1 公开搜索。",
+      "conclusion": "S级 · 建议账期 44 天 · 建议额度约 59 万元。",
+      "basic_info": "上市企业 301338.SZ；注册资本、成立日期、地址、经营状态：在营。",
+      "financial": "负债率39.68%、流动比2.14、毛利率41.26%、净利率16.29%、应收周转44天（公开财报，双源验证通过）。",
+      "credit_risk": "被执行0条、欠税0条、票据违约0条；裁判文书均为原告（R=10）。",
+      "stability": "无经营异常、无股权冻结、无行政处罚、审计标准无保留（S=10）。",
+      "demand": "年盘子约 480 万（区间 400-560 万），敏感性见附录。",
+      "risk_signals": "红线 5 条全部未触发。",
+      "monitoring": "监控回款逾期率、账期超限笔数；季度滚动评估，额度上修须重新评分。",
+      "appendix": "数据采集日志（web_search 能力）、评分方法论、敏感性区间、免责声明。"
+    },
+    "composite_score": 9.5,
+    "credit_grade": "S",
+    "recommended_credit_days": 44,
+    "ar_days": 44,
+    "credit_limit": 59
+  },
+  "data_notes": [
+    "数据源：企业专有数据能力 + 联网搜索（由平台装配，具体提供方与降级由平台配置）",
+    "财务数据来自公开财报，双源（财报+新闻稿）验证通过",
+    "年盘子为三方法交叉估算区间中值，非单点",
+    "本示例的 report.sections 结构即 gate_report_valid 门禁入参结构"
+  ]
+}

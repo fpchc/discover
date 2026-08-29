@@ -166,6 +166,10 @@ class Settings(BaseSettings):
     context_budget_tokens: int = 96000
     reasoning_max_turns: int = 40
 
+    # ---- 会话记忆（L1：历史上下文恢复） ----
+    # 续聊恢复上下文时从 messages 加载的最近回合上限（条）
+    history_max_messages: int = 50
+
     # ---- 装配（智能体清单） ----
     agent_body_max_chars: int = 2000
     skill_body_max_chars: int = 8000
@@ -223,6 +227,19 @@ class Settings(BaseSettings):
     argon2_time_cost: int = 3
     argon2_memory_cost: int = 65536
     argon2_parallelism: int = 4
+    # 修改密码时新密码最短长度（前端预校验同源经 env 注入）
+    account_password_min_length: int = 8
+
+    # ---- 账号头像（/users/me/avatar） ----
+    # 头像显示目标：侧栏 32px / 资料弹窗 ~96px 圆形；限制以「够用且轻」为度。
+    # 大小上限（字节，2 MiB）：圆形小图无需原图，防超大文件占存储。
+    avatar_max_size_bytes: int = 2 * 1024 * 1024
+    # 允许的图片扩展名（服务端同时做 magic bytes 内容校验，防改名伪装）
+    avatar_allowed_extensions: str = "png,jpg,jpeg,webp,gif"
+    # 边长上限（像素）：超出即压缩也无意义（显示目标 ≤96px，512 已足）
+    avatar_max_dimension: int = 512
+    # 边长下限（像素）：低于侧栏展示尺寸会模糊
+    avatar_min_dimension: int = 32
 
 
 @lru_cache(maxsize=1)

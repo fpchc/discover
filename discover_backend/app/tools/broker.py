@@ -266,6 +266,7 @@ class ToolBroker:
         degraded: list[str] = []
         degrade_notes: list[str] = []
         failed_required: list[str] = []
+        acquired: set[str] = set()
         for server_id in plan.required_mcp_servers:
             try:
                 client = await self._mcp_manager.acquire(server_id)
@@ -275,6 +276,7 @@ class ToolBroker:
             await self._add_mcp_tools(server_id, client, plan.core_tool_names)
             self._clients[server_id] = client
             started.append(server_id)
+            acquired.add(server_id)
         if failed_required:
             for server_id in started:
                 self._mcp_manager.release(server_id)
@@ -297,23 +299,53 @@ class ToolBroker:
             await self._add_mcp_tools(server_id, client, plan.core_tool_names)
             self._clients[server_id] = client
             started.append(server_id)
+            acquired.add(server_id)
         # 能力依赖：主备切换（failover）——候选服务器按注册表顺序尝试，首个可用者生效。
+        # 主候选全部不可用且注册表声明 fallback 能力时，尝试 fallback 候选服务器；
+        # 命中则视为「已降级至 fallback 能力」，降级说明由系统生成（不来自技能清单）。
         for cap in plan.capabilities:
             cap_failures: list[str] = []
             activated = False
             for server_id in cap.candidate_servers:
+                if server_id in acquired:
+                    activated = True
+                    break
                 try:
                     client = await self._mcp_manager.acquire(server_id)
                 except PlatformError:
                     cap_failures.append(server_id)
                     degraded.append(server_id)
-                    degrade_notes.append(cap.degrade_note or "搜索提供方不可用，尝试备用提供方")
+                    degrade_notes.append(cap.degrade_note or "数据源不可用，已切换备用通道")
                     continue
                 await self._add_mcp_tools(server_id, client, cap.core_tools)
                 self._clients[server_id] = client
                 started.append(server_id)
+                acquired.add(server_id)
                 activated = True
                 break
+            if not activated and cap.fallback_servers:
+                for server_id in cap.fallback_servers:
+                    if server_id in acquired:
+                        activated = True
+                        break
+                    try:
+                        client = await self._mcp_manager.acquire(server_id)
+                    except PlatformError:
+                        cap_failures.append(server_id)
+                        degraded.append(server_id)
+                        degrade_notes.append(cap.degrade_note or "数据源不可用，已切换备用通道")
+                        continue
+                    await self._add_mcp_tools(server_id, client, cap.core_tools)
+                    self._clients[server_id] = client
+                    started.append(server_id)
+                    acquired.add(server_id)
+                    activated = True
+                    break
+                if activated and cap.fallback_capability is not None:
+                    degraded.append(cap.capability)
+                    degrade_notes.append(
+                        f"能力 {cap.capability} 不可用，已降级至能力 {cap.fallback_capability}"
+                    )
             if not activated and cap.required:
                 failed_required.extend(cap_failures)
         if failed_required:

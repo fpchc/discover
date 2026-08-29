@@ -36,11 +36,67 @@ export interface AccountRecord {
   account_id: string
   name: string
   phone: string
+  /** 头像预览相对路径（如 /files/{id}/preview）或空；前端按 API_BASE_URL 拼接 */
   avatar: string | null
   status: 'active' | 'disabled'
   is_system: boolean
   created_at: string
   last_login_at: string | null
+}
+
+/** 账号 token 用量（GET /users/me/usage；按 created_by 聚合 messages） */
+export interface AccountUsage {
+  account_id: string
+  name: string
+  conversation_count: number
+  message_count: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cached_read_tokens: number
+  cached_write_tokens: number
+}
+
+/**
+ * 单日用量（GET /users/me/usage/daily；按 created_at 聚合消息，date 为 YYYY-MM-DD）。
+ * 时间序列为图表数据源；返回区间内每天一条（零填充，升序）。
+ */
+export interface UsageDailyItem {
+  date: string
+  conversation_count: number
+  message_count: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cached_read_tokens: number
+  cached_write_tokens: number
+}
+
+/** 近 N 日用量序列（Token / 消息趋势图） */
+export interface UsageDaily {
+  account_id: string
+  name: string
+  days: number
+  items: UsageDailyItem[]
+}
+
+/** 头像上传限制（GET /users/me/avatar-config；前端本地校验用，阈值配置驱动） */
+export interface AvatarConfig {
+  max_size_bytes: number
+  allowed_extensions: string[]
+  max_dimension: number
+  min_dimension: number
+}
+
+/** 更新当前账号资料（PATCH /users/me；当前仅昵称） */
+export interface UpdateAccountRequest {
+  name?: string
+}
+
+/** 修改密码请求体（POST /users/me/password；必须携带原密码校验） */
+export interface ChangePasswordRequest {
+  old_password: string
+  new_password: string
 }
 
 // ---- 历史接口（API.md §1） ----
@@ -66,8 +122,6 @@ export interface MessageRecord {
   message_id: string
   conversation_id: string
   agent_id: string | null
-  provider: string | null
-  model: string | null
   query: string
   answer: string | null
   /** 思考内容（审计用途；前端可折叠展示） */
@@ -75,11 +129,6 @@ export interface MessageRecord {
   status: 'normal' | 'error'
   error: string | null
   latency_ms: number
-  prompt_tokens: number
-  completion_tokens: number
-  total_tokens: number
-  cached_read_tokens: number
-  cached_write_tokens: number
   created_at: string
   updated_at: string
 }

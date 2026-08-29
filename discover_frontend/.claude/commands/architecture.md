@@ -64,8 +64,7 @@ src/
     ├── LoginScreen.tsx         登录页（手机号 + 密码 → POST /auth/login 得 JWT）
     ├── Sidebar.tsx             侧栏（品牌区 / 新对话 / 技能与助手 / 最近对话 / 底部账号区 + 退出）
     ├── ChatWindow.tsx          对话主区（头部 / 空态 / 消息流 / 滚动）
-    ├── ChatInput.tsx           输入框（textarea / 附件 / 助手胶囊 / 发送/停止）
-    ├── AssistantMenu.tsx       助手选择下拉（通用 + 专家）
+    ├── ChatInput.tsx           输入区（平铺助手胶囊 / textarea / 附件 / 发送/停止）
     ├── MessageBubble.tsx       消息气泡（React.memo；思考分区 / markdown / 复制 / 重试）
     └── Markdown.tsx            react-markdown 渲染组件（remark-gfm / rehype-highlight）
 
@@ -105,7 +104,7 @@ SSE 解析唯一处在 `src/lib/sse.ts` + `src/lib/stream.ts`；共享状态唯�
 | `src/hooks/` | React 生命周期相关逻辑（useChatStream / useTheme / useFileUpload / useNetworkStatus） |
 | `src/stores/` | Zustand store（chat / conversations / assistants / auth） |
 | `src/components/ui/` | shadcn 拷入组件（button / dropdown-menu / input / skeleton 等） |
-| `src/components/` | 认证与域组件（AuthGate / LoginScreen / Sidebar / ChatWindow / ChatInput / AssistantMenu / MessageBubble / Markdown） |
+| `src/components/` | 认证与域组件（AuthGate / LoginScreen / Sidebar / ChatWindow / ChatInput / MessageBubble / Markdown） |
 
 ## 4. 模块职责与边界
 
@@ -113,7 +112,7 @@ SSE 解析唯一处在 `src/lib/sse.ts` + `src/lib/stream.ts`；共享状态唯�
 |---|---|---|
 | `src/App.tsx` | 页面编排、会话与消息渲染的串联、全局快捷键 | 不发 HTTP、不解析 SSE |
 | `src/components/MessageBubble.tsx` | 按 props 渲染消息 / 思考 / markdown / 复制 / 重试（`React.memo`） | 不改 store、不持有对话副本、流式不重解析（见 performance.md） |
-| `src/components/ChatInput.tsx` | 输入框 / 附件 / 助手胶囊 / 发送/停止（纯展示 + 事件上报） | 不发 HTTP、不直接改 store |
+| `src/components/ChatInput.tsx` | 平铺助手胶囊 / 输入框 / 附件 / 发送/停止（纯展示 + 事件上报） | 不发 HTTP、不直接改 store |
 | `src/hooks/useChatStream.ts` | 发送编排 + 列表 / 历史加载、`AbortController` 取消 + 卸载清理 | 不做 UI 渲染、不碰 DOM |
 | `src/stores/chat.ts` | 消息追加、流式状态、取消复位、思考分区（单一事实源） | 不做 HTTP / SSE 读取 |
 | `src/stores/conversations.ts` | 会话列表状态（后端为唯一事实源） | 不做 HTTP / 不持久化 |

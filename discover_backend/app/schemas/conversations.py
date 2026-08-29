@@ -6,7 +6,7 @@ conversations / messages 持久化载体为 ORM（app/db/models.py），跨边�
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -79,6 +79,23 @@ class UsageAggregate(BaseModel):
     cached_write_tokens: int = 0
 
 
+class DailyUsageItem(BaseModel):
+    """单日 token 用量（趋势图单点；口径与 UsageAggregate 一致，多出日期维度）。
+
+    前端图显换算：输入未命中 = prompt_tokens - cached_read_tokens；
+    输入命中 = cached_read_tokens；输出 = completion_tokens；x 轴取 date(MM-DD)。
+    """
+
+    date: date
+    conversation_count: int = 0
+    message_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cached_read_tokens: int = 0
+    cached_write_tokens: int = 0
+
+
 class ConversationRecord(BaseModel):
     """会话记录（历史头部，读取接口返回）。"""
 
@@ -122,23 +139,20 @@ class ConversationSession(BaseModel):
 
 
 class MessageRecord(BaseModel):
-    """回合消息（历史明细，读取接口返回）。"""
+    """回合消息（历史明细，读取接口返回）。
+
+    对外不下发 token 用量与 provider/model（内部审计维度）：读取接口只暴露
+    业务可见字段；provider/model/usage 仅存在于落库载荷 TurnRecord，供审计/计费。
+    """
 
     message_id: str
     conversation_id: str
     agent_id: str | None = None
-    provider: str | None = None
-    model: str | None = None
     query: str
     answer: str | None = None
     thinking: str | None = None
     status: MessageStatus = MessageStatus.NORMAL
     error: str | None = None
     latency_ms: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    cached_read_tokens: int = 0
-    cached_write_tokens: int = 0
     created_at: datetime
     updated_at: datetime

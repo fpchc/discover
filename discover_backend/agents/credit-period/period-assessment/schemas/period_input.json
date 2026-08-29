@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "period_calculator 输入约束",
+  "description": "账期评估计算脚本的入参约束。F/R/S 子分、红线布尔、AR 与年盘子。",
+  "type": "object",
+  "required": ["items"],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["company_name"],
+        "additionalProperties": false,
+        "properties": {
+          "company_name": { "type": "string", "minLength": 1 },
+          "tier": { "type": "string", "enum": ["T1", "T2", "T3", "T4"] },
+          "f_scores": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "偿债能力": { "type": "number", "minimum": 0, "maximum": 3 },
+              "盈利能力": { "type": "number", "minimum": 0, "maximum": 2.5 },
+              "现金流质量": { "type": "number", "minimum": 0, "maximum": 2 },
+              "增长势头": { "type": "number", "minimum": 0, "maximum": 1.5 },
+              "营运效率": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          },
+          "r_penalties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "在册被执行": { "type": "number", "minimum": 0 },
+              "欠税/税务违法": { "type": "number", "minimum": 0 },
+              "票据违约": { "type": "number", "minimum": 0 },
+              "合同纠纷涉诉": { "type": "number", "minimum": 0 }
+            }
+          },
+          "s_penalties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "经营异常在册": { "type": "number", "minimum": 0 },
+              "股权冻结": { "type": "number", "minimum": 0 },
+              "实控人变更": { "type": "number", "minimum": 0 },
+              "高管异常": { "type": "number", "minimum": 0 },
+              "行政处罚": { "type": "number", "minimum": 0 },
+              "审计非标": { "type": "number", "minimum": 0 }
+            }
+          },
+          "ar_days": { "type": "integer", "minimum": 0, "maximum": 365 },
+          "annual_spend": { "type": "number", "minimum": 0 },
+          "red_lines": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dishonesty": { "type": "boolean" },
+              "bankruptcy": { "type": "boolean" },
+              "serious_violation": { "type": "boolean" },
+              "business_exception": { "type": "boolean" },
+              "cashflow_negative": { "type": "boolean" }
+            }
+          },
+          "raw_data": { "type": "string" },
+          "source": { "type": "string" }
+        }
+      }
+    }
+  }
+}

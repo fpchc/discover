@@ -35,7 +35,7 @@ class SelectionSource(StrEnum):
 class AssistantTarget(BaseModel):
     """助手目标：类型 + id。
 
-    expert → id 为智能体 ID（如 discover）；generic/skill → id 为空。
+    expert → id 为智能体 ID；generic/skill → id 为空。
     runtime 只感知该模型，不感知 wire 层字符串。
     """
 

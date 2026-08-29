@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -53,6 +54,7 @@ from app.protocol.sanitize import sanitize_tool_args, truncate
 from app.registry.registry import AgentRegistry
 from app.repositories.dedup import DedupStore
 from app.runtime.builder import build_graph
+from app.runtime.context import HistoryProvider, seed_for_turn, system_first, trim_context
 from app.runtime.resolver.assistant_resolver import AssistantResolver, ExplicitSelectionResolver
 from app.runtime.resolver.skill_resolver import SkillResolutionContext, SkillResolver
 from app.runtime.state import GateStatus, GraphState
@@ -64,6 +66,8 @@ from app.tools.mcp_manager import MCPManager
 from app.tools.script_executor import ScriptExecutor
 
 _GATE_MARKER = ".script.gate_"
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_args(raw: str) -> dict[str, object]:
@@ -79,11 +83,6 @@ def _to_chat_tool_call(call: ToolCall) -> ChatToolCall:
         id=call.id or "",
         function=ChatToolCallFunction(name=call.name or "", arguments=call.arguments),
     )
-
-
-def _estimate_tokens(messages: list[ChatMessage]) -> int:
-    """粗略 token 估算：以字符数为代理（CJK 近似 1 token/字符）。"""
-    return sum(len(message.content or "") for message in messages)
 
 
 def _gate_id_from_tool(tool_name: str) -> str | None:
@@ -108,6 +107,7 @@ class Runtime:
         mcp_manager: MCPManager,
         script_executor: ScriptExecutor,
         db: Database,
+        history: HistoryProvider | None = None,
     ) -> None:
         self._settings = settings
         self._workspaces = workspaces
@@ -131,6 +131,7 @@ class Runtime:
         self._graph: CompiledStateGraph[GraphState] | None = None
         self._turn_started = 0.0
         self._account_id: str = ""  # 会话归属账号（去重/产物登记据此隔离）
+        self._history = history  # 会话记忆 L1：fresh runtime 首轮恢复历史上下文
 
     async def close(self) -> None:
         """会话结束：释放工具代理持有的 MCP 引用。"""
@@ -155,12 +156,21 @@ class Runtime:
         self._usage = UsageAggregator()  # 回合级 usage 归零（修复多调用覆盖）
         self._account_id = account_id
         user_message = ChatMessage(role="user", content=user_input)
-        base = self._last_state
-        state = base.model_copy(
+        # 会话记忆 L1：fresh runtime 首轮从 DB 恢复历史上下文（best-effort 降级为空）
+        seed = await seed_for_turn(
+            self._last_state.messages,
+            self._history,
+            account_id=account_id,
+            conversation_id=session_id,
+            limit=self._settings.history_max_messages,
+            user_message=user_message,
+            logger=logger,
+        )
+        state = self._last_state.model_copy(
             update={
                 "input": user_input,
                 "session_id": session_id,
-                "messages": [*base.messages, user_message],
+                "messages": seed,
                 "assistant_target": assistant_target,
                 "pending_calls": [],
                 "turn": 0,  # 推理轮次按单条消息重置，避免会话内累积后永久短路
@@ -290,7 +300,9 @@ class Runtime:
         provider = self._resolve_provider(state)
         api_key = self._resolve_api_key(provider)
         request = ChatRequest(
-            messages=self._trim_context(state.messages),
+            messages=trim_context(
+                system_first(state.messages), self._settings.context_budget_tokens
+            ),
             tools=self._broker.exposed_tools(),
             thinking=self._resolve_thinking(state),
         )
@@ -485,14 +497,3 @@ class Runtime:
 
     def _resolve_api_key(self, provider: LLMProvider) -> str:
         return self._api_key_resolver(provider)
-
-    def _trim_context(self, messages: list[ChatMessage]) -> list[ChatMessage]:
-        """上下文预算裁剪（§5）：超预算时从最老的助手/工具消息开始裁。"""
-        budget = self._settings.context_budget_tokens
-        result = list(messages)
-        while result and _estimate_tokens(result) > budget:
-            candidates = [i for i, m in enumerate(result) if m.role in ("assistant", "tool")]
-            if not candidates:
-                break
-            del result[candidates[0]]
-        return result

@@ -6,12 +6,21 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, UploadFile
 
 from app.api.deps import get_current_account, get_current_account_id, require_superuser
 from app.container import AppServices, get_services
-from app.errors.base import UnauthorizedError
-from app.schemas.auth import AccountRecord, LoginRequest, LoginResponse, UserUsage
+from app.errors.base import BadRequestError, UnauthorizedError
+from app.schemas.auth import (
+    AccountRecord,
+    AvatarConfig,
+    ChangePasswordRequest,
+    DailyUsage,
+    LoginRequest,
+    LoginResponse,
+    UpdateAccountRequest,
+    UserUsage,
+)
 
 router = APIRouter(tags=["auth"])
 
@@ -43,6 +52,74 @@ async def current_usage(
     if usage is None:
         raise UnauthorizedError("账号不存在")
     return usage
+
+
+@router.get("/users/me/usage/daily")
+async def current_daily_usage(
+    # pragma: 简化 — 天数上下界为 API 契约固定值（需求明确默认 30 / 上限 90），不进配置
+    days: int = Query(default=30, ge=1, le=90),
+    account_id: str = Depends(get_current_account_id),
+    services: AppServices = Depends(get_services),
+) -> DailyUsage:
+    """当前账号近 days 天每日 token 用量（趋势图数据源；零填充、升序）。"""
+    assert services.auth is not None
+    usage = await services.auth.get_user_daily_usage(account_id, days=days)
+    if usage is None:
+        raise UnauthorizedError("账号不存在")
+    return usage
+
+
+@router.get("/users/me/avatar-config")
+async def avatar_config(services: AppServices = Depends(get_services)) -> AvatarConfig:
+    """头像上传限制配置（供前端本地校验输入；阈值全部配置驱动）。"""
+    assert services.auth is not None
+    return await services.auth.avatar_config()
+
+
+@router.patch("/users/me")
+async def update_account(
+    body: UpdateAccountRequest,
+    account: AccountRecord = Depends(get_current_account),
+    services: AppServices = Depends(get_services),
+) -> AccountRecord:
+    """更新当前账号资料（当前支持昵称；白名单字段防越权）。"""
+    assert services.auth is not None
+    return await services.auth.update_account(account.account_id, name=body.name)
+
+
+@router.post("/users/me/avatar")
+async def upload_avatar(
+    file: UploadFile,
+    account_id: str = Depends(get_current_account_id),
+    services: AppServices = Depends(get_services),
+) -> AccountRecord:
+    """更换头像：图片格式 / 体积 / magic bytes 校验（约束严于通用上传）。"""
+    assert services.auth is not None
+    limit = services.settings.avatar_max_size_bytes
+    content = await file.read(limit + 1)
+    if len(content) > limit:
+        raise BadRequestError(f"头像超过大小上限（{limit} 字节）")
+    return await services.auth.change_avatar(
+        account_id,
+        filename=file.filename or "avatar.png",
+        content=content,
+        mimetype=file.content_type or "",
+    )
+
+
+@router.post("/users/me/password")
+async def change_password(
+    body: ChangePasswordRequest,
+    account: AccountRecord = Depends(get_current_account),
+    services: AppServices = Depends(get_services),
+) -> AccountRecord:
+    """修改当前账号密码：必须填写原密码校验通过才允许修改。"""
+    assert services.auth is not None
+    return await services.auth.change_password(
+        account.account_id,
+        old_password=body.old_password,
+        new_password=body.new_password,
+    )
 
 
 @router.get("/users")

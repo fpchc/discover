@@ -36,7 +36,7 @@
 | 职责 | 路径 |
 |------|------|
 | 对话历史落库/读取/删除（ConversationService，按账号隔离；DB 降级内部消化，舱壁）+ 账号 token 用量聚合（aggregate_user_usage / usage_by_account） | `app/services/conversations.py` |
-| 文件注册表服务（register/upload/预览/使用标记，FileService + file_preview_path） | `app/services/files.py` |
+| 文件注册表服务（register/upload/upload_avatar 头像校验/预览/使用标记，FileService + file_preview_path） | `app/services/files.py` |
 | 智能体工作区（创建/路径校验/防穿越，按 agent 键控跨会话共享，WorkspaceManager / Workspace） | `app/services/workspace.py` |
 
 ## 持久化仓库层（L0，repositories）
@@ -49,10 +49,10 @@
 
 | 职责 | 路径 |
 |------|------|
-| 账号认证门面（login / get_account / get_user_usage / list_users_with_usage，AuthService） | `app/services/auth.py` |
+| 账号认证门面（login / get_account / get_user_usage / list_users_with_usage + 资料维护：update_account / change_avatar / change_password / avatar_config，AuthService） | `app/services/auth.py` |
 | Argon2id 密码哈希 + JWT 会话令牌（PasswordHasher / JwtService） | `app/services/auth_security.py` |
 | FastAPI 认证依赖（get_current_account_id / get_current_account / require_superuser） | `app/api/deps.py` |
-| 认证接口（/auth/login、/users/me、/users/me/usage、/users 超级用户） | `app/api/auth.py` |
+| 认证接口（/auth/login、/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
 | 预置账号 CLI（python -m app.services.auth_provision，无注册接口） | `app/services/auth_provision.py` |
 
 ## LLM 层（L1）
@@ -71,7 +71,7 @@
 |------|------|
 | 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord 含 account_id / UsageAggregate / ConversationSession） | `app/schemas/conversations.py` |
 | 文件 DTO（ArtifactRecord 产物事件 / FileResponse / UploadConfig） | `app/schemas/files.py` |
-| 认证 DTO（LoginRequest / LoginResponse / AccountRecord / UserUsage / AccountStatus） | `app/schemas/auth.py` |
+| 认证 DTO（LoginRequest / LoginResponse / AccountRecord / UserUsage / AccountStatus + 资料维护：UpdateAccountRequest / ChangePasswordRequest / AvatarConfig） | `app/schemas/auth.py` |
 | 对话 SSE / 请求响应模型（chat-messages 契约） | `app/schemas/chat.py` |
 
 ## 工具层（L1/L2）
@@ -123,7 +123,7 @@
 | 助手目录接口（GET /assistants，只读聚合，公开） | `app/api/assistants.py` |
 | 文件接口（上传需认证带归属账号；预览全局公开） | `app/api/files.py` |
 | 会话接口（/conversations 列表/消息/软删除；按账号隔离，跨账号 404） | `app/api/conversations.py` |
-| 认证接口（/auth/login 公开；/users/me、/users/me/usage、/users 超级用户） | `app/api/auth.py` |
+| 认证接口（/auth/login 公开；/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
 
 ## 扩展层（L1，extensions，基础设施统一加载）
 
@@ -160,6 +160,9 @@
 |------|------|
 | discover 智能体包（三级结构：`agents/discover/client-finder/`） | `agents/discover/` |
 | discover-new 智能体包（客户调研：候选池评分推荐最优一家，输出 300 字信息卡；三级结构：`agents/discover-new/client-finder/`） | `agents/discover-new/` |
+| credit-period 智能体包（账期评估：单客户 F/R/S 三因子评分，输出完整账期评估文字报告；三级结构：`agents/credit-period/period-assessment/`） | `agents/credit-period/` |
+| credit-period 脚本：评分计算 / 门禁校验（period_calculator / gate_report_valid，stdin JSON 契约） | `agents/credit-period/period-assessment/scripts/` |
+| credit-period 脚本入参约束（period_input / gate_input，模型可见参数 schema） | `agents/credit-period/period-assessment/schemas/` |
 | discover 脚本入参约束（score/render/dedup/gate，模型可见参数 schema） | `agents/discover/client-finder/schemas/` |
 | discover 报告数据契约单一事实来源（required_fields/optional/compat，驱动 render_report.check_completeness） | `agents/discover/client-finder/schemas/report_schema.json` |
 | discover 脚本：评分 / 去重 / 渲染 / 门禁校验（stdin JSON 契约） | `agents/discover/client-finder/scripts/` |

@@ -1,0 +1,101 @@
+{
+  // ===== 仓库根目录聚合 tasks 配置 =====
+  // 把 discover_backend / discover_frontend 两个子工程的 .vscode/tasks.json
+  // 聚合到根目录；所有命令通过 options.cwd 定位到对应子目录执行。
+  // 注意：合并后 build 组只保留分组、不设 isDefault（两个子工程各有一个默认构建任务，会冲突）。
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "API: uvicorn (reload)",
+      "type": "process",
+      "command": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "uvicorn",
+        "app.application:create_app",
+        "--factory",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--reload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/discover_backend",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/discover_backend"
+        }
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: pytest",
+      "type": "process",
+      "command": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/discover_backend",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/discover_backend"
+        }
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: Vite dev server",
+      "type": "npm",
+      "script": "dev",
+      "detail": "pnpm dev — 启动 Vite 开发服务器（http://localhost:5173，/api 代理到后端）",
+      "options": {
+        "cwd": "${workspaceFolder}/discover_frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      }
+    },
+    {
+      "label": "typecheck: tsc",
+      "type": "npm",
+      "script": "typecheck",
+      "options": {
+        "cwd": "${workspaceFolder}/discover_frontend"
+      },
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "detail": "pnpm typecheck — tsc --noEmit（交付自检基线）"
+    },
+    {
+      "label": "lint: Biome",
+      "type": "npm",
+      "script": "lint",
+      "options": {
+        "cwd": "${workspaceFolder}/discover_frontend"
+      },
+      "problemMatcher": [],
+      "detail": "pnpm lint — biome check --error-on-warnings"
+    },
+    {
+      "label": "test: Vitest run",
+      "type": "npm",
+      "script": "test:run",
+      "options": {
+        "cwd": "${workspaceFolder}/discover_frontend"
+      },
+      "problemMatcher": [],
+      "detail": "pnpm test:run — vitest run"
+    }
+  ]
+}

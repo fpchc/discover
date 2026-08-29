@@ -7,10 +7,18 @@ scope:
   does_not_apply: 需要完整八维长篇客户发现报告、非电子信息产业链调研的通用咨询、纯闲聊
 keywords: [客户调研, 调研客户, 客户信息, 最优客户, 推荐客户, 工商信息, 主营业务, 销售情报]
 capability_dependencies:
+  - capability: enterprise_business
+    core_tools: []
+    required: false
+  - capability: enterprise_risk
+    core_tools: []
+    required: false
+  - capability: financial_data
+    core_tools: []
+    required: false
   - capability: web_search
     core_tools: []
     required: true
-    degrade_note: null
 scripts:
   - path: scripts/score_calculator.py
     name: score_calculator
@@ -28,7 +36,7 @@ documents:
   - path: references/tier-funnel-prompts.md
     when: 阶段 1 需求澄清（三层漏斗追问）时
   - path: references/data-source-mapping.md
-    when: 数据采集维度与降级策略，P1 仅平台联网搜索（web_search 能力）
+    when: 数据采集维度与数据能力映射
   - path: references/scoring-rules.md
     when: 八维评分子维度细则与权重
   - path: references/architecture.md
@@ -66,7 +74,7 @@ gates:
 ## 3. 阶段 2：搜索 → 初筛 → 评分
 
 ### 3.1 搜索与初筛（数据受限）
-P1 数据源仅平台联网搜索（`web_search` 能力，具体提供方由平台配置）。多路关键词并发：产品名+行业、行业+区域、竞品+客户/供应链、招标/机会词。
+数据源由平台装配的数据能力提供（企业专有数据能力 + 联网搜索）。多路关键词并发：产品名+行业、行业+区域、竞品+客户/供应链、招标/机会词。
 - 候选池不足 5 家 → 扩展关键词 / 放宽区域重搜；仍不足则明确告知用户。
 - 初筛：仅凭公开信息判断，信用红线一票否决（失信 / 破产 / 吊销 / 严重违法）直接排除；其余入深挖队列或后备池。
 - 排除过滤器生效。

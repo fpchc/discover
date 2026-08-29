@@ -23,6 +23,10 @@ class CapabilityPlan(BaseModel):
 
     能力由注册表解析为候选服务器列表；第一个可用者生效，失败自动切换。
     required 能力全候选失败 → 拒绝激活；optional 能力全失败 → 降级并继续。
+
+    能力级降级（注册表 `MCSCapability.fallback`）：主候选全部不可用时，装配层
+    解析 fallback 能力的候选服务器（fallback_servers）随计划下发；代理层命中后
+    视为「已降级至 fallback 能力」，降级说明由系统生成，不来自技能清单。
     """
 
     capability: str
@@ -30,6 +34,8 @@ class CapabilityPlan(BaseModel):
     core_tools: list[str] = Field(default_factory=list)
     required: bool = True
     degrade_note: str | None = None
+    fallback_capability: str | None = None
+    fallback_servers: list[str] = Field(default_factory=list)
 
 
 class AssemblyPlan(BaseModel):
@@ -139,6 +145,13 @@ class SkillAssembler:
             capability = self._mcp_registry.capabilities.get(dep.capability)
             if capability is None:
                 raise RegistryValidationError(f"平台能力未注册：{dep.capability}")
+            fallback_capability = capability.fallback
+            fallback_servers: list[str] = []
+            if fallback_capability is not None:
+                fallback = self._mcp_registry.capabilities.get(fallback_capability)
+                if fallback is None:
+                    raise RegistryValidationError(f"能力降级目标未注册：{fallback_capability}")
+                fallback_servers = list(fallback.servers)
             plans.append(
                 CapabilityPlan(
                     capability=dep.capability,
@@ -146,6 +159,8 @@ class SkillAssembler:
                     core_tools=dep.core_tools,
                     required=dep.required,
                     degrade_note=dep.degrade_note,
+                    fallback_capability=fallback_capability,
+                    fallback_servers=fallback_servers,
                 )
             )
         return plans

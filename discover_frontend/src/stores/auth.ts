@@ -6,6 +6,7 @@ import { mapHttpError } from '@/lib/errors'
 import { useAssistantsStore } from '@/stores/assistants'
 import { useChatStore } from '@/stores/chat'
 import { useConversationsStore } from '@/stores/conversations'
+import { useViewStore } from '@/stores/view'
 import type { AccountRecord } from '@/types'
 
 /**
@@ -28,6 +29,8 @@ export interface AuthState {
   resolveSession: () => Promise<void>
   /** 登录：成功写入令牌并进入 authenticated；失败返回可读文案 */
   login: (phone: string, password: string) => Promise<{ ok: boolean; message?: string }>
+  /** 资料更新（昵称 / 头像 / 密码）后同步账号展示（返回的 AccountRecord 全量替换） */
+  applyAccount: (account: AccountRecord) => void
   /** 主动退出登录：清令牌并重置各 store */
   logout: () => void
   /** 401 会话过期：清状态 + 提示重新登录（由 api 层拦截器触发） */
@@ -41,6 +44,10 @@ function resetAppState(): void {
   useConversationsStore.getState().setLoading(false)
   useAssistantsStore.getState().setCatalog([])
   useAssistantsStore.getState().resetForNewConversation()
+  // 视图回对话页并写回 localStorage，新登录不残留上一账号停留的页面 / 会话
+  useViewStore.getState().setView('chat')
+  useViewStore.getState().setCenterTab('profile')
+  useViewStore.getState().setSavedConversationId('')
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -91,6 +98,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error) {
       return { ok: false, message: mapHttpError(error).message }
     }
+  },
+
+  applyAccount: (account) => {
+    set({ account })
   },
 
   logout: () => {

@@ -1,6 +1,13 @@
-# MCP 服务注册表样例（复制为 config/mcp-servers.yaml 后使用）
-# 字段定义见 .claude/commands/mcp-integration-spec.md §3
+# MCP 服务注册表（字段定义见 .claude/commands/mcp-integration-spec.md §3）
 # 认证令牌只存环境变量名，值从环境读取；代码中不出现端点 URL 字面量。
+#
+# 能力级降级（agent-package-spec §4 / MCSCapability.fallback）：
+#   专有数据能力（enterprise_business / enterprise_risk / financial_data）的全部候选
+#   服务器不可用时，系统自动降级到 fallback 指向的能力（此处统一为 web_search，即腾讯
+#   联网搜索 yuanbao_search）。降级由本注册表 + 装配层/代理层执行，技能清单不写降级逻辑。
+#
+# 注意：tyc_mcp / qcc_mcp / tushare_mcp / mxds_mcp 为专有数据源占位条目——在拿到真实
+#   端点与令牌前保持占位（令牌环境变量未设置 → 装配时自动降级为 web_search，不影响激活）。
 
 servers:
   - id: alibaba_search
@@ -23,14 +30,77 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
+  # ---- 专有数据源（占位，待接入真实端点与令牌）----
+  - id: tyc_mcp
+    transport: streamable_http
+    base_url: "https://your-endpoint.example.com/tyc/mcp"
+    auth:
+      type: bearer_token
+      token_env: "TYC_MCP_TOKEN"
+    per_session: true
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3
+  - id: qcc_mcp
+    transport: streamable_http
+    base_url: "https://your-endpoint.example.com/qcc/mcp"
+    auth:
+      type: bearer_token
+      token_env: "QCC_MCP_TOKEN"
+    per_session: true
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3
+  - id: tushare_mcp
+    transport: streamable_http
+    base_url: "https://your-endpoint.example.com/tushare/mcp"
+    auth:
+      type: bearer_token
+      token_env: "TUSHARE_MCP_TOKEN"
+    per_session: true
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3
+  - id: mxds_mcp
+    transport: streamable_http
+    base_url: "https://your-endpoint.example.com/mxds/mcp"
+    auth:
+      type: bearer_token
+      token_env: "MXDS_MCP_TOKEN"
+    per_session: true
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3
 
 # 能力 = 技能与具体服务之间的抽象层（agent-package-spec §4）。
-# 技能只声明「需要 web_search 能力」，提供方由本注册表决定；
-# 加 / 删 / 换搜索提供方只改这里，不触碰智能体包内任何文件。
+# 技能只声明「需要某能力」，提供方由本注册表决定；加 / 删 / 换提供方只改这里，
+# 不触碰智能体包内任何文件。
 # strategy: failover = 主备切换，按 servers 顺序优先，第一个可用者生效，失败自动切换。
+# fallback = 系统级降级：本能力全部候选不可用时，降级到该能力（只允许一级降级）。
 capabilities:
   web_search:
     strategy: failover
     servers:
       # - alibaba_search
       - yuanbao_search
+  # 企业工商画像（天眼查 / 企查查）
+  enterprise_business:
+    strategy: failover
+    servers:
+      - tyc_mcp
+      - qcc_mcp
+    fallback: web_search
+  # 企业信用风险 / 司法 / 税务（企查查 / 天眼查）
+  enterprise_risk:
+    strategy: failover
+    servers:
+      - qcc_mcp
+      - tyc_mcp
+    fallback: web_search
+  # 上市财务数据（Tushare / 东方财富）
+  financial_data:
+    strategy: failover
+    servers:
+      - tushare_mcp
+      - mxds_mcp
+    fallback: web_search

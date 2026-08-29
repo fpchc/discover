@@ -387,6 +387,41 @@ async def test_assemble_capability_resolves_to_candidates(tmp_path: Path) -> Non
     assert cap.required is True
 
 
+async def test_assemble_capability_resolves_fallback(tmp_path: Path) -> None:
+    _write_agent(
+        tmp_path,
+        skill_md=_skill_md(
+            mcp_dependencies=[],
+            capability_dependencies=[
+                {"capability": "enterprise_business", "core_tools": [], "required": False}
+            ],
+        ),
+    )
+    settings = Settings(_env_file=None, agents_root_dir=tmp_path)
+    servers = [
+        MCPServer(id="tyc_mcp", transport="streamable_http", base_url="https://tyc.example.com"),
+        MCPServer(
+            id="yuanbao_search",
+            transport="streamable_http",
+            base_url="https://yuanbao.example.com",
+        ),
+    ]
+    caps = {
+        "web_search": MCSCapability(servers=["yuanbao_search"]),
+        "enterprise_business": MCSCapability(servers=["tyc_mcp"], fallback="web_search"),
+    }
+    registry = AgentRegistry(settings, MCPRegistry(servers=servers, capabilities=caps))
+    await registry.refresh()
+    plan = registry.assemble("finder", "research")
+    assert len(plan.capabilities) == 1
+    cap = plan.capabilities[0]
+    assert cap.capability == "enterprise_business"
+    assert cap.candidate_servers == ["tyc_mcp"]
+    assert cap.required is False
+    assert cap.fallback_capability == "web_search"
+    assert cap.fallback_servers == ["yuanbao_search"]
+
+
 async def test_capability_not_registered_marks_skill_invalid(tmp_path: Path) -> None:
     _write_agent(
         tmp_path,

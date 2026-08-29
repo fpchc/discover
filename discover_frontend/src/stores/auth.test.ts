@@ -91,6 +91,19 @@ describe('login', () => {
   })
 })
 
+describe('applyAccount（资料更新后同步账号）', () => {
+  it('全量替换 account 并保持登录态', () => {
+    useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })
+    const updated: AccountRecord = { ...account, name: '新昵称', avatar: '/files/abc/preview' }
+    useAuthStore.getState().applyAccount(updated)
+    const state = useAuthStore.getState()
+    expect(state.status).toBe('authenticated')
+    expect(state.token).toBe('jwt-x')
+    expect(state.account?.name).toBe('新昵称')
+    expect(state.account?.avatar).toBe('/files/abc/preview')
+  })
+})
+
 describe('logout / expire', () => {
   it('logout → 回到未登录并清除令牌', () => {
     useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })

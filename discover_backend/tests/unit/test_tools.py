@@ -537,6 +537,85 @@ async def test_activate_capability_optional_all_fail_degrades(tmp_path: Path) ->
     assert activation.reason is None
 
 
+async def test_activate_capability_fallback_substitutes_search(tmp_path: Path) -> None:
+    """主候选失败时降级到 fallback 能力候选服务器，且服务去重、降级说明由系统生成。"""
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    plan = AssemblyPlan(
+        agent_id="finder",
+        skill_id="research",
+        system_prompt="系统提示",
+        capabilities=[
+            CapabilityPlan(
+                capability="enterprise_business",
+                candidate_servers=["alibaba_search"],
+                required=False,
+                fallback_capability="web_search",
+                fallback_servers=["yuanbao_search"],
+            ),
+            CapabilityPlan(
+                capability="web_search",
+                candidate_servers=["yuanbao_search"],
+                required=True,
+            ),
+        ],
+        env_whitelist=[],
+    )
+    activation = await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    assert activation.started_services == ["yuanbao_search"]
+    assert "enterprise_business" in activation.degraded_services
+    # 服务只 acquire 一次（fallback 与 web_search 共享同一服务器时去重）
+    assert manager.acquired == ["yuanbao_search"]
+    # 降级说明由系统生成，包含降级目标能力
+    note = [
+        n
+        for s, n in zip(activation.degraded_services, activation.degrade_notes, strict=True)
+        if s == "enterprise_business"
+    ]
+    assert note and "web_search" in note[0]
+
+
+async def test_activate_capability_fallback_all_fail_optional_continues(tmp_path: Path) -> None:
+    """主候选与 fallback 全失败且能力非必需时，降级继续激活。"""
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search", "yuanbao_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    plan = AssemblyPlan(
+        agent_id="finder",
+        skill_id="research",
+        system_prompt="系统提示",
+        capabilities=[
+            CapabilityPlan(
+                capability="enterprise_business",
+                candidate_servers=["alibaba_search"],
+                required=False,
+                fallback_capability="web_search",
+                fallback_servers=["yuanbao_search"],
+            )
+        ],
+        env_whitelist=[],
+    )
+    activation = await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    assert activation.failed_required == []
+    assert activation.started_services == []
+    assert set(activation.degraded_services) == {"alibaba_search", "yuanbao_search"}
+
+
 async def test_execute_mcp_and_script_and_order(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     manager = _FakeMCPManager(_MCP_TOOLS)

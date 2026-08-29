@@ -10,15 +10,20 @@ import { API_BASE_URL, REQUEST_TIMEOUT_MS } from '@/env'
 import { readStoredToken } from '@/lib/auth'
 import type {
   AccountRecord,
+  AccountUsage,
   AssistantRecord,
+  AvatarConfig,
   BlockingChatResponse,
+  ChangePasswordRequest,
   ChatRequest,
   ConversationRecord,
   LoginRequest,
   LoginResponse,
   MessageRecord,
+  UpdateAccountRequest,
   UploadConfig,
   UploadedFile,
+  UsageDaily,
 } from '@/types'
 
 export const httpClient = axios.create({
@@ -76,6 +81,57 @@ export async function login(params: LoginRequest): Promise<LoginResponse> {
 export async function fetchMe(): Promise<AccountRecord> {
   const { data } = await httpClient.get<AccountRecord>('/users/me')
   return data
+}
+
+/** 当前账号 token 用量（GET /users/me/usage；需认证） */
+export async function fetchAccountUsage(): Promise<AccountUsage> {
+  const { data } = await httpClient.get<AccountUsage>('/users/me/usage')
+  return data
+}
+
+/** 当前账号近 N 日用量序列（GET /users/me/usage/daily?days=；趋势图数据源） */
+export async function fetchUsageDaily(days = 30): Promise<UsageDaily> {
+  const { data } = await httpClient.get<UsageDaily>('/users/me/usage/daily', {
+    params: { days },
+  })
+  return data
+}
+
+/** 头像上传限制（GET /users/me/avatar-config；供前端本地校验输入） */
+export async function fetchAvatarConfig(): Promise<AvatarConfig> {
+  const { data } = await httpClient.get<AvatarConfig>('/users/me/avatar-config')
+  return data
+}
+
+/** 更新当前账号资料（PATCH /users/me；当前仅昵称） */
+export async function updateAccountName(name: string): Promise<AccountRecord> {
+  const body: UpdateAccountRequest = { name }
+  const { data } = await httpClient.patch<AccountRecord>('/users/me', body)
+  return data
+}
+
+/** 更换头像（POST /users/me/avatar，multipart 字段 file；返回更新后账号） */
+export async function uploadAvatar(file: File): Promise<AccountRecord> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await httpClient.post<AccountRecord>('/users/me/avatar', form)
+  return data
+}
+
+/** 修改密码（POST /users/me/password；必须携带原密码） */
+export async function changePassword(req: ChangePasswordRequest): Promise<AccountRecord> {
+  const { data } = await httpClient.post<AccountRecord>('/users/me/password', req)
+  return data
+}
+
+/**
+ * 头像展示 URL：账号 avatar 存相对路径（/files/{id}/preview），拼上 API base；
+ * 绝对地址（http(s)）直接透传（预留外部头像源）。
+ */
+export function avatarUrl(avatar: string | null): string | null {
+  if (avatar === null || avatar === '') return null
+  if (/^https?:\/\//i.test(avatar)) return avatar
+  return `${API_BASE_URL}${avatar}`
 }
 
 // ===================== 对话（API.md §4） =====================

@@ -46,6 +46,12 @@ export const CONVERSATION_TITLE_MAX: number = parsePositiveInt(
   20,
 )
 
+/** 修改密码新密码最短长度（对齐后端 account_password_min_length；前端预校验用） */
+export const PASSWORD_MIN_LENGTH: number = parsePositiveInt(
+  import.meta.env.VITE_PASSWORD_MIN_LENGTH,
+  8,
+)
+
 /** 功能开关 */
 export const FEATURE_THINKING: boolean = parseBool(import.meta.env.VITE_FEATURE_THINKING, true)
 export const FEATURE_TOOL_CALLS: boolean = parseBool(import.meta.env.VITE_FEATURE_TOOL_CALLS, true)

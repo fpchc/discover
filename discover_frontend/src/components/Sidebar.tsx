@@ -35,6 +35,8 @@ interface SidebarProps {
   accountName: string | null
   /** 当前登录账号手机号（hover 提示用） */
   accountPhone: string | null
+  /** 当前登录账号头像完整 URL（无头像为 null；未加载为 null） */
+  accountAvatar: string | null
   isDark: boolean
   onNew: () => void
   onSelect: (id: string) => void
@@ -43,6 +45,8 @@ interface SidebarProps {
   onCollapse: () => void
   /** 点选专家助手 → 新建绑定该助手的工作会话 */
   onSelectAssistant: (id: string) => void
+  /** 点击账号区 → 打开个人资料弹窗 */
+  onOpenUserCenter: () => void
   onToggleTheme: () => void
   /** 退出登录（清令牌并回到登录页） */
   onLogout: () => void
@@ -67,12 +71,14 @@ export function Sidebar({
   selectedAssistantId,
   accountName,
   accountPhone,
+  accountAvatar,
   isDark,
   onNew,
   onSelect,
   onDelete,
   onCollapse,
   onSelectAssistant,
+  onOpenUserCenter,
   onToggleTheme,
   onLogout,
 }: SidebarProps) {
@@ -199,20 +205,35 @@ export function Sidebar({
       </div>
 
       <footer className="border-t border-border px-3 pb-3 pt-2.5">
-        {/* 账号行：头像 + 显示名 + 环境徽标（仅 dev）+ 主题 / 退出（统一图标钮） */}
+        {/* 账号行：头像 + 显示名（点击打开个人资料弹窗）+ 环境徽标（仅 dev）+ 主题 / 退出（统一图标钮） */}
         <div className="flex items-center gap-2">
-          <span
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[12px] font-semibold text-white"
-            title={accountPhone ?? accountName ?? ''}
+          <button
+            type="button"
+            onClick={onOpenUserCenter}
+            title="用户中心"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-surface-hover"
           >
-            {accountInitial}
-          </span>
-          <span
-            title={accountName ?? '未登录'}
-            className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-1"
-          >
-            {accountName ?? '未登录'}
-          </span>
+            {accountAvatar !== null ? (
+              <img
+                src={accountAvatar}
+                alt="头像"
+                className="h-8 w-8 flex-shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <span
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[12px] font-semibold text-white"
+                title={accountPhone ?? accountName ?? ''}
+              >
+                {accountInitial}
+              </span>
+            )}
+            <span
+              title={accountName ?? '未登录'}
+              className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-1"
+            >
+              {accountName ?? '未登录'}
+            </span>
+          </button>
           {APP_ENV !== 'production' && (
             <span
               className="max-w-[56px] flex-shrink-0 truncate rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-3"

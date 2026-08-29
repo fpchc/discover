@@ -1,0 +1,76 @@
+{
+  // ===== 仓库根目录聚合 launch 配置 =====
+  // 把 discover_backend / discover_frontend 两个子工程的 .vscode/launch.json
+  // 聚合到根目录，打开本仓库即可选择全部调试命令；路径均以 ${workspaceFolder}/子目录 定位。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🚀 FastAPI: 启动服务 (无 reload)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--log-level",
+        "debug"
+      ],
+      "jinja": true,
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}/discover_backend",
+      "python": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/discover_backend",
+        "LOG_LEVEL": "DEBUG"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      // 启动 Vite dev server（preLaunchTask）后打开 Chrome 调试
+      "type": "chrome",
+      "request": "launch",
+      "name": "Debug in Chrome (Vite)",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/discover_frontend",
+      "preLaunchTask": "dev: Vite dev server"
+    },
+    {
+      // 同 Chrome，浏览器换成 Edge
+      "type": "msedge",
+      "request": "launch",
+      "name": "Debug in Edge (Vite)",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/discover_frontend",
+      "preLaunchTask": "dev: Vite dev server"
+    },
+    {
+      // 直接以 node 方式跑 Vitest，可在测试内打断点
+      "type": "node",
+      "request": "launch",
+      "name": "Vitest (run)",
+      "program": "${workspaceFolder}/discover_frontend/node_modules/vitest/vitest.mjs",
+      "args": ["run"],
+      "cwd": "${workspaceFolder}/discover_frontend",
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "🧩 前后端 Dev 一起启动（FastAPI + Vite + Chrome）",
+      "configurations": [
+        "🚀 FastAPI: 启动服务 (无 reload)",
+        "Debug in Chrome (Vite)"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "group": "1 组合启动",
+        "order": 1
+      }
+    }
+  ]
+}

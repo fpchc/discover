@@ -104,6 +104,96 @@ async def test_load_mcp_capability_references_missing_server(tmp_path: Path) -> 
         await load_mcp_servers(path)
 
 
+FALLBACK_MCP_YAML = """\
+servers:
+  - id: alibaba_search
+    transport: streamable_http
+    base_url: "https://mcp.example.com"
+    auth:
+      type: bearer_token
+      token_env: "ALIBABA_SEARCH_TOKEN"
+    per_session: false
+    concurrency_limit: 3
+  - id: yuanbao_search
+    transport: streamable_http
+    base_url: "https://mcp-yuanbao.example.com"
+    auth:
+      type: bearer_token
+      token_env: "YUANBAO_SEARCH_TOKEN"
+    per_session: false
+    concurrency_limit: 3
+  - id: tyc_mcp
+    transport: streamable_http
+    base_url: "https://tyc.example.com"
+    auth:
+      type: bearer_token
+      token_env: "TYC_MCP_TOKEN"
+    per_session: true
+    concurrency_limit: 3
+capabilities:
+  web_search:
+    strategy: failover
+    servers:
+      - alibaba_search
+      - yuanbao_search
+  enterprise_business:
+    strategy: failover
+    servers:
+      - tyc_mcp
+    fallback: web_search
+"""
+
+
+async def test_load_mcp_capability_fallback_parsed(tmp_path: Path) -> None:
+    path = tmp_path / "mcp-servers.yaml"
+    path.write_text(FALLBACK_MCP_YAML, encoding="utf-8")
+    registry = await load_mcp_servers(path)
+    cap = registry.capabilities["enterprise_business"]
+    assert cap.fallback == "web_search"
+    assert cap.servers == ["tyc_mcp"]
+
+
+async def test_load_mcp_capability_fallback_missing_target(tmp_path: Path) -> None:
+    path = tmp_path / "mcp-servers.yaml"
+    path.write_text(
+        FALLBACK_MCP_YAML.replace("fallback: web_search", "fallback: ghost_cap"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="ghost_cap"):
+        await load_mcp_servers(path)
+
+
+async def test_load_mcp_capability_fallback_self_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "mcp-servers.yaml"
+    path.write_text(
+        FALLBACK_MCP_YAML.replace("    fallback: web_search", "    fallback: enterprise_business"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="不能指向自身"):
+        await load_mcp_servers(path)
+
+
+async def test_load_mcp_capability_fallback_two_levels_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "mcp-servers.yaml"
+    # web_search 也声明 fallback → 二级降级/环 → 拒绝
+    modified = FALLBACK_MCP_YAML.replace(
+        "  web_search:\n"
+        "    strategy: failover\n"
+        "    servers:\n"
+        "      - alibaba_search\n"
+        "      - yuanbao_search\n",
+        "  web_search:\n"
+        "    strategy: failover\n"
+        "    servers:\n"
+        "      - alibaba_search\n"
+        "      - yuanbao_search\n"
+        "    fallback: enterprise_business\n",
+    )
+    path.write_text(modified, encoding="utf-8")
+    with pytest.raises(ConfigError, match="不能再声明降级"):
+        await load_mcp_servers(path)
+
+
 async def test_load_missing_file_raises_config_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         await load_llm_providers(tmp_path / "nope.yaml")

@@ -13,8 +13,13 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import Row, distinct, func, select
 
 from app.catalog.assistant_catalog import AssistantCatalog
 from app.catalog.models import AssistantTarget, TargetType
@@ -23,10 +28,12 @@ from app.db.base import local_now
 from app.db.engine import Database
 from app.db.models import Conversation, Message
 from app.errors.base import NotFoundError
+from app.llm.models import ChatMessage
 from app.schemas.conversations import (
     ConversationRecord,
     ConversationSession,
     ConversationStatus,
+    DailyUsageItem,
     MessageRecord,
     MessageStatus,
     TurnRecord,
@@ -34,6 +41,90 @@ from app.schemas.conversations import (
 )
 
 logger = logging.getLogger(__name__)
+
+# 用量统计按 GMT+8 自然日归组：created_at 由 local_now() 记录为 GMT+8 墙钟时间，
+# 其日历日即自然日（趋势图日期轴按北京时区理解）。
+_USAGE_TZ = ZoneInfo("Asia/Shanghai")
+
+
+@dataclass
+class _DailyAccumulator:  # pragma: 简化 — 内部可变聚合累计器，跨边界 DTO 仍用 pydantic
+    """单日用量累计器（纯内部聚合态；跨边界 DTO 仍用 pydantic DailyUsageItem）。"""
+
+    conversation_ids: set[str] = field(default_factory=set)
+    message_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cached_read_tokens: int = 0
+    cached_write_tokens: int = 0
+
+    def add(
+        self,
+        conversation_id: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cached_read_tokens: int,
+        cached_write_tokens: int,
+    ) -> None:
+        self.conversation_ids.add(conversation_id)
+        self.message_count += 1
+        self.prompt_tokens += prompt_tokens
+        self.completion_tokens += completion_tokens
+        self.total_tokens += total_tokens
+        self.cached_read_tokens += cached_read_tokens
+        self.cached_write_tokens += cached_write_tokens
+
+
+def _daily_usage_window(days: int) -> tuple[date, datetime, datetime]:
+    """近 days 天的墙钟窗口 [start 日 00:00, 今天+1 日 00:00)（GMT+8）。
+
+    下限含、上限排他；以墙钟边界过滤，与库内 created_at 的墙钟语义对齐。
+    """
+    today = datetime.now(_USAGE_TZ).date()
+    start = today - timedelta(days=days - 1)
+    lower = datetime.combine(start, time.min)
+    upper = datetime.combine(today + timedelta(days=1), time.min)
+    return start, lower, upper
+
+
+def _accumulate_daily(rows: Sequence[Row[Any]]) -> dict[date, _DailyAccumulator]:
+    """窗口内消息按 GMT+8 自然日归组求和（会话数去重）。
+
+    created_at 以墙钟日历日归组：库内即 GMT+8 墙钟（local_now()），
+    不因存储 tz 标注做偏移转换。
+    """
+    accs: dict[date, _DailyAccumulator] = {}
+    for row in rows:
+        acc = accs.setdefault(row[6].date(), _DailyAccumulator())
+        acc.add(row[0], row[1], row[2], row[3], row[4], row[5])
+    return accs
+
+
+def _fill_daily_items(
+    accs: dict[date, _DailyAccumulator],
+    start: date,
+    days: int,
+) -> list[DailyUsageItem]:
+    """从 start 起逐日零填充为升序序列（无数据日为 0）。"""
+    items: list[DailyUsageItem] = []
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        acc = accs.get(day)
+        items.append(
+            DailyUsageItem(
+                date=day,
+                conversation_count=len(acc.conversation_ids) if acc else 0,
+                message_count=acc.message_count if acc else 0,
+                prompt_tokens=acc.prompt_tokens if acc else 0,
+                completion_tokens=acc.completion_tokens if acc else 0,
+                total_tokens=acc.total_tokens if acc else 0,
+                cached_read_tokens=acc.cached_read_tokens if acc else 0,
+                cached_write_tokens=acc.cached_write_tokens if acc else 0,
+            )
+        )
+    return items
 
 
 def _conversation_to_record(row: Conversation) -> ConversationRecord:
@@ -78,23 +169,17 @@ def _target_from_row(row: Conversation) -> AssistantTarget | None:
 
 
 def _message_to_record(row: Message) -> MessageRecord:
+    """ORM Message → 读取 DTO：只映射业务可见字段，不下发 token 用量与模型信息。"""
     return MessageRecord(
         message_id=row.message_id,
         conversation_id=row.conversation_id,
         agent_id=row.agent_id,
-        provider=row.provider,
-        model=row.model,
         query=row.query,
         answer=row.answer,
         thinking=row.thinking,
         status=MessageStatus(row.status),
         error=row.error,
         latency_ms=row.latency_ms,
-        prompt_tokens=row.prompt_tokens,
-        completion_tokens=row.completion_tokens,
-        total_tokens=row.total_tokens,
-        cached_read_tokens=row.cached_read_tokens,
-        cached_write_tokens=row.cached_write_tokens,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -279,6 +364,36 @@ class ConversationService:
             ).all()
         return [_message_to_record(row) for row in rows]
 
+    async def get_history_messages(
+        self, account_id: str, conversation_id: str, *, limit: int
+    ) -> list[ChatMessage]:
+        """加载会话历史为模型上下文消息（会话记忆 L1）。
+
+        与 get_messages 同源：先校验会话归属（跨账号/不存在 → 404），再按
+        created_at 升序取**最近** limit 条（desc 取数后反转），还原为
+        user(query)/assistant(answer) 消息对；thinking 为审计内容不进模型上下文
+        （db/models.py 约定），错误回合 answer 为空则不产出 assistant 消息。
+        """
+        async with self._db.session_factory() as session:
+            convo = await session.get(Conversation, conversation_id)
+            if convo is None or convo.from_account_id != account_id:
+                raise NotFoundError(f"未知会话：{conversation_id}")
+            rows = (
+                await session.scalars(
+                    select(Message)
+                    .where(Message.conversation_id == conversation_id)
+                    .order_by(Message.created_at.desc())
+                    .limit(limit)
+                )
+            ).all()
+        messages: list[ChatMessage] = []
+        for row in reversed(rows):
+            if row.query:
+                messages.append(ChatMessage(role="user", content=row.query))
+            if row.answer:
+                messages.append(ChatMessage(role="assistant", content=row.answer))
+        return messages
+
     async def soft_delete_conversation(self, account_id: str, conversation_id: str) -> bool:
         """软删除会话：标记 is_delete=true（行与 messages 保留，token 可审计）。
 
@@ -295,6 +410,31 @@ class ConversationService:
         return True
 
     # ---- 账号 token 用量聚合（按 messages.created_by） ----
+    async def aggregate_daily_usage(self, account_id: str, *, days: int) -> list[DailyUsageItem]:
+        """近 days 天逐日用量（口径同 aggregate_user_usage；按 GMT+8 自然日分组）。
+
+        返回 [今天 - days + 1, 今天] 每天一条、零填充、升序；窗口外消息不计。
+        """
+        start, lower, upper = _daily_usage_window(days)
+        async with self._db.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        Message.conversation_id,
+                        Message.prompt_tokens,
+                        Message.completion_tokens,
+                        Message.total_tokens,
+                        Message.cached_read_tokens,
+                        Message.cached_write_tokens,
+                        Message.created_at,
+                    )
+                    .where(Message.created_by == account_id)
+                    .where(Message.created_at >= lower)
+                    .where(Message.created_at < upper)
+                )
+            ).all()
+        return _fill_daily_items(_accumulate_daily(rows), start, days)
+
     async def aggregate_user_usage(self, account_id: str) -> UsageAggregate:
         """单账号用量：会话数（去重）+ 回合数 + token 合计（含缓存命中/写入）。"""
         async with self._db.session_factory() as session:

@@ -73,7 +73,7 @@ class AppServices:
         await self.registry.refresh()
         self.catalog = AssistantCatalog(self.registry)
         self.conversation_service = ConversationService(self.db, self.settings, self.catalog)
-        self.auth = AuthService(self.settings, self.db, self.conversation_service)
+        self.auth = AuthService(self.settings, self.db, self.conversation_service, self.files)
         reloader = HotReloader(self.registry, self.settings)
         scope = anyio.CancelScope()
         self._reloader_scope = scope
@@ -129,6 +129,7 @@ class AppServices:
                 mcp_manager=self.mcp_manager,
                 script_executor=self.script_executor,
                 db=self.db,
+                history=self.conversation_service,  # 会话记忆 L1：首轮历史上下文恢复
             )
             self.runtimes[session_id] = runtime
         return runtime

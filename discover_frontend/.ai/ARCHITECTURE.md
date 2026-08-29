@@ -11,7 +11,7 @@ discover_frontend/
 ├── vite.config.ts             Vite 装配：envDir ./env、server.proxy（读 VITE_PROXY_TARGET）、build.outDir=dist
 ├── src/
 │   ├── main.tsx               应用入口（createRoot + Root 根层 Toaster + 全局错误边界 + 样式）
-│   ├── App.tsx                应用壳层 + 页面编排（侧栏 / 主区 / 输入区串联 + Cmd+K + 主题切换）
+│   ├── App.tsx                应用壳层 + 页面编排（侧栏 / 主区 / 输入区串联 + Cmd+K + 主题切换；主区 view 状态切对话 / 用户中心两视图，用户中心内部以左导航切个人中心 / 用量；view 来自 stores/view.ts 持久化）
 │   ├── index.css              Tailwind + 双主题设计令牌 + 自定义工具类 + Markdown 全局样式
 │   ├── types.ts               后端契约类型（pydantic 映射，禁止组件内散落）
 │   ├── env.ts                 环境配置唯一入口（类型化 VITE_*，禁止直读 import.meta.env）
@@ -34,17 +34,21 @@ discover_frontend/
 │   │   ├── chat.ts            当前会话：activeMessages（独立切片）/ conversationId / isStreaming / loadingHistory
 │   │   ├── conversations.ts   会话列表（后端 GET /conversations 为唯一事实源）
 │   │   ├── assistants.ts      助手目录 + 当前选择（agent_id）
-│   │   ├── auth.ts            账号认证（status/account；resolveSession / login / logout / expire；登出重置三 store）
-│   │   └── theme.ts           主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享）
+│   │   ├── auth.ts            账号认证（status/account；resolveSession / login / logout / expire；登出重置 chat / conversations / assistants / view 四 store）
+│   │   ├── theme.ts           主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享）
+│   │   └── view.ts            视图状态（主区对话 / 用户中心 + 用户中心菜单 + 当前会话 ID；localStorage `disf_view` / `disf_center_tab` / `disf_conversation_id` 持久化，刷新停留当前页面并恢复打开的对话）
 │   ├── components/
-│   │   ├── ui/                shadcn 拷入组件（button / dropdown-menu / input / skeleton / sonner）
+│   │   ├── ui/                shadcn 拷入组件（button / dropdown-menu / input / skeleton / sonner）+ chart.tsx（echarts 轻封装）
 │   │   ├── AuthGate.tsx       认证闸门（loading → 登录页 → 主界面；main.tsx 包裹层）
 │   │   ├── LoginScreen.tsx    登录页（手机号 + 密码 → POST /auth/login）
 │   │   ├── Sidebar.tsx        品牌左栏（品牌 / 新对话 Ctrl+K / 助手 / 最近对话 / 底部账号区 + 退出 / 底部主题；桌面折叠 → 64px 图标轨道）
+│   │   ├── PageHeader.tsx     用户中心内容顶栏（返回钮 + 居中标题，h-14 对齐 ChatWindow）
+│   │   ├── UserCenter.tsx     用户中心（模仿 DeepSeek 开放平台布局：左菜单列 个人中心 / 用量 + 右侧内容区；菜单切换懒加载 Profile / Usage）
+│   │   ├── ProfilePage.tsx    个人中心内容区（非独立页面；头像只读 + 更换头像面板 + 修改密码点击展开）
+│   │   ├── UsagePage.tsx      用量内容区（非独立页面；模仿用量看板：聚合卡片 + ECharts 按日趋势图）
 │   │   ├── ChatWindow.tsx     消息窗（顶栏 + turn 分组消息流 + 回合细线分隔 + 历史加载态）
 │   │   ├── EmptyState.tsx     空态（时段问候 + 探索方向助手卡片）
-│   │   ├── ChatInput.tsx      悬浮输入区 composer（Enter 发送 / 停止 / 长度校验 / 文件上传 / 助手胶囊 / 免责声明）
-│   │   ├── AssistantMenu.tsx  输入卡内助手选择器（shadcn 下拉）
+│   │   ├── ChatInput.tsx      悬浮输入区 composer（平铺助手胶囊 + Enter 发送 / 停止 / 长度校验 / 文件上传 / 免责声明）
 │   │   ├── MessageBubble.tsx  消息气泡（React.memo + 节流/deferred 降载；思考分区 / 结构化参数卡片 / 状态徽章 / 复制 / 重新生成 / 重试）
 │   │   ├── ThinkingPanel.tsx  思考分区（进行中粒子流 + shimmer / 可折叠 / 结束显示耗时）
 │   │   ├── StructuredParams.tsx 结构化参数展示（【键】值 → KV 卡片网格 / 胶囊流）
@@ -68,10 +72,12 @@ discover_frontend/
 | 流式编排 | `useChatStream` hook 驱动 store | store 只做状态与变更，HTTP/SSE/取消/超时/retry 全在编排层；turn token 作废旧流防幽灵增量；**组件卸载 useEffect cleanup 调 abort()** |
 | 流式渲染降载 | `MessageBubble` React.memo + `useThrottledValue`（40ms 尾沿节流）+ `useDeferredValue` | 历史消息绝不随流式重渲；Markdown 高亮仅在收尾后执行（performance.md §2） |
 | Markdown | react-markdown + remark-gfm + highlight.js 按需注册 7 语言 + DOMPurify | 默认不渲染原始 HTML（安全收敛）；代码块深色外壳 + 语言标签头 + 复制钮 |
+| 图表 | **echarts**（按需装配 bar/line + grid/tooltip/legend + canvas，`ui/chart.tsx` 轻封装） | 用量页「尽量用图展示」新增（用户明确指示，CLAUDE.md §1 硬约束逃逸）；配色经 dataviz 校验明暗均通过 |
 | 错误映射 | `lib/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
-| 账号认证 | JWT（`POST /auth/login`）+ axios Bearer 拦截器 + `AuthGate` 闸门 + 侧栏账号区/退出 + 全局 401 过期 | 后端 `ACCOUNT_API.md` 引入账号体系（手机号+密码登录，数据按账号隔离）；令牌存 localStorage `disf_auth_token`，启动 `resolveSession` 用 `GET /users/me` 校验；登出/过期重置 chat / conversations / assistants 三 store 防跨账号数据泄漏 |
+| 账号认证 | JWT（`POST /auth/login`）+ axios Bearer 拦截器 + `AuthGate` 闸门 + 侧栏账号区/退出 + 全局 401 过期 | 后端 `ACCOUNT_API.md` 引入账号体系（手机号+密码登录，数据按账号隔离）；令牌存 localStorage `disf_auth_token`，启动 `resolveSession` 用 `GET /users/me` 校验；登出/过期重置 chat / conversations / assistants / view 四 store 防跨账号数据泄漏 |
+| 视图持久化 | Zustand `stores/view.ts` + localStorage `disf_view` / `disf_center_tab` / `disf_conversation_id` | 仅 UI 导航状态（对话 / 用户中心 + 个人中心 / 用量 + 当前会话指针），刷新停留当前页面并恢复打开的对话（App 挂载加载列表后重开）；不存会话正文数据（后端为事实源）；登出 / 过期经 `resetAppState` 复位回对话页 |
 | Toast 挂载 | Toaster 常驻根层（`main.tsx` Root，在 `AuthGate` 之上） | 登录页与主界面互斥挂载，toast 若挂在任一侧，登录成功切屏即随卸载消失；根层保证登录错误 / 成功提示跨屏可见。主题经 `stores/theme.ts` 全局共享，根层 Toaster 与任一屏的主题切换实时同步 |
-| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 用户显式选专家 / 通用对话，选择随下一次发送生效（API.md §3）；入口统一在输入卡内 `AssistantMenu`（通用 + 专家下拉），侧栏「技能与助手」为新建绑定专家会话的快捷入口 |
+| 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 用户显式选专家，选择随下一次发送生效（API.md §3）；入口统一为输入卡上方平铺专家助手胶囊（未选中即默认，目录内 generic 项过滤，无「通用对话」下拉项），侧栏「技能与助手」为新建绑定专家会话的快捷入口 |
 | 历史数据源 | 后端历史接口（`GET /conversations`、`/conversations/{id}/messages`，见 `.claude/feature/API.md`） | 会话列表 / 消息以后端为唯一事实源，前端不持久化；新会话乐观入列，回合结束后 `reconcileList` 校准 |
 | 文件上传 | `useFileUpload` hook + ChatInput 附件（`GET|POST /files/upload`、`GET /files/{id}/preview`） | 上传前本地校验扩展名 / 大小；图片内联缩略、其余新窗口 / `a[download]` |
 | 环境 | VITE_* 收容 `env/`，vite `envDir` 原生注入 `import.meta.env`（`src/env.ts` 收窄） | 与 Nuxt 不同无需 `--dotnet`；配置驱动、无硬编码、无密钥模板提交 |
@@ -123,9 +129,9 @@ discover_frontend/
 历史消息加载（`GET /conversations/{id}/messages` 映射渲染）、
 文件上传（本地校验 → 上传 → 预览 / 下载 / 删除）、<768px 响应式抽屉。
 
-**显式助手选择**：`GET /assistants` 目录为选择来源，用户显式选专家 / 通用对话，每次发消息带 `agent_id`
+**显式助手选择**：`GET /assistants` 目录为选择来源，用户显式选专家，每次发消息带 `agent_id`
 （首轮绑定 / 续聊切换），回合结束按 `metadata.assistant` 回显选择器；打开历史会话按 `ConversationRecord.agent_id` 对齐选择器。
-首选入口统一为输入卡内 `AssistantMenu`（下拉），侧栏「技能与助手」点选专家 = 新建绑定该助手的工作会话。
+首选入口统一为输入卡上方平铺专家助手胶囊（未选中任何专家即默认，目录内 `generic` 项过滤），侧栏「技能与助手」点选专家 = 新建绑定该助手的工作会话。
 
 **性能红线落地（React 重构）**：`MessageBubble` `React.memo`（App 事件回调 `useCallback` 稳定引用，保证 memo 生效）；
 流式正文 `useThrottledValue`（40ms）+ `useDeferredValue` 双重降载 + 收尾才高亮；

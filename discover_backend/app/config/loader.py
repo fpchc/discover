@@ -64,10 +64,16 @@ class MCSCapability(BaseModel):
 
     strategy: "failover" 主备切换——按 servers 顺序优先，第一个可用者生效，
     失败自动切换下一个；全失败时按依赖的 required 决定拒绝激活或降级。
+
+    fallback: 能力级降级（系统机制，非提示词）。本能力全部候选服务器不可用时，
+    装配层解析 fallback 指向的能力的候选服务器继续尝试；命中则视为「已降级为
+    fallback 能力」继续激活，降级说明由系统生成。只允许一级降级（fallback 能力
+    自身不得再声明 fallback），防环。
     """
 
     servers: list[str] = Field(min_length=1)
     strategy: Literal["failover"] = "failover"
+    fallback: str | None = None
 
 
 class MCPRegistry(BaseModel):
@@ -83,6 +89,15 @@ class MCPRegistry(BaseModel):
             missing = [sid for sid in capability.servers if sid not in known]
             if missing:
                 raise ValueError(f"能力 {name} 引用了未注册的服务器：{', '.join(missing)}")
+            if capability.fallback is not None:
+                if capability.fallback == name:
+                    raise ValueError(f"能力 {name} 的降级目标不能指向自身")
+                if capability.fallback not in self.capabilities:
+                    raise ValueError(f"能力 {name} 的降级目标未注册：{capability.fallback}")
+                if self.capabilities[capability.fallback].fallback is not None:
+                    raise ValueError(
+                        f"能力 {name} 降级目标 {capability.fallback} 不能再声明降级（仅一级）"
+                    )
         return self
 
 

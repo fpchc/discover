@@ -21,7 +21,7 @@ import type { ChatMessage } from '@/types'
  * - 结构化参数（视觉重构）：用户输入 / AI 回复中的「【键】值」自动解析为
  *   KV 卡片网格 / 胶囊（StructuredParams），不再露出一串 【】 字符。
  * - 状态徽章：流式阶段（深度思考 / 生成中）与完成态以 StatusBadge 呈现。
- * - 收尾后悬停浮现「复制 / 重新生成 / 已生成」操作（仅最后一条已完成消息可重新生成）。
+ * - 收尾后常驻「已生成」徽章 + 复制 / 重新生成操作（仅最后一条已完成消息可重新生成，无需悬停）。
  */
 interface MessageBubbleProps {
   message: ChatMessage
@@ -96,7 +96,7 @@ function MessageBubbleInner({ message, onRetry, canRegenerate = false }: Message
 
   return (
     <motion.div
-      className="group flex gap-3.5"
+      className="flex gap-3.5"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
@@ -106,7 +106,11 @@ function MessageBubbleInner({ message, onRetry, canRegenerate = false }: Message
       </div>
 
       <div className="relative min-w-0 flex-1 pt-0.5">
-        {hasThinking && <ThinkingPanel message={message} />}
+        {hasThinking && (
+          <div className="mb-2.5">
+            <ThinkingPanel message={message} />
+          </div>
+        )}
 
         {assistantStructured && (
           <div className="mb-2.5">
@@ -126,14 +130,10 @@ function MessageBubbleInner({ message, onRetry, canRegenerate = false }: Message
           </div>
         )}
 
-        {/* 生成中状态徽章（替代纯文字状态行） */}
-        {streaming && !streamingEmpty && (
+        {/* 生成中状态徽章（深度思考阶段由思考分区头部承载，避免重复出现「深度思考」） */}
+        {streaming && !streamingEmpty && !thinkingActive && (
           <div role="status" className="mt-2.5 flex items-center gap-1.5">
-            <StatusBadge
-              tone={thinkingActive ? 'thinking' : 'generating'}
-              label={thinkingActive ? '深度思考' : '生成中'}
-              pulse
-            />
+            <StatusBadge tone="generating" label="生成中" pulse />
           </div>
         )}
 
@@ -151,10 +151,10 @@ function MessageBubbleInner({ message, onRetry, canRegenerate = false }: Message
           </div>
         )}
 
-        {/* 收尾后悬停操作：状态徽章 + 复制 / 重新生成 */}
+        {/* 收尾常驻操作：已生成徽章 + 复制 / 重新生成（置于正文下方，无需悬停即显示） */}
         {message.status === 'done' && (
-          <div className="absolute -top-2 right-0 flex items-center gap-0.5 rounded-lg border border-border bg-surface-1 p-0.5 opacity-0 shadow-card transition-opacity duration-150 group-hover:opacity-100">
-            <span className="ml-1 mr-0.5">
+          <div className="mt-2 flex items-center justify-end gap-0.5">
+            <span className="mr-0.5">
               <StatusBadge tone="done" label="已生成" />
             </span>
             <button

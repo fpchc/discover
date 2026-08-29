@@ -13,3 +13,20 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
+
+# 能力 = 技能与具体服务之间的抽象层（agent-package-spec §4）。
+# strategy: failover = 主备切换，按 servers 顺序优先，第一个可用者生效。
+# fallback = 系统级降级（不写进技能清单/提示词）：本能力全部候选服务器不可用时，
+# 降级到 fallback 指向的能力继续尝试；命中视为「已降级为 fallback 能力」。只允许一级降级。
+capabilities:
+  web_search:
+    strategy: failover
+    servers:
+      - alibaba_search
+      - yuanbao_search
+  enterprise_business:
+    strategy: failover
+    servers:
+      - tyc_mcp
+      - qcc_mcp
+    fallback: web_search

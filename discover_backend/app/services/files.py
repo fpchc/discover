@@ -56,6 +56,22 @@ def _parse_allowed_extensions(raw: str) -> list[str]:
     return [part.strip().lower().lstrip(".") for part in raw.split(",") if part.strip()]
 
 
+def _sniff_image_format(data: bytes, extension: str) -> bool:
+    """校验字节流 magic 与声明的图片扩展名一致（防改名伪装非图片文件）。
+
+    仅依赖文件头字节，无第三方图片库依赖；长度不足时按 False 处理。
+    """
+    if extension == "png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension in {"jpg", "jpeg"}:
+        return data.startswith(b"\xff\xd8\xff")
+    if extension == "gif":
+        return data.startswith((b"GIF87a", b"GIF89a"))
+    if extension == "webp":
+        return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    return False
+
+
 def _stat_source(path: Path) -> int:
     """产物须为普通文件，返回字节数。"""
     if path.is_symlink() or not path.is_file():
@@ -106,6 +122,9 @@ class FileService:
         self._allowed_extensions = _parse_allowed_extensions(
             settings.storage_upload_allowed_extensions
         )
+        # 头像约束（显示目标小，严于通用上传）：体积上限 + 仅图片扩展名
+        self._avatar_max_bytes = settings.avatar_max_size_bytes
+        self._avatar_extensions = _parse_allowed_extensions(settings.avatar_allowed_extensions)
         self._storage_type = settings.storage_backend
         self._db = db
         self._storage = storage
@@ -163,6 +182,41 @@ class FileService:
             mimetype=mimetype,
             created_by=created_by,
             created_by_role=created_by_role,
+        )
+        return _to_file_response(row)
+
+    # ---- 头像上传（账号资料专用，约束严于通用上传） ----
+    async def upload_avatar(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        mimetype: str,
+        created_by: str,
+    ) -> FileResponse:
+        """上传头像：校验体积、图片扩展名与 magic bytes，落盘并入库。
+
+        头像显示目标小（侧栏 32px / 资料弹窗 ~96px 圆形），故单独设限：
+        - 大小上限 avatar_max_size_bytes（默认 2 MiB）；
+        - 仅 png/jpg/jpeg/webp/gif；
+        - 字节流 magic 与扩展名一致（防改名伪装非图片文件）。
+        """
+        _validate_filename(filename)
+        size = len(content)
+        if size > self._avatar_max_bytes:
+            raise BadRequestError(f"头像超过大小上限（{self._avatar_max_bytes} 字节）：{filename}")
+        extension = Path(filename).suffix.lstrip(".").lower()
+        if extension not in self._avatar_extensions:
+            allowed = ", ".join(self._avatar_extensions)
+            raise BadRequestError(f"头像仅支持图片格式：{allowed}")
+        if not _sniff_image_format(content, extension):
+            raise BadRequestError("头像文件内容不是有效图片")
+        row = await self._store(
+            filename=filename,
+            data=content,
+            mimetype=mimetype,
+            created_by=created_by,
+            created_by_role="user",
         )
         return _to_file_response(row)
 

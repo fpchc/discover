@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gate_report_valid 输入约束",
+  "description": "账期评估报告结构校验的入参约束。报告章节、评分一致性字段。",
+  "type": "object",
+  "required": ["report"],
+  "additionalProperties": false,
+  "properties": {
+    "report": {
+      "type": "object",
+      "required": [
+        "company_name",
+        "sections",
+        "composite_score",
+        "credit_grade",
+        "recommended_credit_days",
+        "ar_days",
+        "credit_limit"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "company_name": { "type": "string", "minLength": 1 },
+        "sections": {
+          "type": "object",
+          "required": [
+            "cover",
+            "conclusion",
+            "basic_info",
+            "financial",
+            "credit_risk",
+            "stability",
+            "demand",
+            "risk_signals",
+            "monitoring",
+            "appendix"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "cover": { "type": "string", "minLength": 1 },
+            "conclusion": { "type": "string", "minLength": 1 },
+            "basic_info": { "type": "string", "minLength": 1 },
+            "financial": { "type": "string", "minLength": 1 },
+            "credit_risk": { "type": "string", "minLength": 1 },
+            "stability": { "type": "string", "minLength": 1 },
+            "demand": { "type": "string", "minLength": 1 },
+            "risk_signals": { "type": "string", "minLength": 1 },
+            "monitoring": { "type": "string", "minLength": 1 },
+            "appendix": { "type": "string", "minLength": 1 }
+          }
+        },
+        "composite_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 10
+        },
+        "credit_grade": { "type": "string", "enum": ["S", "A", "B", "C", "D"] },
+        "recommended_credit_days": { "type": "integer", "minimum": 0, "maximum": 365 },
+        "ar_days": { "type": "integer", "minimum": 0, "maximum": 365 },
+        "credit_limit": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}
