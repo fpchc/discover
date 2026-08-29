@@ -1,17 +1,9 @@
-# ===== discover_backend（多智能体承载平台）镜像 =====
-# 构建上下文为当前目录（discover_backend/），根级 compose 指定 context: ./discover_backend。
-# 依赖管理走 uv（pyproject.toml + uv.lock 锁定），应用入口见 pyproject.toml。
-#
-# 国内加速：基础镜像与 Python 依赖全部走阿里云源
-#   - 基础镜像：Docker Hub 官方镜像 → registry.cn-hangzhou.aliyuncs.com/library/（阿里云容器镜像服务）
-#   - uv 本体：阿里云 PyPI 镜像 pip 安装（uv 官方 Docker 镜像仅发布在 ghcr.io，国内拉取极慢，故弃用）
-#   - Python 依赖：pypi.org → mirrors.aliyun.com/pypi/simple（阿里云 PyPI 镜像，uv sync 走此源）
-FROM registry.cn-hangzhou.aliyuncs.com/library/python:3.12-slim-bookworm AS base
+FROM docker.m.daocloud.io/library/python:3.12-slim-bookworm AS base
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
-    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-    UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 WORKDIR /app
 
 # 安装 uv（uv 二进制分发到 PyPI，走阿里云镜像拉取）
