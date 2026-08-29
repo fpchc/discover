@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Callable
 
 import anyio
+import httpx
 from fastapi import FastAPI, Request
 
 from app.catalog.assistant_catalog import AssistantCatalog
@@ -29,6 +30,7 @@ from app.registry.registry import AgentRegistry
 from app.runtime.runner import Runtime
 from app.services.auth import AuthService
 from app.services.conversations import ConversationService
+from app.services.elecnest_sso import ElecnestSSOClient
 from app.services.files import FileService
 from app.services.workspace import WorkspaceManager
 from app.tools.mcp_manager import MCPManager
@@ -52,6 +54,8 @@ class AppServices:
         self.conversation_service: ConversationService | None = None
         self.auth: AuthService | None = None
         self.registry: AgentRegistry | None = None
+        self.elecnest: ElecnestSSOClient | None = None
+        self._elecnest_http: httpx.AsyncClient | None = None
         self.runtimes: dict[str, Runtime] = {}
         self._resolve_api_key: Callable[[LLMProvider], str] | None = None
         self._reloader_scope: anyio.CancelScope | None = None
@@ -73,7 +77,14 @@ class AppServices:
         await self.registry.refresh()
         self.catalog = AssistantCatalog(self.registry)
         self.conversation_service = ConversationService(self.db, self.settings, self.catalog)
-        self.auth = AuthService(self.settings, self.db, self.conversation_service, self.files)
+        self.elecnest = self._build_elecnest()
+        self.auth = AuthService(
+            self.settings,
+            self.db,
+            self.conversation_service,
+            self.files,
+            elecnest=self.elecnest,
+        )
         reloader = HotReloader(self.registry, self.settings)
         scope = anyio.CancelScope()
         self._reloader_scope = scope
@@ -93,6 +104,10 @@ class AppServices:
             await self._reloader_task
             self._reloader_task = None
             self._reloader_scope = None
+        if self._elecnest_http is not None:
+            await self._elecnest_http.aclose()
+            self._elecnest_http = None
+            self.elecnest = None
         await shutdown_extensions(app)
 
     async def _run_reloader(self, reloader: HotReloader, scope: anyio.CancelScope) -> None:
@@ -104,6 +119,15 @@ class AppServices:
         """助手目录（复用注册表当前索引，热重载后即最新）。"""
         assert self.catalog is not None
         return self.catalog
+
+    def _build_elecnest(self) -> ElecnestSSOClient | None:
+        """统一登录客户端：开关关闭返回 None（/auth/login/elecnest 返回 400）。"""
+        if not self.settings.elecnest_sso_enabled:
+            return None
+        self._elecnest_http = httpx.AsyncClient(
+            timeout=httpx.Timeout(self.settings.elecnest_sso_timeout_seconds)
+        )
+        return ElecnestSSOClient(self.settings, self._elecnest_http)
 
     def get_runtime(self, session_id: str) -> Runtime:
         """获取（或创建）会话级运行时。创建后复用同一工具代理。"""

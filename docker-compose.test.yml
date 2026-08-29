@@ -117,6 +117,11 @@ x-common-env: &common-env
   AVATAR_MAX_DIMENSION: ${AVATAR_MAX_DIMENSION:-512}
   AVATAR_MIN_DIMENSION: ${AVATAR_MIN_DIMENSION:-32}
 
+  # ---------- 公司统一登录（elecnest SSO） ----------
+  ELECNEST_SSO_ENABLED: ${ELECNEST_SSO_ENABLED:-false}
+  ELECNEST_GET_USER_INFO_URL: ${ELECNEST_GET_USER_INFO_URL:-https://id.elecnest.cn/api/login/getUserInfo}
+  ELECNEST_SSO_TIMEOUT_SECONDS: ${ELECNEST_SSO_TIMEOUT_SECONDS:-10}
+
 name: discover-test
 
 services:

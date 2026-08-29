@@ -49,10 +49,11 @@
 
 | 职责 | 路径 |
 |------|------|
-| 账号认证门面（login / get_account / get_user_usage / list_users_with_usage + 资料维护：update_account / change_avatar / change_password / avatar_config，AuthService） | `app/services/auth.py` |
+| 账号认证门面（login / login_with_elecnest / get_account / get_user_usage / list_users_with_usage + 资料维护：update_account / change_avatar / change_password / avatar_config，AuthService） | `app/services/auth.py` |
+| 公司统一登录客户端（elecnest SSO：token + uid → 用户资料，ElecnestSSOClient） | `app/services/elecnest_sso.py` |
 | Argon2id 密码哈希 + JWT 会话令牌（PasswordHasher / JwtService） | `app/services/auth_security.py` |
 | FastAPI 认证依赖（get_current_account_id / get_current_account / require_superuser） | `app/api/deps.py` |
-| 认证接口（/auth/login、/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
+| 认证接口（/auth/login、/auth/login/elecnest、/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
 | 预置账号 CLI（python -m app.services.auth_provision，无注册接口） | `app/services/auth_provision.py` |
 
 ## LLM 层（L1）
@@ -71,7 +72,7 @@
 |------|------|
 | 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord 含 account_id / UsageAggregate / ConversationSession） | `app/schemas/conversations.py` |
 | 文件 DTO（ArtifactRecord 产物事件 / FileResponse / UploadConfig） | `app/schemas/files.py` |
-| 认证 DTO（LoginRequest / LoginResponse / AccountRecord / UserUsage / AccountStatus + 资料维护：UpdateAccountRequest / ChangePasswordRequest / AvatarConfig） | `app/schemas/auth.py` |
+| 认证 DTO（LoginRequest / ElecnestLoginRequest / ElecnestUserInfo / LoginResponse / AccountRecord / UserUsage / AccountStatus / UserType + 资料维护：UpdateAccountRequest / ChangePasswordRequest / AvatarConfig） | `app/schemas/auth.py` |
 | 对话 SSE / 请求响应模型（chat-messages 契约） | `app/schemas/chat.py` |
 
 ## 工具层（L1/L2）

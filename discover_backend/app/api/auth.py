@@ -16,6 +16,7 @@ from app.schemas.auth import (
     AvatarConfig,
     ChangePasswordRequest,
     DailyUsage,
+    ElecnestLoginRequest,
     LoginRequest,
     LoginResponse,
     UpdateAccountRequest,
@@ -33,6 +34,16 @@ async def login(
     """手机号 + 密码登录：校验 Argon2id 哈希 → 签发 JWT。"""
     assert services.auth is not None
     return await services.auth.login(body.phone, body.password)
+
+
+@router.post("/auth/login/elecnest")
+async def elecnest_login(
+    body: ElecnestLoginRequest,
+    services: AppServices = Depends(get_services),
+) -> LoginResponse:
+    """公司统一登录：token + uid → 统一登录用户信息 → 本地注册/复用 → 签发 JWT。"""
+    assert services.auth is not None
+    return await services.auth.login_with_elecnest(body.token, body.uid)
 
 
 @router.get("/users/me")

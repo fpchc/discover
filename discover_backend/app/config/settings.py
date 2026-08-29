@@ -241,6 +241,14 @@ class Settings(BaseSettings):
     # 边长下限（像素）：低于侧栏展示尺寸会模糊
     avatar_min_dimension: int = 32
 
+    # ---- 公司统一登录（elecnest SSO） ----
+    # 开关：关闭时 /auth/login/elecnest 返回 400（未启用）
+    elecnest_sso_enabled: bool = False
+    # 统一登录用户信息接口（token + uid → 用户资料；全量参数见 API 文档）
+    elecnest_get_user_info_url: str = "https://id.elecnest.cn/api/login/getUserInfo"
+    # 外部 HTTP 调用超时（秒）
+    elecnest_sso_timeout_seconds: float = 10.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

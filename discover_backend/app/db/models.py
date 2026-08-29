@@ -49,11 +49,16 @@ class Account(Base):
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=local_now)
     username: Mapped[str] = mapped_column(String(64), default="")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 登录来源标记：password（手机号+密码）/ elecnest（公司统一登录）
+    user_type: Mapped[str] = mapped_column(String(16), default="password")
+    # 公司统一登录体系的主键 id（对方 uid，Long 的数字串），幂等登录唯一键
+    elecnest_uid: Mapped[str | None] = mapped_column(String(64))
 
     # 索引名与用户 DDL 对齐（迁移已按此手写建表）
     __table_args__ = (
         Index("account_phone_idx", "phone"),
         Index("accounts_username_index", "username", unique=True),
+        Index("accounts_elecnest_uid_index", "elecnest_uid", unique=True),
     )
 
 

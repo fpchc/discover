@@ -24,12 +24,15 @@ from app.schemas.auth import (
     AccountStatus,
     AvatarConfig,
     DailyUsage,
+    ElecnestUserInfo,
     LoginResponse,
+    UserType,
     UserUsage,
 )
 from app.schemas.conversations import UsageAggregate
 from app.services.auth_security import JwtService, PasswordHasher
 from app.services.conversations import ConversationService
+from app.services.elecnest_sso import ElecnestSSOClient
 from app.services.files import FileService
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ def _to_record(row: Account) -> AccountRecord:
         avatar=row.avatar,
         status=AccountStatus(row.status),
         is_system=row.is_system,
+        user_type=UserType(row.user_type),
         created_at=row.created_at,
         last_login_at=row.last_login_at,
     )
@@ -63,11 +67,13 @@ class AuthService:
         db: Database,
         history: ConversationService,
         files: FileService,
+        elecnest: ElecnestSSOClient | None = None,
     ) -> None:
         self._settings = settings
         self._db = db
         self._history = history
         self._files = files
+        self._elecnest = elecnest
         self._hasher = PasswordHasher(settings)
         self._jwt = JwtService(settings)
 
@@ -94,6 +100,57 @@ class AuthService:
         token = self._jwt.encode(str(account.id))
         await self._record_login(account.id)
         return LoginResponse(account_id=str(account.id), token=token, name=account.name)
+
+    async def login_with_elecnest(self, token: str, uid: int) -> LoginResponse:
+        """公司统一登录：token + uid → 用户信息 → 本地注册/复用 → JWT。"""
+        if not self._settings.elecnest_sso_enabled:
+            raise BadRequestError("统一登录未启用")
+        assert self._elecnest is not None
+        info = await self._elecnest.get_user_info(token=token, uid=uid)
+        if info is None:
+            raise UnauthorizedError("统一登录校验失败")
+        uid_text = str(uid)
+        account_id = await self._upsert_elecnest_account(uid_text, info)
+        name = info.nickname or info.username
+        return LoginResponse(
+            account_id=account_id,
+            token=self._jwt.encode(account_id),
+            name=name,
+        )
+
+    async def _upsert_elecnest_account(self, uid_text: str, info: ElecnestUserInfo) -> str:
+        """按 elecnest_uid 查账号：无则创建（user_type=elecnest），有则更新显示名/头像。"""
+        name = info.nickname or info.username or f"用户{uid_text}"
+        async with self._db.session_factory() as session:
+            row = await session.scalar(
+                select(Account).where(Account.elecnest_uid == uid_text).limit(1)
+            )
+            if row is None:
+                row = Account(
+                    id=uuid.uuid4(),
+                    name=name,
+                    phone=info.phone or "",
+                    username=info.username or f"elecnest_{uid_text}",
+                    avatar=info.avatar,
+                    user_type=UserType.ELECNEST.value,
+                    elecnest_uid=uid_text,
+                    status=AccountStatus.ACTIVE.value,
+                )
+                session.add(row)
+            else:
+                if row.status != AccountStatus.ACTIVE.value:
+                    raise UnauthorizedError("账号不可用")
+                # 存在则更新统一登录最新信息（本平台账号字段：显示名/手机号/头像）
+                row.name = name
+                row.user_type = UserType.ELECNEST.value
+                if info.phone:
+                    row.phone = info.phone
+                if info.avatar:
+                    row.avatar = info.avatar
+            row.last_login_at = local_now()
+            row.last_active_at = local_now()
+            await session.commit()
+            return str(row.id)
 
     async def _find_by_phone(self, phone: str) -> Account | None:
         async with self._db.session_factory() as session:

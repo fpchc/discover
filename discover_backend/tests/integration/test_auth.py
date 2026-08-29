@@ -27,6 +27,7 @@ from app.schemas.conversations import TurnRecord, TurnUsage
 from app.services.auth import AuthService
 from app.services.auth_security import JwtService, PasswordHasher
 from app.services.conversations import ConversationService
+from app.services.elecnest_sso import ElecnestSSOClient
 from app.services.files import FileService
 from sqlalchemy import select
 
@@ -42,15 +43,44 @@ async def _dispose_database() -> None:
     await _DATABASE.dispose()
 
 
-def _settings() -> Settings:
-    return Settings(_env_file=None, jwt_secret_key=_SECRET)
+def _settings(*, elecnest_enabled: bool = False) -> Settings:
+    return Settings(
+        _env_file=None,
+        jwt_secret_key=_SECRET,
+        elecnest_sso_enabled=elecnest_enabled,
+    )
 
 
-def _service(storage_root: Path | None = None) -> AuthService:
+def _service(
+    storage_root: Path | None = None,
+    *,
+    elecnest: ElecnestSSOClient | None = None,
+    elecnest_enabled: bool = False,
+) -> AuthService:
     """AuthService（注入 FileService；storage_root 缺省用系统临时目录）。"""
     root = storage_root if storage_root is not None else Path(tempfile.mkdtemp(prefix="auth-test-"))
-    files = FileService(_settings(), _DATABASE, LocalStorage(root))
-    return AuthService(_settings(), _DATABASE, ConversationService(_DATABASE), files)
+    settings = _settings(elecnest_enabled=elecnest_enabled)
+    files = FileService(settings, _DATABASE, LocalStorage(root))
+    return AuthService(
+        settings,
+        _DATABASE,
+        ConversationService(_DATABASE),
+        files,
+        elecnest=elecnest,
+    )
+
+
+def _mock_elecnest(data: dict[str, object] | None) -> ElecnestSSOClient:
+    """统一登录客户端（MockTransport 拦截外部请求，CLAUDE.md §12：禁真实网络）。"""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/api/login/getUserInfo")
+        assert request.url.params["token"] == "sso-token"
+        return httpx.Response(200, json={"data": data})
+
+    transport = httpx.MockTransport(_handler)
+    http = httpx.AsyncClient(transport=transport)
+    return ElecnestSSOClient(_settings(), http)
 
 
 def _token_for(account_id: str) -> dict[str, str]:
@@ -151,6 +181,62 @@ async def test_login_disabled_account_rejected() -> None:
     await _create_account(phone, "pw", status="disabled")
     with pytest.raises(UnauthorizedError):
         await _service().login(phone, "pw")
+
+
+# ---- 公司统一登录（elecnest SSO） ----
+
+
+async def test_login_elecnest_creates_and_reuses_account() -> None:
+    uid = 88001
+    client = _mock_elecnest(
+        {
+            "uid": uid,
+            "username": "zhangsan",
+            "nickname": "张三",
+            "phone": "13800000001",
+            "avatar": "https://cdn.example.com/a.png",
+        }
+    )
+    svc = _service(elecnest=client, elecnest_enabled=True)
+    first = await svc.login_with_elecnest("sso-token", uid)
+    assert isinstance(first, LoginResponse)
+    assert first.account_id
+    assert first.name == "张三"
+    # 账号已按 elecnest_uid 落库并标 user_type=elecnest
+    async with _DATABASE.session_factory() as session:
+        row = await session.scalar(select(Account).where(Account.elecnest_uid == str(uid)))
+        assert row is not None
+        assert row.user_type == "elecnest"
+        assert row.phone == "13800000001"
+    # 二次登录复用同一账号（幂等）
+    second = await svc.login_with_elecnest("sso-token", uid)
+    assert second.account_id == first.account_id
+
+
+async def test_login_elecnest_nickname_falls_back_to_username() -> None:
+    uid = 88002
+    client = _mock_elecnest({"uid": uid, "username": "lisi", "nickname": ""})
+    resp = await _service(elecnest=client, elecnest_enabled=True).login_with_elecnest(
+        "sso-token", uid
+    )
+    assert resp.name == "lisi"
+
+
+async def test_login_elecnest_null_data_rejected() -> None:
+    client = _mock_elecnest(None)
+    with pytest.raises(UnauthorizedError):
+        await _service(elecnest=client, elecnest_enabled=True).login_with_elecnest(
+            "sso-token", 88003
+        )
+
+
+async def test_login_elecnest_disabled_rejected() -> None:
+    client = _mock_elecnest({"uid": 88004, "username": "x", "nickname": "X"})
+    with pytest.raises(BadRequestError):
+        # 开关关闭：即使外部校验成功也拒绝
+        await _service(elecnest=client, elecnest_enabled=False).login_with_elecnest(
+            "sso-token", 88004
+        )
 
 
 # ---- 账号与用量 ----
@@ -371,6 +457,38 @@ async def test_http_login_endpoint(
     assert body.account_id
     bad = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "no"})
     assert bad.status_code == 401
+
+
+async def test_http_elecnest_login_endpoint(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    app, client = api_ctx
+    # 开启统一登录（共享 settings 对象，AuthService 读同一引用）+ 注入 mock 客户端
+    app.state.services.settings.elecnest_sso_enabled = True  # type: ignore[attr-defined]  # 测试直改运行时配置
+    app.state.services.auth._elecnest = _mock_elecnest(  # type: ignore[attr-defined]  # 测试注入 mock 客户端
+        {"uid": 99001, "username": "wangwu", "nickname": "王五", "phone": "13800000002"}
+    )
+    ok = await client.post("/api/v1/auth/login/elecnest", json={"token": "sso-token", "uid": 99001})
+    assert ok.status_code == 200
+    body = LoginResponse.model_validate(ok.json())
+    assert body.token
+    assert body.account_id
+    assert body.name == "王五"
+    # 幂等：二次登录同 account_id
+    again = await client.post(
+        "/api/v1/auth/login/elecnest", json={"token": "sso-token", "uid": 99001}
+    )
+    assert again.status_code == 200
+    assert again.json()["account_id"] == body.account_id
+
+
+async def test_http_elecnest_login_disabled(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    _app, client = api_ctx
+    # 默认开关关闭 → 400（未启用）
+    resp = await client.post("/api/v1/auth/login/elecnest", json={"token": "t", "uid": 1})
+    assert resp.status_code == 400
 
 
 async def test_http_avatar_config(

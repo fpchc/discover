@@ -21,11 +21,48 @@ class AccountStatus(StrEnum):
     DISABLED = "disabled"
 
 
+class UserType(StrEnum):
+    """账号登录来源（accounts.user_type，DDL 默认 password）。"""
+
+    PASSWORD = "password"
+    ELECNEST = "elecnest"
+
+
 class LoginRequest(BaseModel):
     """登录请求体（手机号 + 密码）。"""
 
     phone: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=255)
+
+
+class ElecnestLoginRequest(BaseModel):
+    """统一登录请求体（公司统一登录 token + uid）。"""
+
+    token: str = Field(min_length=1, max_length=2048)
+    uid: int
+
+
+class ElecnestUserInfo(BaseModel):
+    """统一登录返回的用户资料（对外契约字段，见 `getUserInfoByToken` 的 DTO）。
+
+    与公司接口字段一一对应（`dcWxOpenid` / `dcWxNickName` 驼峰别名映射）。
+    字段允许空值/缺失（Java POJO 同样容忍 null），由调用方做回退处理。
+    """
+
+    uid: int
+    username: str | None = None
+    nickname: str | None = None
+    phone: str | None = None
+    avatar: str | None = None
+    email: str | None = None
+    dc_wx_openid: str | None = Field(default=None, alias="dcWxOpenid")
+    dc_wx_nickname: str | None = Field(default=None, alias="dcWxNickName")
+
+
+class ElecnestUserInfoResponse(BaseModel):
+    """统一登录接口外层响应（`{data: {...} | null}`）。"""
+
+    data: ElecnestUserInfo | None = None
 
 
 class LoginResponse(BaseModel):
@@ -45,6 +82,7 @@ class AccountRecord(BaseModel):
     avatar: str | None = None
     status: AccountStatus = AccountStatus.ACTIVE
     is_system: bool = False
+    user_type: UserType = UserType.PASSWORD
     created_at: datetime
     last_login_at: datetime | None = None
 

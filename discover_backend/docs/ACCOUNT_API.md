@@ -10,9 +10,10 @@
 - [0. 认证流程与通用约定](#0-认证流程与通用约定)
 - [1. 新增接口（认证）](#1-新增接口认证)
   - [1.1 登录 `POST /auth/login`](#11-登录-post-authlogin)
-  - [1.2 当前账号 `GET /users/me`](#12-当前账号-get-usersme)
-  - [1.3 当前账号用量 `GET /users/me/usage`](#13-当前账号用量-get-usersmeusage)
-  - [1.4 全量账号用量 `GET /users`（超级用户）](#14-全量账号用量-get-users超级用户)
+  - [1.2 统一登录 `POST /auth/login/elecnest`](#12-统一登录-post-authloginelecnest)
+  - [1.3 当前账号 `GET /users/me`](#13-当前账号-get-usersme)
+  - [1.4 当前账号用量 `GET /users/me/usage`](#14-当前账号用量-get-usersmeusage)
+  - [1.5 全量账号用量 `GET /users`（超级用户）](#15-全量账号用量-get-users超级用户)
 - [2. 调整接口（接入认证 + 账号隔离）](#2-调整接口接入认证--账号隔离)
   - [2.1 对话 `POST /chat-messages`](#21-对话-post-chat-messages)
   - [2.2 会话列表 `GET /conversations`](#22-会话列表-get-conversations)
@@ -67,7 +68,32 @@
 
 **失败 401**：`{detail: "手机号或密码错误"}` / `{detail: "账号不可用"}`
 
-### 1.2 当前账号 `GET /users/me`
+### 1.2 统一登录 `POST /auth/login/elecnest`
+
+公司统一登录（elecnest SSO）。开关 `ELECNEST_SSO_ENABLED=false` 时返回
+`400`（未启用）。前端从公司统一登录体系拿 `token + uid` 后调本接口：后端用
+`token + uid` 调统一登录用户信息接口（`ELECNEST_GET_USER_INFO_URL`，默认
+`https://id.elecnest.cn/api/login/getUserInfo`）换取用户资料 → **本地注册
+（find-or-create by `elecnest_uid`）** → 标记 `user_type=elecnest` → 签发 JWT。
+
+| 参数 | 位置 | 类型 | 说明 |
+|---|---|---|---|
+| `token` | body | string | 公司统一登录令牌 |
+| `uid` | body | int | 统一登录体系主键 id（`accounts.elecnest_uid` 存其字符串） |
+
+**请求**
+
+```json
+{ "token": "eyJhbGciOiJIUzI1NiIs…", "uid": 88001 }
+```
+
+**响应 200**：`LoginResponse`（同 §1.1；`name` 取昵称，昵称为空回退用户名）
+
+**失败**
+- `400`：统一登录未启用（`ELECNEST_SSO_ENABLED=false`）
+- `401`：统一登录校验失败（外部 data 为空 / 接口异常）或账号不可用
+
+### 1.3 当前账号 `GET /users/me`
 
 需认证。返回当前登录账号信息（**密码哈希不外泄**）。
 
@@ -83,8 +109,9 @@
 | `is_system` | bool | 是否超级用户 |
 | `created_at` | string | ISO 8601 |
 | `last_login_at` | string? | 最近登录时间 |
+| `user_type` | "password" \| "elecnest" | 登录来源（统一登录为 elecnest） |
 
-### 1.3 当前账号用量 `GET /users/me/usage`
+### 1.4 当前账号用量 `GET /users/me/usage`
 
 需认证。返回当前账号累计 token 用量（按 `messages.created_by` 聚合，实时查询）。
 
@@ -101,7 +128,7 @@
 | `total_tokens` | int | token 合计 |
 | `cached_read_tokens` / `cached_write_tokens` | int | 缓存命中/写入 token |
 
-### 1.4 全量账号用量 `GET /users`（超级用户）
+### 1.5 全量账号用量 `GET /users`（超级用户）
 
 需认证，且当前账号 `is_system=true`；否则 `403`。返回全部账号及其用量。
 
