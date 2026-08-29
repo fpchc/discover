@@ -66,11 +66,29 @@ class ElecnestUserInfoResponse(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """登录响应：account_id + JWT + 显示名。"""
+    """登录 / 刷新响应：account_id + 访问令牌 + 刷新令牌 + 显示名。
+
+    token 为短期访问令牌（Bearer 认证）；refresh_token 为长期刷新令牌（仅
+    /auth/refresh 用，Redis 权威）；expires_in 为访问令牌剩余秒数（前端预刷新）。
+    """
 
     account_id: str
     token: str
+    refresh_token: str
+    expires_in: int
     name: str | None = None
+
+
+class RefreshTokenRequest(BaseModel):
+    """刷新令牌续期请求体（POST /auth/refresh；轮换制，旧刷新令牌作废）。"""
+
+    refresh_token: str = Field(min_length=1, max_length=2048)
+
+
+class LogoutRequest(BaseModel):
+    """登出请求体：当前会话的刷新令牌（与 Bearer 访问令牌一并作废，DEL 幂等）。"""
+
+    refresh_token: str = Field(min_length=1, max_length=2048)
 
 
 class AccountRecord(BaseModel):

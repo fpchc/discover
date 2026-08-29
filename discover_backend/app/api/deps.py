@@ -1,7 +1,9 @@
-"""FastAPI 认证依赖：从 `Authorization: Bearer <JWT>` 解析当前账号。
+"""FastAPI 认证依赖：从 `Authorization: Bearer <token>` 解析当前账号。
 
-三层依赖：
-- get_current_account_id：仅解 JWT 得 account_id（不查库，供隔离过滤用）；
+认证链：
+- get_current_account_id：JWT 解签 + Redis 访问会话校验（Redis 权威，key 缺失即
+  登录失效 → 401；不查库，供隔离过滤用）；
+- get_bearer_token：仅提取原始 token（不校验；登出等幂等场景用）；
 - get_current_account：查库取完整账号（供 /users/me 等，账号被删即 401）；
 - require_superuser：is_system=true 才放行（管理接口），否则 403。
 """
@@ -26,13 +28,18 @@ def _bearer_token(request: Request) -> str:
     return token.strip()
 
 
-def get_current_account_id(
+def get_bearer_token(request: Request) -> str:
+    """提取原始 token（不校验；登出等幂等场景用，DEL 幂等无需存在性检查）。"""
+    return _bearer_token(request)
+
+
+async def get_current_account_id(
     request: Request,
     services: AppServices = Depends(get_services),
 ) -> str:
-    """解析 JWT 返回 account_id（无效/过期 → 401；不查库）。"""
+    """JWT 解签 + Redis 访问会话校验，返回 account_id（无效/过期/无会话 → 401）。"""
     assert services.auth is not None
-    return services.auth.decode_token(_bearer_token(request))
+    return await services.auth.validate_session(_bearer_token(request))
 
 
 async def get_current_account(

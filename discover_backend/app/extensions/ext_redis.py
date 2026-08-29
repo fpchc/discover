@@ -1,7 +1,8 @@
-"""Redis 扩展：客户端连接池 + 轻量 Cache / Lock 封装（默认 redis_enabled=false）。
+"""Redis 扩展：客户端连接池 + 轻量 Cache / Lock 封装（恒启用）。
 
-startup 惰性不 ping：Redis 宕机不阻塞应用启动，首次使用时才报错（与 Database
-惰性建连一致）。Cache 值按字符串处理，JSON 序列化由调用方负责。
+Redis 为认证会话层的硬依赖（登录会话 / 令牌过期 / 撤销 / 续期以 Redis 为准），
+无启用开关。startup 惰性不 ping：Redis 宕机不阻塞应用启动，首次使用时才报错
+（与 Database 惰性建连一致）。Cache 值按字符串处理，JSON 序列化由调用方负责。
 """
 
 from __future__ import annotations
@@ -43,6 +44,17 @@ class Cache:
     async def delete(self, key: str) -> None:
         await self._client.delete(key)
 
+    async def getdel(self, key: str) -> str | None:
+        """原子读取并删除 key（GETDEL）：key 不存在返回 None。
+
+        用于一次性消费（如刷新令牌轮换）——读+删单命令完成，消除「检查后再删」
+        的并发竞态（同一 key 只会被消费一次）。
+        """
+        value = await self._client.getdel(key)
+        if value is None:
+            return None
+        return value.decode("utf-8") if isinstance(value, bytes) else str(value)
+
 
 class Lock:
     """基于 SET NX PX 的分布式锁：acquire / release（持有者 token 校验）。"""
@@ -69,8 +81,8 @@ _lock: Lock | None = None
 
 
 def is_enabled() -> bool:
-    """由配置开关控制（默认关闭）。"""
-    return active_settings().redis_enabled
+    """Redis 为认证会话层的硬依赖：恒启用（无开关）。"""
+    return True
 
 
 def init_app(app: FastAPI | None) -> None:

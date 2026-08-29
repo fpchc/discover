@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, UploadFile
 
-from app.api.deps import get_current_account, get_current_account_id, require_superuser
+from app.api.deps import (
+    get_bearer_token,
+    get_current_account,
+    get_current_account_id,
+    require_superuser,
+)
 from app.container import AppServices, get_services
 from app.errors.base import BadRequestError, UnauthorizedError
 from app.schemas.auth import (
@@ -19,6 +24,8 @@ from app.schemas.auth import (
     ElecnestLoginRequest,
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
+    RefreshTokenRequest,
     UpdateAccountRequest,
     UserUsage,
 )
@@ -41,9 +48,30 @@ async def elecnest_login(
     body: ElecnestLoginRequest,
     services: AppServices = Depends(get_services),
 ) -> LoginResponse:
-    """公司统一登录：token + uid → 统一登录用户信息 → 本地注册/复用 → 签发 JWT。"""
+    """公司统一登录：token + uid → 统一登录用户信息 → 本地注册/复用 → 签发令牌对。"""
     assert services.auth is not None
     return await services.auth.login_with_elecnest(body.token, body.uid)
+
+
+@router.post("/auth/refresh")
+async def refresh_token(
+    body: RefreshTokenRequest,
+    services: AppServices = Depends(get_services),
+) -> LoginResponse:
+    """刷新令牌换新令牌对（轮换制：旧刷新令牌作废，防重用；Redis 权威）。"""
+    assert services.auth is not None
+    return await services.auth.refresh(body.refresh_token)
+
+
+@router.post("/auth/logout", status_code=204)
+async def logout(
+    body: LogoutRequest,
+    access_token: str = Depends(get_bearer_token),
+    services: AppServices = Depends(get_services),
+) -> None:
+    """服务端登出：作废当前访问令牌 + 刷新令牌（DEL 幂等，无 key 也返回 204）。"""
+    assert services.auth is not None
+    await services.auth.logout(access_token, body.refresh_token)
 
 
 @router.get("/users/me")

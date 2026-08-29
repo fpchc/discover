@@ -52,7 +52,7 @@ class JwtService:
             raise ConfigError("缺少 JWT_SECRET_KEY 配置（认证必启用，禁止默认密钥）")
         self._secret = settings.jwt_secret_key
         self._algorithm = settings.jwt_algorithm
-        self._expires_seconds = settings.jwt_expires_minutes * 60
+        self._expires_seconds = settings.auth_access_token_ttl_seconds
 
     def encode(self, account_id: str) -> str:
         """签发访问令牌（sub = account_id 字符串）。"""

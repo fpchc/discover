@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { login as apiLogin, fetchMe } from '@/lib/api'
+import { login as apiLogin, logout as apiLogout, fetchMe } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { AccountRecord } from '@/types'
 
@@ -8,12 +8,14 @@ import type { AccountRecord } from '@/types'
 vi.mock('@/lib/api', () => ({
   fetchMe: vi.fn(),
   login: vi.fn(),
+  logout: vi.fn(async () => undefined),
 }))
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }))
 
 const TOKEN_KEY = 'disf_auth_token'
+const REFRESH_TOKEN_KEY = 'disf_auth_refresh_token'
 
 const account: AccountRecord = {
   account_id: '3f2a9c8e-0000-0000-0000-d1b4',
@@ -52,22 +54,26 @@ describe('resolveSession（启动恢复）', () => {
     expect(state.account?.account_id).toBe(account.account_id)
   })
 
-  it('有令牌但 /users/me 校验失败 → 回到未登录并清除令牌', async () => {
+  it('有令牌但 /users/me 校验失败 → 回到未登录并清除令牌对', async () => {
     localStorage.setItem(TOKEN_KEY, 'jwt-stale')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'refresh-stale')
     vi.mocked(fetchMe).mockRejectedValue(new Error('401'))
     await useAuthStore.getState().resolveSession()
     const state = useAuthStore.getState()
     expect(state.status).toBe('unauthenticated')
     expect(state.account).toBeNull()
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
   })
 })
 
 describe('login', () => {
-  it('登录成功 → 写入令牌并进入已登录（账号取 /users/me 补充）', async () => {
+  it('登录成功 → 写入令牌对并进入已登录（账号取 /users/me 补充）', async () => {
     vi.mocked(apiLogin).mockResolvedValue({
       account_id: account.account_id,
       token: 'jwt-new',
+      refresh_token: 'refresh-new',
+      expires_in: 86_400,
       name: '张三',
     })
     vi.mocked(fetchMe).mockResolvedValue(account)
@@ -76,6 +82,7 @@ describe('login', () => {
     const state = useAuthStore.getState()
     expect(state.status).toBe('authenticated')
     expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt-new')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('refresh-new')
     expect(state.account?.account_id).toBe(account.account_id)
   })
 
@@ -105,24 +112,35 @@ describe('applyAccount（资料更新后同步账号）', () => {
 })
 
 describe('logout / expire', () => {
-  it('logout → 回到未登录并清除令牌', () => {
+  it('logout → 清令牌对并调后端作废、回到未登录', () => {
     useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })
     localStorage.setItem(TOKEN_KEY, 'jwt-x')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'refresh-x')
     useAuthStore.getState().logout()
     const state = useAuthStore.getState()
     expect(state.status).toBe('unauthenticated')
     expect(state.account).toBeNull()
     expect(state.token).toBe('')
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
+    expect(apiLogout).toHaveBeenCalledWith('jwt-x', 'refresh-x')
   })
 
-  it('expire → 清状态并提示重新登录（仅已登录时生效）', () => {
+  it('无令牌时 logout 不调后端', () => {
+    useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })
+    useAuthStore.getState().logout()
+    expect(apiLogout).not.toHaveBeenCalled()
+  })
+
+  it('expire → 清令牌对并提示重新登录（仅已登录时生效）', () => {
     useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })
     localStorage.setItem(TOKEN_KEY, 'jwt-x')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'refresh-x')
     useAuthStore.getState().expire()
     const state = useAuthStore.getState()
     expect(state.status).toBe('unauthenticated')
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
     expect(toast.error).toHaveBeenCalledWith('登录已过期，请重新登录')
   })
 

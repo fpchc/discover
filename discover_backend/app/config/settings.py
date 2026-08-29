@@ -179,13 +179,12 @@ class Settings(BaseSettings):
     hot_reload_interval_seconds: float = 30.0
 
     # ---- 插件开关（{plugin}_enabled 命名，插件系统统一加载） ----
+    # Redis 无开关恒启用：认证会话层硬依赖（登录会话 / 令牌过期 / 撤销 / 续期以 Redis 为准）
     logging_enabled: bool = True
     db_enabled: bool = True
     storage_enabled: bool = True
     mcp_enabled: bool = True
     llm_enabled: bool = True
-    # 新增能力，默认关闭：不配 Redis 服务也能正常启动
-    redis_enabled: bool = False
 
     # ---- logging 扩展 ----
     # 输出格式："text" 明文行 / "json" 结构化单行
@@ -218,11 +217,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # ---- 账号认证（JWT + Argon2id） ----
+    # ---- 账号认证（JWT + Argon2id + Redis 会话层） ----
     # JWT 签名密钥：必须从环境注入，无默认有效值（缺失时 JwtService 构造抛 ConfigError）
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_expires_minutes: int = 60 * 24 * 7
+    # 访问令牌有效期（秒）：JWT exp 与 Redis 访问会话 TTL 对齐（Redis 为准，key 缺失即
+    # 登录失效）。短期令牌，到期后前端经 /auth/refresh 用刷新令牌续期。
+    auth_access_token_ttl_seconds: int = 60 * 60 * 24
+    # 刷新令牌有效期（秒）：Redis 刷新会话 TTL（权威）。到期 / 被轮换 / 登出即需重新登录。
+    auth_refresh_token_ttl_seconds: int = 60 * 60 * 24 * 7
     # Argon2id 参数（OWASP 推荐强度：64 MiB、3 次迭代、4 并行）
     argon2_time_cost: int = 3
     argon2_memory_cost: int = 65536
@@ -242,8 +245,8 @@ class Settings(BaseSettings):
     avatar_min_dimension: int = 32
 
     # ---- 公司统一登录（elecnest SSO） ----
-    # 开关：关闭时 /auth/login/elecnest 返回 400（未启用）
-    elecnest_sso_enabled: bool = False
+    # 开关：默认开启（平台以公司统一登录为主）；关闭时 /auth/login/elecnest 返回 400（未启用）
+    elecnest_sso_enabled: bool = True
     # 统一登录用户信息接口（token + uid → 用户资料；全量参数见 API 文档）
     elecnest_get_user_info_url: str = "https://id.elecnest.cn/api/login/getUserInfo"
     # 外部 HTTP 调用超时（秒）

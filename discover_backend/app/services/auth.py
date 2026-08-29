@@ -1,13 +1,17 @@
-"""账号认证服务（AuthService）：登录 / 账号查询 / 用量聚合。
+"""账号认证服务（AuthService）：登录 / 令牌对签发 / 会话校验 / 刷新 / 登出 / 账号与用量。
 
-依赖注入：Database 与 ConversationService 由组装层注入（DIP，CLAUDE.md §6）。
+依赖注入：Database、ConversationService、SessionStore 由组装层注入（DIP，CLAUDE.md §6）。
 密码哈希为 CPU 密集，登录校验经 anyio 线程池；DB 非关键路径（登录时间记录）
 best-effort 忽略（与 record_turn 舱壁哲学一致）。认证本身是硬依赖，不降级。
+
+会话模型：登录签发「访问令牌（JWT，短期）+ 刷新令牌（不透明随机串，长期）」并写入
+Redis 会话层（SessionStore）；校验/续期/登出以 Redis 为权威——key 缺失即登录失效。
 """
 
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from typing import cast
 
@@ -31,6 +35,7 @@ from app.schemas.auth import (
 )
 from app.schemas.conversations import UsageAggregate
 from app.services.auth_security import JwtService, PasswordHasher
+from app.services.auth_session import SessionStore
 from app.services.conversations import ConversationService
 from app.services.elecnest_sso import ElecnestSSOClient
 from app.services.files import FileService
@@ -68,6 +73,8 @@ class AuthService:
         history: ConversationService,
         files: FileService,
         elecnest: ElecnestSSOClient | None = None,
+        *,
+        sessions: SessionStore,
     ) -> None:
         self._settings = settings
         self._db = db
@@ -76,19 +83,71 @@ class AuthService:
         self._elecnest = elecnest
         self._hasher = PasswordHasher(settings)
         self._jwt = JwtService(settings)
+        # Redis 会话层为硬依赖（无开关降级），组装层必注入
+        self._sessions = sessions
 
     # ---- 令牌 ----
     def encode_token(self, account_id: str) -> str:
-        """签发 JWT（登录用；测试经此构造令牌）。"""
+        """签发 JWT 访问令牌（登录用；测试经此构造令牌）。"""
         return self._jwt.encode(account_id)
 
     def decode_token(self, token: str) -> str:
         """校验 JWT 返回 account_id；无效/过期抛 UnauthorizedError。"""
         return self._jwt.decode(token)
 
+    # ---- 会话（Redis 权威：key 缺失即登录失效） ----
+    async def validate_session(self, token: str) -> str:
+        """校验 JWT 且访问会话存在：无效/过期/Redis 无此会话 → 401。
+
+        Redis 是访问会话的唯一事实来源——key 缺失即登录失效，即使 JWT 未过期。
+        """
+        account_id = self.decode_token(token)
+        if not await self._sessions.exists_access(token):
+            raise UnauthorizedError("登录状态已失效，请重新登录")
+        return account_id
+
+    async def refresh(self, refresh_token: str) -> LoginResponse:
+        """刷新令牌换新令牌对（轮换制）：旧刷新令牌原子消费作废，防重用。
+
+        consume_refresh 用 Redis GETDEL 读+删一步完成——同一刷新令牌并发下也只会
+        被消费一次，不存在「检查后再删」的竞态。
+        """
+        account_id = await self._sessions.consume_refresh(refresh_token)
+        if account_id is None:
+            raise UnauthorizedError("登录状态已失效，请重新登录")
+        return await self._establish_session(account_id, None)
+
+    async def logout(self, access_token: str, refresh_token: str) -> None:
+        """服务端登出：作废访问会话 + 刷新会话（DEL 幂等，key 不存在也成功）。"""
+        await self._sessions.revoke_access(access_token)
+        await self._sessions.revoke_refresh(refresh_token)
+
+    async def _establish_session(self, account_id: str, name: str | None) -> LoginResponse:
+        """签发令牌对 + 写入 Redis 会话层，组装登录/刷新响应。"""
+        access, refresh = await self._issue_and_store_pair(account_id)
+        return LoginResponse(
+            account_id=account_id,
+            token=access,
+            refresh_token=refresh,
+            expires_in=self._settings.auth_access_token_ttl_seconds,
+            name=name,
+        )
+
+    async def _issue_and_store_pair(self, account_id: str) -> tuple[str, str]:
+        """签发访问令牌（JWT）+ 刷新令牌（不透明随机串）并写入 Redis 会话层。"""
+        access = self._jwt.encode(account_id)
+        refresh = secrets.token_urlsafe(32)
+        await self._sessions.create_access(
+            access, account_id, ttl_seconds=self._settings.auth_access_token_ttl_seconds
+        )
+        await self._sessions.create_refresh(
+            refresh, account_id, ttl_seconds=self._settings.auth_refresh_token_ttl_seconds
+        )
+        return access, refresh
+
     # ---- 登录 ----
     async def login(self, phone: str, password: str) -> LoginResponse:
-        """手机号 + 密码登录：统一错误文案防账号枚举；成功签发 JWT。"""
+        """手机号 + 密码登录：统一错误文案防账号枚举；成功签发访问+刷新令牌。"""
         account = await self._find_by_phone(phone)
         if account is None or account.password_hash is None:
             raise UnauthorizedError("手机号或密码错误")
@@ -97,12 +156,12 @@ class AuthService:
         ok = await anyio.to_thread.run_sync(self._hasher.verify, account.password_hash, password)
         if not ok:
             raise UnauthorizedError("手机号或密码错误")
-        token = self._jwt.encode(str(account.id))
+        response = await self._establish_session(str(account.id), account.name)
         await self._record_login(account.id)
-        return LoginResponse(account_id=str(account.id), token=token, name=account.name)
+        return response
 
     async def login_with_elecnest(self, token: str, uid: int) -> LoginResponse:
-        """公司统一登录：token + uid → 用户信息 → 本地注册/复用 → JWT。"""
+        """公司统一登录：token + uid → 用户信息 → 本地注册/复用 → 签发访问+刷新令牌。"""
         if not self._settings.elecnest_sso_enabled:
             raise BadRequestError("统一登录未启用")
         assert self._elecnest is not None
@@ -112,11 +171,7 @@ class AuthService:
         uid_text = str(uid)
         account_id = await self._upsert_elecnest_account(uid_text, info)
         name = info.nickname or info.username
-        return LoginResponse(
-            account_id=account_id,
-            token=self._jwt.encode(account_id),
-            name=name,
-        )
+        return await self._establish_session(account_id, name)
 
     async def _upsert_elecnest_account(self, uid_text: str, info: ElecnestUserInfo) -> str:
         """按 elecnest_uid 查账号：无则创建（user_type=elecnest），有则更新显示名/头像。"""

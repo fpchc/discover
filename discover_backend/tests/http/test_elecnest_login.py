@@ -57,19 +57,26 @@ async def _client(app: FastAPI) -> httpx.AsyncClient:
 
 async def test_elecnest_login_success_returns_token() -> None:
     stub = _StubAuth()
-    stub.result = LoginResponse(account_id="acct-1", token="jwt-1", name="张三")
+    stub.result = LoginResponse(
+        account_id="acct-1", token="jwt-1", refresh_token="refresh-1", expires_in=86400, name="张三"
+    )
     async with await _client(_make_app(stub)) as client:
         response = await client.post(
             "/api/v1/auth/login/elecnest",
-            json={"token": "998a6944814f8efb4d0c2a35c6d2e8369e1065ded6cdfaf62364983c64abcfbe", "uid": "329806"},
+            json={
+                "token": "998a6944814f8efb4d0c2a35c6d2e8369e1065ded6cdfaf62364983c64abcfbe",
+                "uid": "329806",
+            },
         )
     assert response.status_code == 200
     body = LoginResponse.model_validate(response.json())
     assert body.account_id == "acct-1"
     assert body.token == "jwt-1"
     assert body.name == "张三"
-    # 路由把 body 字段原样透传给服务
-    assert stub.calls == [("sso-token", 88001)]
+    # 路由把 body 字段原样透传给服务（uid 字符串经 pydantic 转 int）
+    assert stub.calls == [
+        ("998a6944814f8efb4d0c2a35c6d2e8369e1065ded6cdfaf62364983c64abcfbe", 329806)
+    ]
 
 
 async def test_elecnest_login_disabled_maps_to_400() -> None:

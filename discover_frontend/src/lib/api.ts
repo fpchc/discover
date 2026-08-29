@@ -5,9 +5,15 @@
  * JSON.stringify(formDataToJSON(data))，导致文件上传变成 JSON 体、后端 422。
  * 让 axios 按请求体自动推断：JSON 对象 → application/json，FormData → 浏览器补 multipart。
  */
-import axios, { isAxiosError } from 'axios'
+import axios, { type InternalAxiosRequestConfig, isAxiosError } from 'axios'
 import { API_BASE_URL, REQUEST_TIMEOUT_MS } from '@/env'
-import { readStoredToken } from '@/lib/auth'
+import {
+  clearStoredTokens,
+  readStoredRefreshToken,
+  readStoredToken,
+  writeStoredRefreshToken,
+  writeStoredToken,
+} from '@/lib/auth'
 import type {
   AccountRecord,
   AccountUsage,
@@ -48,8 +54,8 @@ httpClient.interceptors.request.use((config) => {
 
 /**
  * 全局 401 → 会话过期回调（由 main.tsx 注册到 auth store 的 expire）。
- * 用注册而非直接 import 避免 api ↔ auth 循环依赖。登录接口自身 401（密码错误）
- * 不触发全局过期，交由 login 调用方按登录失败处理。
+ * 用注册而非直接 import 避免 api ↔ auth 循环依赖。触发条件收窄为「刷新失败 /
+ * 无刷新令牌」——401 先走刷新重放，重放成功即不跳登录页。
  */
 let unauthorizedHandler: (() => void) | null = null
 
@@ -57,24 +63,96 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler
 }
 
+/** 认证端点自身不做「401 → 刷新重试」（防递归：login=密码错、refresh=刷新令牌失效、logout=访问令牌已过期） */
+const isAuthEndpoint = (url: string): boolean => url.startsWith('/auth/')
+
+/** 并发 401 单飞：同一时刻只发起一次刷新，其余 401 等待共用结果（防刷新风暴） */
+let refreshPromise: Promise<string | null> | null = null
+
+/**
+ * 用刷新令牌换新令牌对（POST /auth/refresh；轮换制，旧刷新令牌作废）。
+ * 成功后 access + refresh 成对写回 localStorage；失败返回 null（由拦截器统一清令牌 + 过期）。
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise !== null) return refreshPromise
+  refreshPromise = (async () => {
+    const refresh = readStoredRefreshToken()
+    if (refresh === null) return null
+    try {
+      const data = await refreshToken(refresh)
+      writeStoredToken(data.token)
+      writeStoredRefreshToken(data.refresh_token)
+      return data.token
+    } catch {
+      return null
+    }
+  })().finally(() => {
+    refreshPromise = null
+  })
+  return refreshPromise
+}
+
+/** axios 内部扩展字段 `_retry`（标记该请求已刷新重放）未在公开类型内暴露，运行时边界收窄 */
+interface RetriableRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean
+}
+
 httpClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (isAxiosError(error) && error.response?.status === 401) {
-      const url = error.config?.url ?? ''
-      const isLogin = url.includes('/auth/login')
-      if (!isLogin && unauthorizedHandler !== null) {
-        unauthorizedHandler()
+  async (error) => {
+    if (!isAxiosError(error) || error.response?.status !== 401) {
+      return Promise.reject(error)
+    }
+    const url = error.config?.url ?? ''
+    // 认证端点 401 直接放行：调用方按各自语义处理（登录失败 / 刷新令牌失效 / 登出幂等）
+    if (isAuthEndpoint(url)) {
+      return Promise.reject(error)
+    }
+    // 受保护端点 401 → 刷新令牌续期并重放一次；重放仍 401 / 刷新失败 → 会话过期
+    const config = error.config as RetriableRequestConfig | undefined
+    if (config !== undefined && config._retry !== true) {
+      config._retry = true
+      const fresh = await refreshAccessToken()
+      if (fresh !== null) {
+        config.headers.set('Authorization', `Bearer ${fresh}`)
+        return httpClient.request(config)
       }
     }
+    // 无刷新令牌 / 刷新失败 / 重放后仍 401：清本地令牌并触发全局过期（回登录页）
+    clearStoredTokens()
+    if (unauthorizedHandler !== null) unauthorizedHandler()
     return Promise.reject(error)
   },
 )
 
-/** 手机号 + 密码登录，成功返回 JWT 与账号基础信息（ACCOUNT_API.md §1.1） */
+/** 手机号 + 密码登录，成功返回令牌对与账号基础信息（ACCOUNT_API.md §1.1） */
 export async function login(params: LoginRequest): Promise<LoginResponse> {
   const { data } = await httpClient.post<LoginResponse>('/auth/login', params)
   return data
+}
+
+/** 刷新令牌换新令牌对（POST /auth/refresh；轮换制，旧刷新令牌作废，Redis 权威） */
+export async function refreshToken(refreshTokenValue: string): Promise<LoginResponse> {
+  const { data } = await httpClient.post<LoginResponse>('/auth/refresh', {
+    refresh_token: refreshTokenValue,
+  })
+  return data
+}
+
+/**
+ * 服务端登出（POST /auth/logout；204）：作废当前访问 + 刷新令牌（DEL 幂等，无 key 也 204）。
+ * access / refresh 显式传入：登出需先清本地再调后端，不能依赖拦截器读 localStorage 的时机；
+ * 访问令牌已过期（Redis 已清）时后端仍返回 204，失败不阻塞本地登出。
+ */
+export async function logout(
+  accessToken: string | null,
+  refreshTokenValue: string | null,
+): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (accessToken !== null) {
+    headers.Authorization = `Bearer ${accessToken}`
+  }
+  await httpClient.post('/auth/logout', { refresh_token: refreshTokenValue ?? '' }, { headers })
 }
 
 /** 当前登录账号信息（ACCOUNT_API.md §1.2；需认证） */

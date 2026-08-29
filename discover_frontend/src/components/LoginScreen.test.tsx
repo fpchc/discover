@@ -10,6 +10,7 @@ import type { AccountRecord } from '@/types'
 vi.mock('@/lib/api', () => ({
   fetchMe: vi.fn(),
   login: vi.fn(),
+  logout: vi.fn(),
 }))
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
@@ -53,6 +54,8 @@ describe('LoginScreen', () => {
     vi.mocked(apiLogin).mockResolvedValue({
       account_id: account.account_id,
       token: 'jwt-new',
+      refresh_token: 'refresh-new',
+      expires_in: 86_400,
       name: '张三',
     })
     vi.mocked(fetchMe).mockResolvedValue(account)

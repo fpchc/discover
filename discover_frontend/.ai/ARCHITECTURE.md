@@ -16,8 +16,8 @@ discover_frontend/
 │   ├── types.ts               后端契约类型（pydantic 映射，禁止组件内散落）
 │   ├── env.ts                 环境配置唯一入口（类型化 VITE_*，禁止直读 import.meta.env）
 │   ├── lib/                   纯逻辑层（叶子，无 React 依赖，可单测）
-│   │   ├── api.ts             axios 实例 + 对话/历史/文件/助手接口封装 + 认证（login / fetchMe）+ Bearer 拦截器 + 全局 401 回调（HTTP 唯一出口）
-│   │   ├── auth.ts            登录令牌持久化（localStorage `disf_auth_token`，唯一事实源）
+│   │   ├── api.ts             axios 实例 + 对话/历史/文件/助手接口封装 + 认证（login / refreshToken / logout / fetchMe）+ Bearer 拦截器 + 401→刷新重放拦截器 + 全局 401 回调（HTTP 唯一出口）
+│   │   ├── auth.ts            登录令牌对持久化（localStorage `disf_auth_token` / `disf_auth_refresh_token` 成对读写，唯一事实源）
 │   │   ├── errors.ts          错误映射（HTTP + SSE error 帧 → 可读文案）
 │   │   ├── history.ts         MessageRecord → ChatMessage 映射（纯函数）
 │   │   ├── sse.ts             SSE 帧解析原语（纯函数，data: 行 → 判别联合帧）
@@ -34,7 +34,7 @@ discover_frontend/
 │   │   ├── chat.ts            当前会话：activeMessages（独立切片）/ conversationId / isStreaming / loadingHistory
 │   │   ├── conversations.ts   会话列表（后端 GET /conversations 为唯一事实源）
 │   │   ├── assistants.ts      助手目录 + 当前选择（agent_id）
-│   │   ├── auth.ts            账号认证（status/account；resolveSession / login / logout / expire；登出重置 chat / conversations / assistants / view 四 store）
+│   │   ├── auth.ts            账号认证（status/account；resolveSession / login / logout / expire；登录写令牌对、登出调后端作废、过期清令牌对；登出重置 chat / conversations / assistants / view 四 store）
 │   │   ├── theme.ts           主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享）
 │   │   └── view.ts            视图状态（主区对话 / 用户中心 + 用户中心菜单 + 当前会话 ID；localStorage `disf_view` / `disf_center_tab` / `disf_conversation_id` 持久化，刷新停留当前页面并恢复打开的对话）
 │   ├── components/
@@ -74,7 +74,7 @@ discover_frontend/
 | Markdown | react-markdown + remark-gfm + highlight.js 按需注册 7 语言 + DOMPurify | 默认不渲染原始 HTML（安全收敛）；代码块深色外壳 + 语言标签头 + 复制钮 |
 | 图表 | **echarts**（按需装配 bar/line + grid/tooltip/legend + canvas，`ui/chart.tsx` 轻封装） | 用量页「尽量用图展示」新增（用户明确指示，CLAUDE.md §1 硬约束逃逸）；配色经 dataviz 校验明暗均通过 |
 | 错误映射 | `lib/errors.ts` 集中维护 | HTTP 状态码 + SSE error 帧 → 可读文案一处收口 |
-| 账号认证 | JWT（`POST /auth/login`）+ axios Bearer 拦截器 + `AuthGate` 闸门 + 侧栏账号区/退出 + 全局 401 过期 | 后端 `ACCOUNT_API.md` 引入账号体系（手机号+密码登录，数据按账号隔离）；令牌存 localStorage `disf_auth_token`，启动 `resolveSession` 用 `GET /users/me` 校验；登出/过期重置 chat / conversations / assistants / view 四 store 防跨账号数据泄漏 |
+| 账号认证 | 令牌对（`POST /auth/login` 返回 access + refresh）+ axios Bearer 拦截器 + 401→刷新重放拦截器（并发单飞 / 轮换写回 / 失败才全局过期）+ `AuthGate` 闸门 + 侧栏账号区/退出 + 服务端登出（`POST /auth/logout`） | 后端 `ACCOUNT_API.md` 引入账号体系（手机号+密码登录，数据按账号隔离；Redis 会话权威）；令牌对存 localStorage `disf_auth_token` / `disf_auth_refresh_token`（access 24h / refresh 7d 轮换制），启动 `resolveSession` 用 `GET /users/me` 校验；受保护接口 401 先刷新重放、刷新失败才回登录页；登出/过期重置 chat / conversations / assistants / view 四 store 防跨账号数据泄漏 |
 | 视图持久化 | Zustand `stores/view.ts` + localStorage `disf_view` / `disf_center_tab` / `disf_conversation_id` | 仅 UI 导航状态（对话 / 用户中心 + 个人中心 / 用量 + 当前会话指针），刷新停留当前页面并恢复打开的对话（App 挂载加载列表后重开）；不存会话正文数据（后端为事实源）；登出 / 过期经 `resetAppState` 复位回对话页 |
 | Toast 挂载 | Toaster 常驻根层（`main.tsx` Root，在 `AuthGate` 之上） | 登录页与主界面互斥挂载，toast 若挂在任一侧，登录成功切屏即随卸载消失；根层保证登录错误 / 成功提示跨屏可见。主题经 `stores/theme.ts` 全局共享，根层 Toaster 与任一屏的主题切换实时同步 |
 | 显式助手选择 | `GET /assistants` 目录 + 请求体 `agent_id` + `message_end`/blocking `metadata.assistant` 回显 | 用户显式选专家，选择随下一次发送生效（API.md §3）；入口统一为输入卡上方平铺专家助手胶囊（未选中即默认，目录内 generic 项过滤，无「通用对话」下拉项），侧栏「技能与助手」为新建绑定专家会话的快捷入口 |
@@ -88,11 +88,15 @@ discover_frontend/
 
 ## 关键契约确认（2026-08-24 起与后端对齐，React 重构后保持不变）
 
-* **账号认证（ACCOUNT_API.md，2026-08-28 新增）**：`POST /api/v1/auth/login`（手机号+密码）返回 JWT
-  `{account_id, token, name}`；除 `/auth/login`、`GET /assistants`、`GET /files/upload`、
-  `GET /files/{file_id}/preview` 外，**数据接口一律需 `Authorization: Bearer <JWT>` 且按账号隔离**
-  （跨账号读/删/续聊 → 404，不泄露存在性）。令牌存 localStorage `disf_auth_token`，有效期默认 7 天；
-  启动用 `GET /users/me` 校验恢复，任何受保护接口 401 全局回登录页（`setUnauthorizedHandler` → `expire`）。
+* **账号认证（ACCOUNT_API.md，2026-08-28 新增；Redis 会话 2026-08-29 落地）**：`POST /api/v1/auth/login`
+  （手机号+密码）与 `/auth/login/elecnest`、`/auth/refresh` 均返回令牌对
+  `{account_id, token, refresh_token, expires_in, name?}`；访问令牌 `token`（Bearer，Redis 权威，
+  key 24h）、刷新令牌 `refresh_token`（7d，轮换制每次刷新换新）；`/auth/logout`（Bearer + body refresh）
+  服务端作废令牌对（DEL 幂等，204）。除 `/auth/*`、`GET /assistants`、`GET /files/upload`、
+  `GET /files/{file_id}/preview` 外，**数据接口一律需 `Authorization: Bearer <token>` 且按账号隔离**
+  （跨账号读/删/续聊 → 404，不泄露存在性）。令牌对存 localStorage `disf_auth_token` /
+  `disf_auth_refresh_token`，启动用 `GET /users/me` 校验恢复；受保护接口 401 先单飞刷新重放一次，
+  **刷新成功即不跳登录页**，刷新失败才 `setUnauthorizedHandler` → `expire` 全局回登录页。
 * **登录失败** 统一 401 `{detail: "手机号或密码错误"}`（防账号枚举）；非 `is_system` 访问 `GET /users` → 403。
 
 * **SSE 判别帧共 7 种**：`message` / `message_end` / `ping` / `error` + 思考三帧

@@ -71,8 +71,8 @@ async def test_startup_then_shutdown_reverse(monkeypatch: pytest.MonkeyPatch) ->
     assert _EVENTS == ["a:start", "b:start", "b:shutdown", "a:shutdown"]
 
 
-def test_builtin_order_logging_first_redis_off() -> None:
-    """真实扩展默认顺序：logging 最先；redis 默认关闭。
+def test_builtin_order_logging_first_redis_enabled() -> None:
+    """真实扩展默认顺序：logging 最先；redis 恒启用（认证会话层硬依赖，无开关）。
 
     关闭日志扩展（logging_enabled=False），避免其替换根 logger 破坏本测试
     进程的日志捕获。
@@ -83,6 +83,7 @@ def test_builtin_order_logging_first_redis_off() -> None:
     assert names == [
         "app.extensions.ext_database",
         "app.extensions.ext_storage",
+        "app.extensions.ext_redis",
         "app.extensions.ext_mcp",
         "app.extensions.ext_llm",
     ]

@@ -1,7 +1,13 @@
 import { toast } from 'sonner'
 import { create } from 'zustand'
-import { login as apiLogin, fetchMe } from '@/lib/api'
-import { readStoredToken, writeStoredToken } from '@/lib/auth'
+import { login as apiLogin, logout as apiLogout, fetchMe } from '@/lib/api'
+import {
+  clearStoredTokens,
+  loadTokens,
+  readStoredToken,
+  writeStoredRefreshToken,
+  writeStoredToken,
+} from '@/lib/auth'
 import { mapHttpError } from '@/lib/errors'
 import { useAssistantsStore } from '@/stores/assistants'
 import { useChatStore } from '@/stores/chat'
@@ -66,8 +72,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const account = await fetchMe()
       set({ status: 'authenticated', token, account })
     } catch {
-      // 令牌无效 / 过期 / 账号不存在：清除并回到登录页（启动期不弹 toast）
-      writeStoredToken(null)
+      // 令牌对无效 / 过期 / 账号不存在：清除并回到登录页（启动期不弹 toast）
+      clearStoredTokens()
       set({ status: 'unauthenticated', token: '', account: null })
     }
   },
@@ -75,11 +81,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (phone, password) => {
     try {
       const res = await apiLogin({ phone, password })
+      // 令牌对写入 localStorage：access 由拦截器注入，refresh 供 401 续期 / 登出作废（轮换制成对更新）
       writeStoredToken(res.token)
+      writeStoredRefreshToken(res.refresh_token)
       // 先用登录响应拼基础账号（少一次串行往返）；随后 fetchMe 补充完整字段
       const base: AccountRecord = {
         account_id: res.account_id,
-        name: res.name,
+        name: res.name ?? phone,
         phone,
         avatar: null,
         status: 'active',
@@ -105,14 +113,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    writeStoredToken(null)
+    const { access, refresh } = loadTokens()
+    // 先清本地再调后端：登出即时生效；后端作废走显式令牌，不依赖拦截器读 localStorage 时机
+    clearStoredTokens()
     resetAppState()
     set({ status: 'unauthenticated', token: '', account: null })
+    // 服务端作废令牌对（幂等：访问令牌已过期也返回 204）；失败不阻塞本地登出
+    if (access !== null || refresh !== null) {
+      void apiLogout(access, refresh).catch(() => {
+        // 后端作废失败可忽略：本地令牌已清，服务端由 TTL 兜底
+      })
+    }
   },
 
   expire: () => {
     if (get().status !== 'authenticated') return
-    writeStoredToken(null)
+    clearStoredTokens()
     resetAppState()
     set({ status: 'unauthenticated', token: '', account: null })
     toast.error('登录已过期，请重新登录')

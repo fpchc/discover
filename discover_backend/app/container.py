@@ -21,6 +21,7 @@ from app.extensions import shutdown_extensions, startup_extensions
 from app.extensions.ext_database import get_database
 from app.extensions.ext_llm import get_client, get_providers, resolve_api_key
 from app.extensions.ext_mcp import get_manager, get_registry
+from app.extensions.ext_redis import get_cache
 from app.extensions.ext_storage import get_storage
 from app.extensions.storage.base_storage import BaseStorage
 from app.llm.client import LLMClient
@@ -29,6 +30,7 @@ from app.registry.hot_reload import HotReloader
 from app.registry.registry import AgentRegistry
 from app.runtime.runner import Runtime
 from app.services.auth import AuthService
+from app.services.auth_session import RedisSessionStore
 from app.services.conversations import ConversationService
 from app.services.elecnest_sso import ElecnestSSOClient
 from app.services.files import FileService
@@ -78,12 +80,14 @@ class AppServices:
         self.catalog = AssistantCatalog(self.registry)
         self.conversation_service = ConversationService(self.db, self.settings, self.catalog)
         self.elecnest = self._build_elecnest()
+        # Redis 会话层为认证硬依赖：恒用 RedisSessionStore（无开关降级）
         self.auth = AuthService(
             self.settings,
             self.db,
             self.conversation_service,
             self.files,
             elecnest=self.elecnest,
+            sessions=RedisSessionStore(get_cache()),
         )
         reloader = HotReloader(self.registry, self.settings)
         scope = anyio.CancelScope()

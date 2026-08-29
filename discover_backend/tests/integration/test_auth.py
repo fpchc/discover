@@ -26,6 +26,7 @@ from app.schemas.auth import AvatarConfig, LoginResponse
 from app.schemas.conversations import TurnRecord, TurnUsage
 from app.services.auth import AuthService
 from app.services.auth_security import JwtService, PasswordHasher
+from app.services.auth_session import SessionStore
 from app.services.conversations import ConversationService
 from app.services.elecnest_sso import ElecnestSSOClient
 from app.services.files import FileService
@@ -56,6 +57,7 @@ def _service(
     *,
     elecnest: ElecnestSSOClient | None = None,
     elecnest_enabled: bool = False,
+    sessions: SessionStore | None = None,
 ) -> AuthService:
     """AuthService（注入 FileService；storage_root 缺省用系统临时目录）。"""
     root = storage_root if storage_root is not None else Path(tempfile.mkdtemp(prefix="auth-test-"))
@@ -67,6 +69,8 @@ def _service(
         ConversationService(_DATABASE),
         files,
         elecnest=elecnest,
+        # 会话层为硬依赖（无开关）：缺省注入内存假存储，会话相关用例显式传 store
+        sessions=sessions or _FakeSessionStore(),
     )
 
 
@@ -87,6 +91,69 @@ def _token_for(account_id: str) -> dict[str, str]:
     """为该账号构造 Authorization 头（HTTP 端点测试用）。"""
     token = JwtService(_settings()).encode(account_id)
     return {"Authorization": f"Bearer {token}"}
+
+
+class _FakeSessionStore:
+    """内存会话存储（测试用）：访问/刷新令牌按协议记录，支持轮换与登出模拟。"""
+
+    def __init__(self) -> None:
+        self._access: dict[str, str] = {}
+        self._refresh: dict[str, str] = {}
+
+    async def create_access(self, token: str, account_id: str, *, ttl_seconds: int) -> None:
+        del ttl_seconds
+        self._access[token] = account_id
+
+    async def exists_access(self, token: str) -> bool:
+        return token in self._access
+
+    async def create_refresh(self, token: str, account_id: str, *, ttl_seconds: int) -> None:
+        del ttl_seconds
+        self._refresh[token] = account_id
+
+    async def get_refresh(self, token: str) -> str | None:
+        return self._refresh.get(token)
+
+    async def consume_refresh(self, token: str) -> str | None:
+        return self._refresh.pop(token, None)
+
+    async def revoke_access(self, token: str) -> None:
+        self._access.pop(token, None)
+
+    async def revoke_refresh(self, token: str) -> None:
+        self._refresh.pop(token, None)
+
+
+class _DenySessionStore:
+    """会话恒不存在的假存储（模拟 Redis 无该 key → 登录失效）。"""
+
+    async def create_access(self, token: str, account_id: str, *, ttl_seconds: int) -> None:
+        del token, account_id, ttl_seconds
+        return None
+
+    async def exists_access(self, token: str) -> bool:
+        del token
+        return False
+
+    async def create_refresh(self, token: str, account_id: str, *, ttl_seconds: int) -> None:
+        del token, account_id, ttl_seconds
+        return None
+
+    async def get_refresh(self, token: str) -> str | None:
+        del token
+        return None
+
+    async def consume_refresh(self, token: str) -> str | None:
+        del token
+        return None
+
+    async def revoke_access(self, token: str) -> None:
+        del token
+        return None
+
+    async def revoke_refresh(self, token: str) -> None:
+        del token
+        return None
 
 
 async def _create_account(
@@ -181,6 +248,90 @@ async def test_login_disabled_account_rejected() -> None:
     await _create_account(phone, "pw", status="disabled")
     with pytest.raises(UnauthorizedError):
         await _service().login(phone, "pw")
+
+
+# ---- 会话层（Redis 权威：访问/刷新令牌 / validate_session / refresh / logout） ----
+
+
+async def test_login_returns_token_pair_and_stores_sessions() -> None:
+    phone = f"111{str(uuid.uuid4().int)[:8]}"
+    account_id = await _create_account(phone, "pw")
+    store = _FakeSessionStore()
+    resp = await _service(sessions=store).login(phone, "pw")
+    assert resp.account_id == account_id
+    assert resp.token
+    assert resp.refresh_token
+    assert resp.refresh_token != resp.token
+    assert resp.expires_in == _settings().auth_access_token_ttl_seconds
+    assert await store.exists_access(resp.token) is True
+    assert await store.get_refresh(resp.refresh_token) == account_id
+
+
+async def test_validate_session_passes_for_stored_token() -> None:
+    phone = f"112{str(uuid.uuid4().int)[:8]}"
+    account_id = await _create_account(phone, "pw")
+    svc = _service(sessions=_FakeSessionStore())
+    resp = await svc.login(phone, "pw")
+    assert await svc.validate_session(resp.token) == account_id
+
+
+async def test_validate_session_rejected_when_redis_missing() -> None:
+    """JWT 有效但 Redis 无该访问会话 → 401（Redis 权威，key 缺失即登录失效）。"""
+    phone = f"113{str(uuid.uuid4().int)[:8]}"
+    account_id = await _create_account(phone, "pw")
+    svc = _service(sessions=_DenySessionStore())
+    token = svc.encode_token(account_id)  # 有效 JWT 但从未写入会话
+    with pytest.raises(UnauthorizedError):
+        await svc.validate_session(token)
+
+
+async def test_refresh_rotates_token_pair() -> None:
+    """刷新换新令牌对；旧刷新令牌作废（轮换防重用）；新访问令牌可校验。"""
+    phone = f"114{str(uuid.uuid4().int)[:8]}"
+    account_id = await _create_account(phone, "pw")
+    store = _FakeSessionStore()
+    svc = _service(sessions=store)
+    first = await svc.login(phone, "pw")
+    second = await svc.refresh(first.refresh_token)
+    assert second.account_id == account_id
+    assert second.token != first.token
+    assert second.refresh_token != first.refresh_token
+    # 旧刷新令牌已作废；新刷新令牌可再刷新
+    assert await store.get_refresh(first.refresh_token) is None
+    assert await store.get_refresh(second.refresh_token) == account_id
+    third = await svc.refresh(second.refresh_token)
+    assert third.account_id == account_id
+
+
+async def test_refresh_rejected_for_unknown_refresh_token() -> None:
+    phone = f"115{str(uuid.uuid4().int)[:8]}"
+    await _create_account(phone, "pw")
+    svc = _service(sessions=_FakeSessionStore())
+    with pytest.raises(UnauthorizedError):
+        await svc.refresh("unknown-refresh-token")
+
+
+async def test_logout_revokes_both_tokens() -> None:
+    phone = f"116{str(uuid.uuid4().int)[:8]}"
+    await _create_account(phone, "pw")
+    store = _FakeSessionStore()
+    svc = _service(sessions=store)
+    resp = await svc.login(phone, "pw")
+    await svc.logout(resp.token, resp.refresh_token)
+    assert await store.exists_access(resp.token) is False
+    assert await store.get_refresh(resp.refresh_token) is None
+    with pytest.raises(UnauthorizedError):
+        await svc.validate_session(resp.token)
+
+
+async def test_login_elecnest_returns_token_pair() -> None:
+    uid = 88005
+    client = _mock_elecnest({"uid": uid, "username": "zhaoliu", "nickname": "赵六"})
+    store = _FakeSessionStore()
+    svc = _service(elecnest=client, elecnest_enabled=True, sessions=store)
+    resp = await svc.login_with_elecnest("sso-token", uid)
+    assert resp.refresh_token
+    assert await store.exists_access(resp.token) is True
 
 
 # ---- 公司统一登录（elecnest SSO） ----
@@ -370,7 +521,13 @@ async def test_change_avatar_rejects_oversize(tmp_path: Path) -> None:
     account_id = await _create_account(phone, "pw")
     settings = Settings(_env_file=None, jwt_secret_key=_SECRET, avatar_max_size_bytes=4)
     files = FileService(settings, _DATABASE, LocalStorage(tmp_path))
-    svc = AuthService(settings, _DATABASE, ConversationService(_DATABASE), files)
+    svc = AuthService(
+        settings,
+        _DATABASE,
+        ConversationService(_DATABASE),
+        files,
+        sessions=_FakeSessionStore(),
+    )
     with pytest.raises(BadRequestError):
         await svc.change_avatar(
             account_id, filename="big.png", content=_PNG_BYTES, mimetype="image/png"
@@ -454,9 +611,35 @@ async def test_http_login_endpoint(
     assert ok.status_code == 200
     body = LoginResponse.model_validate(ok.json())
     assert body.token
+    assert body.refresh_token
+    assert body.expires_in > 0
     assert body.account_id
     bad = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "no"})
     assert bad.status_code == 401
+
+
+async def test_http_logout_endpoint_idempotent(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """登出：有 Bearer 头即 204（DEL 幂等，内存假存储也成功）；无头 401。"""
+    _app, client = api_ctx
+    phone = f"117{str(uuid.uuid4().int)[:8]}"
+    account_id = await _create_account(phone, "pw")
+    ok = await client.post(
+        "/api/v1/auth/logout", json={"refresh_token": "any"}, headers=_token_for(account_id)
+    )
+    assert ok.status_code == 204
+    missing = await client.post("/api/v1/auth/logout", json={"refresh_token": "any"})
+    assert missing.status_code == 401
+
+
+async def test_http_refresh_requires_redis_session(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """conftest 注入内存假存储：未登录写入刷新会话，任何刷新令牌均 401。"""
+    _app, client = api_ctx
+    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": "anything"})
+    assert resp.status_code == 401
 
 
 async def test_http_elecnest_login_endpoint(
@@ -485,8 +668,10 @@ async def test_http_elecnest_login_endpoint(
 async def test_http_elecnest_login_disabled(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
-    _app, client = api_ctx
-    # 默认开关关闭 → 400（未启用）
+    app, client = api_ctx
+    # 显式关闭开关 → 400（未启用）；不依赖默认值（默认已改为开启）
+    app.state.services.settings.elecnest_sso_enabled = False  # type: ignore[attr-defined]  # 测试直改运行时配置
+    app.state.services.auth._elecnest = None  # type: ignore[attr-defined]  # 关闭时不构建 SSO 客户端
     resp = await client.post("/api/v1/auth/login/elecnest", json={"token": "t", "uid": 1})
     assert resp.status_code == 400
 

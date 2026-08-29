@@ -49,11 +49,12 @@
 
 | 职责 | 路径 |
 |------|------|
-| 账号认证门面（login / login_with_elecnest / get_account / get_user_usage / list_users_with_usage + 资料维护：update_account / change_avatar / change_password / avatar_config，AuthService） | `app/services/auth.py` |
+| 账号认证门面（login / login_with_elecnest / validate_session / refresh / logout / get_account / get_user_usage / list_users_with_usage + 资料维护：update_account / change_avatar / change_password / avatar_config，AuthService） | `app/services/auth.py` |
+| 登录会话存储层（访问/刷新令牌 Redis 会话：SessionStore 协议 + RedisSessionStore fail-closed + NullSessionStore 降级 + key 规范 `auth:access\|refresh:{sha256}`） | `app/services/auth_session.py` |
 | 公司统一登录客户端（elecnest SSO：token + uid → 用户资料，ElecnestSSOClient） | `app/services/elecnest_sso.py` |
-| Argon2id 密码哈希 + JWT 会话令牌（PasswordHasher / JwtService） | `app/services/auth_security.py` |
-| FastAPI 认证依赖（get_current_account_id / get_current_account / require_superuser） | `app/api/deps.py` |
-| 认证接口（/auth/login、/auth/login/elecnest、/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
+| Argon2id 密码哈希 + JWT 访问令牌（PasswordHasher / JwtService，exp 取 `auth_access_token_ttl_seconds`） | `app/services/auth_security.py` |
+| FastAPI 认证依赖（get_current_account_id async 会话校验 / get_bearer_token / get_current_account / require_superuser） | `app/api/deps.py` |
+| 认证接口（/auth/login、/auth/login/elecnest、/auth/refresh、/auth/logout、/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
 | 预置账号 CLI（python -m app.services.auth_provision，无注册接口） | `app/services/auth_provision.py` |
 
 ## LLM 层（L1）

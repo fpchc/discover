@@ -143,6 +143,44 @@ class _FakeRuntime:
         """AppServices.shutdown 会逐一 close 会话运行时。"""
 
 
+class _FakeSessionStore:
+    """内存会话存储（离线 HTTP 测试用）：访问会话恒有效，登出/刷新走内存 dict。
+
+    exists_access 恒 True：测试令牌经 make_auth_token / JwtService 直接签发、不写
+    会话，需保持「有效 JWT 即可访问」语义（等价原 NullSessionStore 行为）；
+    create/consume/revoke 真实落内存，供登出 / 刷新端点用例。Redis 会话层为
+    硬依赖，此处注入避免依赖真实 Redis（CLAUDE.md §12）。
+    """
+
+    def __init__(self) -> None:
+        self._access: dict[str, str] = {}
+        self._refresh: dict[str, str] = {}
+
+    async def create_access(self, token: str, account_id: str, *, ttl_seconds: int) -> None:
+        del ttl_seconds
+        self._access[token] = account_id
+
+    async def exists_access(self, token: str) -> bool:
+        del token
+        return True
+
+    async def create_refresh(self, token: str, account_id: str, *, ttl_seconds: int) -> None:
+        del ttl_seconds
+        self._refresh[token] = account_id
+
+    async def get_refresh(self, token: str) -> str | None:
+        return self._refresh.get(token)
+
+    async def consume_refresh(self, token: str) -> str | None:
+        return self._refresh.pop(token, None)
+
+    async def revoke_access(self, token: str) -> None:
+        self._access.pop(token, None)
+
+    async def revoke_refresh(self, token: str) -> None:
+        self._refresh.pop(token, None)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     # 每个测试独立事件循环：session 级循环 + async generator fixture 会在
     # teardown 触发 pytest-asyncio 的 Runner.run()「running event loop」报错
@@ -167,6 +205,8 @@ async def api_ctx(tmp_path: Path) -> AsyncIterator[tuple[object, httpx.AsyncClie
     app = create_app(_build_settings(tmp_path))
     app.state.services.get_runtime = lambda _sid: _FakeRuntime()
     async with app.router.lifespan_context(app):
+        # Redis 会话层为硬依赖；离线测试注入内存假存储（startup 已建 AuthService）
+        app.state.services.auth._sessions = _FakeSessionStore()  # type: ignore[attr-defined]  # 测试注入假会话存储
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://127.0.0.1:8000/"

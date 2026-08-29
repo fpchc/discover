@@ -9,8 +9,8 @@
 | Tailwind + 双主题设计令牌（深蓝黑 / 极简冷白）+ 玻璃拟态工具类 + 自定义工具类 + Markdown 样式 | `src/index.css` |
 | 后端契约类型（pydantic 映射；含账号认证 AccountRecord / LoginResponse / AccountUsage / AvatarConfig / 资料请求体） | `src/types.ts` |
 | 环境配置唯一入口（类型化 VITE_*） | `src/env.ts` |
-| axios 实例 + 对话/历史/文件/助手接口封装 + 认证（login / fetchMe）+ 资料维护（fetchAccountUsage / fetchAvatarConfig / updateAccountName / uploadAvatar / changePassword / avatarUrl）+ Bearer 拦截器 + 全局 401 回调（HTTP 唯一出口） | `src/lib/api.ts` |
-| 登录令牌持久化（localStorage `disf_auth_token` 读写，唯一事实源） | `src/lib/auth.ts` |
+| axios 实例 + 对话/历史/文件/助手接口封装 + 认证（login / refreshToken / logout / fetchMe）+ 资料维护（fetchAccountUsage / fetchAvatarConfig / updateAccountName / uploadAvatar / changePassword / avatarUrl）+ Bearer 拦截器 + 401→刷新重放拦截器（并发单飞 / 轮换写回）+ 全局 401 回调（HTTP 唯一出口） | `src/lib/api.ts` |
+| 登录令牌对持久化（localStorage `disf_auth_token` / `disf_auth_refresh_token` 成对读写，唯一事实源） | `src/lib/auth.ts` |
 | 错误映射（HTTP + SSE error 帧） | `src/lib/errors.ts` |
 | 历史消息映射（MessageRecord → ChatMessage，纯函数） | `src/lib/history.ts` |
 | SSE 帧解析原语（纯函数） | `src/lib/sse.ts` |
@@ -24,7 +24,7 @@
 | 对话状态（activeMessages 独立切片 / 流式状态，单一事实源，不可变更新） | `src/stores/chat.ts` |
 | 会话列表（后端 `GET /conversations` 为唯一事实源，纯状态变更） | `src/stores/conversations.ts` |
 | 助手目录 + 当前选择（`GET /assistants` 为目录源；选择随下一次 /chat-messages 生效） | `src/stores/assistants.ts` |
-| 账号认证（status/account；resolveSession / login / applyAccount / logout / expire；登出重置 chat / conversations / assistants 防跨账号泄漏） | `src/stores/auth.ts` |
+| 账号认证（status/account；resolveSession / login / applyAccount / logout / expire；登录写令牌对、登出调后端作废、过期清令牌对；登出重置 chat / conversations / assistants 防跨账号泄漏） | `src/stores/auth.ts` |
 | 主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享） | `src/stores/theme.ts` |
 | 视图状态（主区对话 / 用户中心 + 用户中心菜单个人中心 / 用量 + 当前会话 ID，localStorage `disf_view` / `disf_center_tab` / `disf_conversation_id` 持久化，刷新停留当前页面并恢复打开的对话；登出经 auth 复位回对话页） | `src/stores/view.ts` |
 | shadcn 组件（button / dropdown-menu / input / skeleton / sonner） | `src/components/ui/*.tsx` |

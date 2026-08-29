@@ -24,11 +24,17 @@ export interface LoginRequest {
   password: string
 }
 
-/** 登录响应 200 */
+/** 登录 / 刷新响应（POST /auth/login、/auth/login/elecnest、/auth/refresh 共用；200） */
 export interface LoginResponse {
   account_id: string
+  /** 短期访问令牌（Bearer 认证；Redis 权威，key 24h 有效） */
   token: string
-  name: string
+  /** 长期刷新令牌（7d；仅 /auth/refresh 用，轮换制每次刷新换新） */
+  refresh_token: string
+  /** 访问令牌剩余秒数（可做主动续期） */
+  expires_in: number
+  /** 显示名；elecnest 用户无昵称时为 null */
+  name?: string | null
 }
 
 /** 当前账号记录（GET /users/me；密码哈希不外泄） */

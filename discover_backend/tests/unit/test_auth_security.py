@@ -67,8 +67,8 @@ def test_jwt_tampered_token_rejected() -> None:
 
 
 def test_jwt_expired_token_rejected() -> None:
-    """过期令牌拒绝（有效期配置为负即立即过期，测试幂等）。"""
-    svc = JwtService(_settings(jwt_expires_minutes=-1))
+    """过期令牌拒绝（访问令牌有效期配置为负即立即过期，测试幂等）。"""
+    svc = JwtService(_settings(auth_access_token_ttl_seconds=-1))
     token = svc.encode(_ACCOUNT_ID)
     with pytest.raises(UnauthorizedError):
         svc.decode(token)
