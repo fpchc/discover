@@ -2,6 +2,7 @@
 
 from app.errors.base import (
     ConfigError,
+    ConflictError,
     ErrorCategory,
     LLMAuthError,
     LLMBadRequestError,
@@ -34,6 +35,7 @@ from app.errors.base import (
 
 __all__ = [
     "ConfigError",
+    "ConflictError",
     "ErrorCategory",
     "LLMAuthError",
     "LLMBadRequestError",

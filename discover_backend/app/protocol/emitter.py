@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import logging
 from collections import deque
 from collections.abc import Callable
 
@@ -18,6 +19,8 @@ from app.protocol.events import (
     ThinkingDeltaEvent,
 )
 from app.protocol.graphemes import split_graphemes
+
+logger = logging.getLogger(__name__)
 
 
 class _BoundedEventQueue:
@@ -185,19 +188,29 @@ class QueueEmitter:
         next_text = anyio.current_time() + text_interval
         next_thinking = anyio.current_time() + thinking_interval
         next_heartbeat = anyio.current_time() + heartbeat_interval
-        while True:
-            next_tick = min(next_text, next_thinking, next_heartbeat)
-            await anyio.sleep(max(0.0, next_tick - anyio.current_time()))
-            now = anyio.current_time()
-            if now >= next_text:
-                await self._tick(self._text)
-                next_text += text_interval
-            if now >= next_thinking:
-                await self._tick(self._thinking)
-                next_thinking += thinking_interval
-            if now >= next_heartbeat:
-                await self._stamp_and_put(HeartbeatEvent())
-                next_heartbeat += heartbeat_interval
+        try:
+            while True:
+                next_tick = min(next_text, next_thinking, next_heartbeat)
+                await anyio.sleep(max(0.0, next_tick - anyio.current_time()))
+                now = anyio.current_time()
+                if now >= next_text:
+                    await self._tick(self._text)
+                    next_text += text_interval
+                if now >= next_thinking:
+                    await self._tick(self._thinking)
+                    next_thinking += thinking_interval
+                if now >= next_heartbeat:
+                    await self._stamp_and_put(HeartbeatEvent())
+                    next_heartbeat += heartbeat_interval
+        finally:
+            logger.info(
+                "emitter.run 退出",
+                extra={
+                    "seq": self._seq,
+                    "text_pending": self._text.pending,
+                    "thinking_pending": self._thinking.pending,
+                },
+            )
 
     async def _flush_pending_frames(self) -> None:
         for channel in (self._text, self._thinking):

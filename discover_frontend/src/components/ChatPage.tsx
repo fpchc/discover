@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { toast } from 'sonner'
 import { ChatInput } from '@/components/ChatInput'
 import { ChatWindow } from '@/components/ChatWindow'
 import { Sidebar } from '@/components/Sidebar'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { CHAT_QUERY_MAX } from '@/env'
 import { useChatStream } from '@/hooks/useChatStream'
 import { useTheme } from '@/hooks/useTheme'
@@ -12,6 +24,7 @@ import { useAssistantsStore } from '@/stores/assistants'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useConversationsStore } from '@/stores/conversations'
+import type { ConversationRecord } from '@/types'
 
 /**
  * 对话页（路由 `/` 新对话、`/conversations/:conversationId` 打开指定会话）。
@@ -58,6 +71,8 @@ export function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   /** 桌面端侧栏折叠（≥768px 生效；折叠 = 64px 图标轨道） */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  /** 待删除会话（非空 = 确认框打开；确认后调后端删除，删除是不可逆操作） */
+  const [deleteTarget, setDeleteTarget] = useState<ConversationRecord | null>(null)
   /** 上次生效的 URL 会话参数（只在其变化时驱动打开 / 复位，避免 store 复位反向重开） */
   const prevUrlIdRef = useRef<string | null>(null)
   /** 上次的 store 会话 ID（仅「空 → 真实 ID」的新建瞬间允许同步回 URL，防复位/切换反向跳转） */
@@ -68,7 +83,10 @@ export function ChatPage() {
     return current?.name ?? ''
   }, [conversationItems, conversationId])
 
-  // URL → store：URL 参数变化时打开对应会话；无参数（新对话）则复位消息区
+  // URL → store：URL 参数变化时打开对应会话；无参数（新对话）则复位消息区。
+  // 例外：URL 会话已是 store 当前会话（首条消息由流创建、store→URL 同步回写 navigate），
+  // 属 URL 同步而非用户打开，跳过 openConversation——否则其 cancel() 会作废正在进行的
+  // 首轮流，导致第一次对话回复中途中断、不完整。
   useEffect(() => {
     const prev = prevUrlIdRef.current
     prevUrlIdRef.current = urlId
@@ -78,8 +96,9 @@ export function ChatPage() {
       resetAssistant()
       return
     }
+    if (urlId === conversationId) return
     void chatStream.openConversation(urlId)
-  }, [urlId, chatStream, chatReset, resetAssistant])
+  }, [urlId, conversationId, chatStream, chatReset, resetAssistant])
 
   // store → URL：仅在「新会话创建」（conversationId 从空变为真实 ID）时同步回 URL（replace，不产生多余历史记录）。
   // 打开已有会话 / 新对话复位都由 URL 驱动（URL→store），此处不反向导航——否则复位瞬间 store 仍持旧 ID
@@ -171,17 +190,31 @@ export function ChatPage() {
     [urlId, navigate],
   )
 
+  /** 侧栏会话删除：先弹确认框（删除不可逆），确认后才调后端 */
   const handleDelete = useCallback(
-    async (id: string): Promise<void> => {
-      const removed = await removeConversation(id)
-      if (removed && id === urlId) {
-        chatReset()
-        resetAssistant()
-        navigate('/')
-      }
+    (id: string) => {
+      const record = conversationItems.find((item) => item.conversation_id === id) ?? null
+      setDeleteTarget(record)
     },
-    [removeConversation, urlId, chatReset, resetAssistant, navigate],
+    [conversationItems],
   )
+
+  /** 确认删除：调后端 DELETE（204/404 视为已删除，其余失败保留条目并提示）；当前打开会话被删则回到新对话 */
+  const confirmDelete = useCallback(async () => {
+    if (deleteTarget === null) return
+    const id = deleteTarget.conversation_id
+    setDeleteTarget(null)
+    const removed = await removeConversation(id)
+    if (!removed) {
+      toast.error('删除失败，请稍后重试')
+      return
+    }
+    if (id === urlId) {
+      chatReset()
+      resetAssistant()
+      navigate('/')
+    }
+  }, [deleteTarget, removeConversation, urlId, chatReset, resetAssistant, navigate])
 
   /** 头部侧栏钮：按断点分流——桌面折叠 / 移动抽屉 */
   const handleToggleSidebar = useCallback(() => {
@@ -259,6 +292,35 @@ export function ChatPage() {
           />
         </div>
       </main>
+
+      {/* 删除会话确认框：删除不可逆，需用户二次确认 */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除对话</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget !== null
+                ? `确定删除「${deleteTarget.name || '未命名对话'}」吗？该操作不可恢复。`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button variant="outline">取消</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button variant="destructive" onClick={() => void confirmDelete()}>
+                删除
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

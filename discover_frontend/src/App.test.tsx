@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '@/App'
-import { fetchConversations, fetchMessages } from '@/lib/api'
+import { deleteConversation, fetchConversations, fetchMessages } from '@/lib/api'
 import { useAssistantsStore } from '@/stores/assistants'
 import { useAuthStore } from '@/stores/auth'
 import type { AccountRecord } from '@/types'
@@ -16,6 +16,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     ...actual,
     fetchConversations: vi.fn(),
     fetchMessages: vi.fn(),
+    deleteConversation: vi.fn(),
   }
 })
 
@@ -68,6 +69,7 @@ describe('App 路由冒烟渲染', () => {
     useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })
     vi.mocked(fetchConversations).mockResolvedValue([])
     vi.mocked(fetchMessages).mockResolvedValue([])
+    vi.mocked(deleteConversation).mockResolvedValue(undefined)
   })
 
   beforeAll(() => {
@@ -154,5 +156,42 @@ describe('App 路由冒烟渲染', () => {
     // 回到新对话空态，旧会话消息清空（回归：曾因 store→URL 反向同步跳回旧会话页）
     expect(await screen.findByRole('heading', { name: /今天，想/ }, { timeout: 5000 })).toBeTruthy()
     expect(screen.queryByText('恢复后的回复内容')).toBeNull()
+  })
+
+  it('删除会话需二次确认：点删除按钮先弹确认框，确认后才调后端', async () => {
+    vi.mocked(fetchConversations).mockResolvedValue([CONVERSATION])
+    vi.mocked(fetchMessages).mockResolvedValue([MESSAGE])
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/conversations/conv-restore']}>
+        <App />
+      </MemoryRouter>,
+    )
+    await screen.findByText('恢复后的回复内容')
+    // 点击会话行删除按钮 → 弹确认框，尚未调后端
+    await user.click(screen.getByTitle('删除会话'))
+    expect(await screen.findByRole('heading', { name: '删除对话' })).toBeTruthy()
+    expect(screen.getByText(/确定删除「恢复的对话」/)).toBeTruthy()
+    expect(vi.mocked(deleteConversation)).not.toHaveBeenCalled()
+    // 点击「删除」→ 才调后端 DELETE
+    await user.click(screen.getByRole('button', { name: '删除' }))
+    await waitFor(() => expect(vi.mocked(deleteConversation)).toHaveBeenCalledWith('conv-restore'))
+  })
+
+  it('取消删除：不调后端，确认框关闭', async () => {
+    vi.mocked(fetchConversations).mockResolvedValue([CONVERSATION])
+    vi.mocked(fetchMessages).mockResolvedValue([MESSAGE])
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/conversations/conv-restore']}>
+        <App />
+      </MemoryRouter>,
+    )
+    await screen.findByText('恢复后的回复内容')
+    await user.click(screen.getByTitle('删除会话'))
+    await screen.findByRole('heading', { name: '删除对话' })
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(vi.mocked(deleteConversation)).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '删除对话' })).toBeNull())
   })
 })

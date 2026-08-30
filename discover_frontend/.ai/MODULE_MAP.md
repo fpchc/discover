@@ -9,14 +9,14 @@
 | Tailwind + 双主题设计令牌（深蓝黑 / 极简冷白）+ 玻璃拟态工具类 + 自定义工具类 + Markdown 样式 | `src/index.css` |
 | 后端契约类型（pydantic 映射；含账号认证 AccountRecord / LoginResponse / AccountUsage / AvatarConfig / 资料请求体） | `src/types.ts` |
 | 环境配置唯一入口（类型化 VITE_*） | `src/env.ts` |
-| axios 实例 + 对话/历史/文件/助手接口封装 + 认证（login / refreshToken / logout / fetchMe）+ 资料维护（fetchAccountUsage / fetchAvatarConfig / updateAccountName / uploadAvatar / changePassword / avatarUrl）+ Bearer 拦截器 + 401→刷新重放拦截器（并发单飞 / 轮换写回）+ 全局 401 回调（HTTP 唯一出口） | `src/lib/api.ts` |
+| axios 实例 + 对话（流式/阻塞/服务端 stop `POST /chat-messages/{id}/stop`）/历史/文件/助手接口封装 + 认证（login / refreshToken / logout / fetchMe）+ 资料维护（fetchAccountUsage / fetchAvatarConfig / updateAccountName / uploadAvatar / changePassword / avatarUrl）+ Bearer 拦截器 + 401→刷新重放拦截器（并发单飞 / 轮换写回）+ 全局 401 回调（HTTP 唯一出口） | `src/lib/api.ts` |
 | 登录令牌对持久化（localStorage `disf_auth_token` / `disf_auth_refresh_token` 成对读写，唯一事实源） | `src/lib/auth.ts` |
 | 错误映射（HTTP + SSE error 帧） | `src/lib/errors.ts` |
 | 历史消息映射（MessageRecord → ChatMessage，纯函数） | `src/lib/history.ts` |
 | SSE 帧解析原语（纯函数） | `src/lib/sse.ts` |
 | SSE 流读取 + 帧分发（readChatStream / consumeChatStream / readConversationId） | `src/lib/stream.ts` |
 | cn() 工具（clsx + tailwind-merge） | `src/lib/utils.ts` |
-| 对话发送 + 会话列表 / 助手目录 / 历史加载编排（send/stop/retry/cancel/openConversation/loadList/loadAssistants、agent_id 随发、metadata.assistant 回显、turn token、超时、卸载 abort 清理） | `src/hooks/useChatStream.ts` |
+| 对话发送 + 会话列表 / 助手目录 / 历史加载编排（send/stop/retry/cancel/openConversation/loadList/loadAssistants、agent_id 随发、metadata.assistant 回显、turn token、超时、卸载 abort 清理；stop 优先走服务端 `POST /chat-messages/{id}/stop`，失败/无进行中回合退回本地 abort） | `src/hooks/useChatStream.ts` |
 | 明暗主题 hook（只读壳：维护 `html.dark` / system 监听，状态在 `stores/theme.ts`） | `src/hooks/useTheme.ts` |
 | 文件上传（上传配置校验 / 上传 / 列表 / 预览 URL） | `src/hooks/useFileUpload.ts` |
 | 网络状态（online/offline） | `src/hooks/useNetworkStatus.ts` |
@@ -26,13 +26,13 @@
 | 助手目录 + 当前选择（`GET /assistants` 为目录源；选择随下一次 /chat-messages 生效） | `src/stores/assistants.ts` |
 | 账号认证（status/account；resolveSession / login / applyAccount / logout / expire；登录写令牌对、登出调后端作废、过期清令牌对；登出重置 chat / conversations / assistants 防跨账号泄漏） | `src/stores/auth.ts` |
 | 主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享） | `src/stores/theme.ts` |
-| shadcn 组件（button / dropdown-menu / input / skeleton / sonner） | `src/components/ui/*.tsx` |
+| shadcn 组件（button / alert-dialog / dropdown-menu / input / skeleton / sonner） | `src/components/ui/*.tsx` |
 | echarts 轻封装（按需装配 bar/line + grid/tooltip/legend + canvas；挂载初始化 / 卸载 dispose / resize） | `src/components/ui/chart.tsx` |
 | 账号页内容顶栏（返回钮 → 回对话页 + 居中标题，对齐 ChatWindow 顶栏 h-14） | `src/components/PageHeader.tsx` |
 | 账号页布局（/profile、/usage 共享左导航：NavLink 用量主区 + 左下角单独区域 个人中心 + 右侧内容区 Outlet 懒加载） | `src/components/AccountLayout.tsx` |
 | 认证闸门 + URL 守卫（loading → 非 /login 重定向 /login → authenticated 挂载路由；已登录在 /login 回退 /；main.tsx 包裹层） | `src/components/AuthGate.tsx` |
 | 登录页（/login；手机号 + 密码 → POST /auth/login 得 JWT） | `src/components/LoginScreen.tsx` |
-| 对话页（/、/conversations/:conversationId；侧栏 + 会话窗口 + 输入区；URL↔store 同步：URL 参数驱动打开/复位、新会话 ID 同步回 URL；落地 / 恒为新对话空态，恢复会话由 URL 深链承担；Cmd+K；useChatStream 挂载于此，离开即卸载清理） | `src/components/ChatPage.tsx` |
+| 对话页（/、/conversations/:conversationId；侧栏 + 会话窗口 + 输入区；URL↔store 同步：URL 参数驱动打开/复位、新会话 ID 同步回 URL（URL 会话已是 store 当前会话时跳过 openConversation，避免作废首轮流）；落地 / 恒为新对话空态，恢复会话由 URL 深链承担；Cmd+K；删除会话二次确认（AlertDialog）；useChatStream 挂载于此，离开即卸载清理） | `src/components/ChatPage.tsx` |
 | 品牌左栏（品牌 / 新对话 Ctrl+K / 助手 / 最近对话 / 底部账号区含头像展示 + 点击进入个人中心 /profile + 主题 / 退出；桌面折叠 → 64px 图标轨道） | `src/components/Sidebar.tsx` |
 | 个人中心（/profile 独立页；账号卡 + 账号信息只读行（昵称/手机号/注册时间/最近登录）+ 更换头像面板约束文案不常驻 + 修改密码点击展开；成功经 applyAccount 同步） | `src/components/ProfilePage.tsx` |
 | 用量（/usage 独立页；模仿用量看板：聚合大值卡片 + 明细卡片 + ECharts 按日趋势图，趋势时间范围可切换 近 7/30/90 天；聚合 GET /users/me/usage，趋势 GET /users/me/usage/daily?days=；echarts 独立 chunk） | `src/components/UsagePage.tsx` |

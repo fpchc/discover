@@ -8,7 +8,7 @@
 |------|------|
 | 全局配置（pydantic-settings） | `app/config/settings.py` |
 | 注册表/配置 YAML 加载 | `app/config/loader.py` |
-| 领域异常 + 错误分类 | `app/errors/base.py` |
+| 领域异常 + 错误分类（含 ConflictError → 409） | `app/errors/base.py` |
 | AgentEvent 事件模型 | `app/protocol/events.py` |
 | QueueEmitter（seq/打字机/心跳/背压） | `app/protocol/emitter.py` |
 | 事件/错误消息脱敏 | `app/protocol/sanitize.py` |
@@ -113,6 +113,7 @@
 | 技能解析（SkillResolver 确定性策略链：显式→默认→唯一→首个） | `app/runtime/resolver/skill_resolver.py` |
 | 节点实现（resolve_assistant / resolve_skill / assemble / agent / tool_node / generic_chat）+ 单轮执行入口 + 上下文裁剪 | `app/runtime/runner.py` |
 | LangGraph 拓扑构建 | `app/runtime/builder.py` |
+| 进行中回合句柄注册表（ActiveTurn/ActiveTurnRegistry：stop 接口取消；同会话并发 409 门；task.cancel == 客户端断连原语） | `app/runtime/active_turns.py` |
 
 ## 接入层（L4）
 
@@ -121,7 +122,7 @@
 | 应用组装（工厂 + 扩展初始化 + 中间件注册 + 路由挂载） | `app/application.py` |
 | 进程入口（uvicorn 启动，host/port 配置驱动） | `app/main.py` |
 | 服务容器 DI：扩展访问器 + 领域组装 + assistant_catalog() | `app/container.py` |
-| 对话接口（POST /chat-messages，SSE/blocking，agent_id 显式绑定；Bearer 认证，会话归属账号） | `app/api/chat.py` |
+| 对话接口（POST /chat-messages SSE/blocking + POST /chat-messages/{id}/stop，agent_id 显式绑定；Bearer 认证，会话归属账号；同会话并发 409） | `app/api/chat.py` |
 | 助手目录接口（GET /assistants，只读聚合，公开） | `app/api/assistants.py` |
 | 文件接口（上传需认证带归属账号；预览全局公开） | `app/api/files.py` |
 | 会话接口（/conversations 列表/消息/软删除；按账号隔离，跨账号 404） | `app/api/conversations.py` |

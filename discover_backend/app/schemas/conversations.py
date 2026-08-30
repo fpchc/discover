@@ -26,10 +26,15 @@ class ConversationStatus(StrEnum):
 
 
 class MessageStatus(StrEnum):
-    """回合消息状态。"""
+    """回合消息状态：normal 正常完成 / error 服务端失败 / interrupted 客户端中断。
+
+    interrupted 用于流式回合被客户端断开/取消但已产生部分内容的情形——仍有
+    记录可查（query + partial answer），只是未完整走完。
+    """
 
     NORMAL = "normal"
     ERROR = "error"
+    INTERRUPTED = "interrupted"
 
 
 class TurnUsage(BaseModel):

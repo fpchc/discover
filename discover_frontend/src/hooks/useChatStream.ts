@@ -12,6 +12,7 @@ import {
   fetchMessages,
   sendChatMessage,
   sendChatMessageBlocking,
+  stopChatMessage,
 } from '@/lib/api'
 import {
   type AppError,
@@ -32,7 +33,8 @@ import type { ConversationRecord } from '@/types'
  * 对话发送编排（CLAUDE.md 第 5 节 + performance.md §4）。职责：
  * - 会话首次创建 / 续聊复用（X-Conversation-Id 头优先，帧内 id 兜底）；
  * - 流式 / 阻塞（兜底）两种 response_mode；
- * - AbortController 取消 + SSE_TIMEOUT_MS 整体超时；
+ * - 停止走服务端显式 stop（POST /chat-messages/{id}/stop，流关闭即停止生效），失败退回本地
+ *   AbortController 取消；SSE_TIMEOUT_MS 整体超时；
  * - turn 作废机制：切换 / 新建会话后，旧流残留帧与回调不再落库（防幽灵增量）；
  * - 组件卸载时 abort() 清理（performance.md §4，杜绝后台幽灵请求）。
  * 本层只驱动 store（单一事实源），不做 UI 渲染。
@@ -211,7 +213,11 @@ export function useChatStream(): ChatStreamApi {
           },
           onError: (error: AppError) => {
             if (!current()) return
-            if (error.status === 401) {
+            if (ctx.current.userCancelled) {
+              // 用户主动停止：POST stop 后服务端关闭流（STREAM_INTERRUPTED）/ 本地 abort
+              // 兜底 → 保留已收内容并标记完成，不视为错误
+              chat().abortTurn()
+            } else if (error.status === 401) {
               // SSE 帧级 401：令牌失效 → 全局会话过期（回到登录页）
               useAuthStore.getState().expire()
             } else {
@@ -258,11 +264,31 @@ export function useChatStream(): ChatStreamApi {
       await runTurn(ctx.current.lastQuery, FEATURE_BLOCKING_FALLBACK ? 'blocking' : 'streaming')
     }
 
-    /** 停止生成：保留已收内容，复位流式状态 */
+    /**
+     * 停止生成：保留已收内容，复位流式状态。
+     * 优先走服务端显式停止（POST /chat-messages/{id}/stop）：返回 stopping 后不中断本地流，
+     * 等服务端取消回合 → SSE 流关闭即停止生效（无轮询，契约见后端交付）；请求失败 / 后端
+     * 无进行中回合（idle）时退回本地 abort 兜底，保证任何情况下停止都有效。
+     * 新会话首轮在响应头回传 ID 前无服务端对象可停，直接本地 abort。
+     */
     function stop(): void {
-      if (!chat().isStreaming) return
+      if (!chat().isStreaming || ctx.current.userCancelled) return
       ctx.current.userCancelled = true
-      ctx.current.controller?.abort()
+      const conversationId = chat().conversationId
+      if (conversationId === '') {
+        ctx.current.controller?.abort()
+        return
+      }
+      void (async () => {
+        try {
+          const result = await stopChatMessage(conversationId)
+          if (result.status !== 'stopping') {
+            ctx.current.controller?.abort()
+          }
+        } catch {
+          ctx.current.controller?.abort()
+        }
+      })()
     }
 
     /** 切换 / 新建会话：作废当前轮 token，旧流残留帧不再落库 */

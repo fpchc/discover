@@ -11,6 +11,7 @@ from app.schemas.auth import (
 from app.schemas.chat import (
     ChatMessageRequest,
     ChatMessageResponse,
+    ChatStopResponse,
     ErrorStreamEvent,
     MessageEndEvent,
     MessageEvent,
@@ -38,6 +39,7 @@ __all__ = [
     "ArtifactRecord",
     "ChatMessageRequest",
     "ChatMessageResponse",
+    "ChatStopResponse",
     "ConversationRecord",
     "ConversationSession",
     "ConversationStatus",

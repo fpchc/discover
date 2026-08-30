@@ -28,6 +28,7 @@ from app.llm.client import LLMClient
 from app.llm.providers import ProviderRegistry
 from app.registry.hot_reload import HotReloader
 from app.registry.registry import AgentRegistry
+from app.runtime.active_turns import ActiveTurnRegistry
 from app.runtime.runner import Runtime
 from app.services.auth import AuthService
 from app.services.auth_session import RedisSessionStore
@@ -59,6 +60,8 @@ class AppServices:
         self.elecnest: ElecnestSSOClient | None = None
         self._elecnest_http: httpx.AsyncClient | None = None
         self.runtimes: dict[str, Runtime] = {}
+        # 进行中回合句柄注册表（stop 接口据此取消回合；回合退出后注销）
+        self.active_turns = ActiveTurnRegistry()
         self._resolve_api_key: Callable[[LLMProvider], str] | None = None
         self._reloader_scope: anyio.CancelScope | None = None
         self._reloader_task: asyncio.Task[None] | None = None

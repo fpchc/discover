@@ -323,6 +323,14 @@ class ConversationService:
             logger.warning("历史落库失败（best-effort 忽略）：%s：%r", conversation_id, exc)
             return False
 
+    async def require_owned(self, account_id: str, conversation_id: str) -> None:
+        """只读归属校验：未知 / 跨账号 / 已软删 → 404（不泄露存在性）。
+
+        供 stop 等「只判断会话归属、不改会话」的接口使用，语义与
+        get_messages 的归属前置校验一致。
+        """
+        await self._get_owned(account_id, conversation_id)
+
     async def list_conversations(
         self, account_id: str, *, limit: int, offset: int
     ) -> list[ConversationRecord]:

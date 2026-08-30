@@ -24,6 +24,7 @@ class ErrorCategory(StrEnum):
     DENIED = "denied"
     SCRIPT = "script"
     MCP = "mcp"
+    CONFLICT = "conflict"
 
 
 def http_status_for(category: ErrorCategory) -> int:
@@ -35,6 +36,7 @@ def http_status_for(category: ErrorCategory) -> int:
         ErrorCategory.DENIED: 403,
         ErrorCategory.BAD_REQUEST: 400,
         ErrorCategory.CONFIG: 500,
+        ErrorCategory.CONFLICT: 409,
     }
     return mapping.get(category, 500)
 
@@ -90,6 +92,13 @@ class ForbiddenError(PlatformError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, category=ErrorCategory.DENIED, retryable=False)
+
+
+class ConflictError(PlatformError):
+    """资源冲突（如同会话存在进行中回合时再次发起的回合）。HTTP 409。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category=ErrorCategory.CONFLICT, retryable=False)
 
 
 class LLMError(PlatformError):

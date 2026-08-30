@@ -29,6 +29,17 @@ class ChatMessageResponse(BaseModel):
     created_at: int
 
 
+class ChatStopResponse(BaseModel):
+    """stop 接口响应：stopping 取消已请求 / idle 无进行中回合。
+
+    stopping 只承诺「取消已请求」，不代表落库已完成（前端以 SSE 流关闭为准）。
+    """
+
+    conversation_id: str
+    status: Literal["stopping", "idle"]
+    message_id: str | None = None
+
+
 class MessageEvent(BaseModel):
     """流式正文增量帧。"""
 

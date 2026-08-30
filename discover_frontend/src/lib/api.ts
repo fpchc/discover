@@ -22,6 +22,7 @@ import type {
   BlockingChatResponse,
   ChangePasswordRequest,
   ChatRequest,
+  ChatStopResponse,
   ConversationRecord,
   LoginRequest,
   LoginResponse,
@@ -269,6 +270,17 @@ export async function sendChatMessageBlocking(
     buildChatRequest(params, 'blocking'),
     { signal: params.signal },
   )
+  return data
+}
+
+/**
+ * 服务端显式停止对话（POST /chat-messages/{conversation_id}/stop）。
+ * 无轮询：status=stopping 表示已受理，服务端取消回合后流式连接关闭，即停止生效；
+ * status=idle = 后端无进行中回合。404 非本人会话 / 409 已有进行中回合由 axios 拦截器
+ * 抛出，调用方统一退回本地 abort 兜底。
+ */
+export async function stopChatMessage(conversationId: string): Promise<ChatStopResponse> {
+  const { data } = await httpClient.post<ChatStopResponse>(`/chat-messages/${conversationId}/stop`)
   return data
 }
 

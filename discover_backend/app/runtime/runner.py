@@ -311,9 +311,21 @@ class Runtime:
         tool_calls_accum: list[ToolCall] = []
         thinking_open = False
         start = time.perf_counter()
+        chunk_count = 0
+        logger.info(
+            "LLM 流式调用开始",
+            extra={
+                "provider": provider.id,
+                "model": provider.model,
+                "turn": turn,
+                "messages": len(request.messages),
+                "tools": len(request.tools or []),
+            },
+        )
         async for chunk in self._llm.stream_chat(
             provider=provider, api_key=api_key, request=request
         ):
+            chunk_count += 1
             if isinstance(chunk, ThinkingChunk):
                 if not thinking_open:
                     await self._emit(ThinkingStartedEvent())
@@ -334,6 +346,19 @@ class Runtime:
                 ]
             elif isinstance(chunk, UsageChunk):
                 self._usage.add(chunk)
+        logger.info(
+            "LLM 流式调用结束",
+            extra={
+                "provider": provider.id,
+                "model": provider.model,
+                "turn": turn,
+                "chunk_count": chunk_count,
+                "duration_ms": int((time.perf_counter() - start) * 1000),
+                "text_len": len("".join(text_parts)),
+                "tool_calls": len(tool_calls_accum),
+                "thinking_open": thinking_open,
+            },
+        )
         if thinking_open:
             await self._emit(
                 ThinkingEndedEvent(duration_ms=int((time.perf_counter() - start) * 1000))

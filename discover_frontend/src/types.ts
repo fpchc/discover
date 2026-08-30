@@ -225,6 +225,14 @@ export interface BlockingChatResponse {
   created_at: number
 }
 
+/** 服务端停止回合响应（POST /chat-messages/{conversation_id}/stop） */
+export interface ChatStopResponse {
+  /** stopping = 已受理（流式连接随后关闭，即停止生效）；idle = 后端无进行中回合 */
+  status: 'stopping' | 'idle'
+  /** 被停止回合的消息 ID（仅 status === 'stopping' 时回传） */
+  message_id?: string
+}
+
 // ---- SSE 帧契约（对齐 CLAUDE.md 第 5 节；后端判别联合，不可臆造） ----
 
 interface SseFrameBase {
