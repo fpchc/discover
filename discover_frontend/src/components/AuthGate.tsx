@@ -1,18 +1,20 @@
 import { Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
-import LoginScreen from '@/components/LoginScreen'
+import { Navigate, useLocation } from 'react-router'
 import { useAuthStore } from '@/stores/auth'
 
 /**
- * 认证闸门（ACCOUNT_API.md §0）：应用唯一入口，按登录态分派——
- * loading → 启动恢复中（本地令牌校验 GET /users/me）；
- * unauthenticated → 登录页；authenticated → 挂载主界面（App 壳）。
- * 挂在 main.tsx 的 AuthGate 包裹层，保证主界面只在认证通过后渲染；
+ * 认证闸门（ACCOUNT_API.md §0）：按登录态分派 + URL 守卫——
+ * loading → 启动恢复中（本地令牌校验 GET /users/me，全屏瞬态，非路由）；
+ * unauthenticated → 非 /login 一律重定向到 /login（登录页由 App 路由渲染，守卫不再内嵌）；
+ * authenticated → 挂载 App 路由；在 /login 则回退 /（新对话页）。
+ * 挂在 main.tsx 的 BrowserRouter 内、App 之外，保证受保护页面只在认证通过后渲染；
  * App 壳自身不判断登录态（App.test 直接渲染壳，绕过本闸门）。
  */
 export default function AuthGate({ children }: { children: ReactNode }) {
   const status = useAuthStore((s) => s.status)
+  const { pathname } = useLocation()
   // StrictMode 开发期 effect 双调用：只触发一次会话恢复
   const resolvedRef = useRef(false)
 
@@ -37,8 +39,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (status === 'unauthenticated') {
-    return <LoginScreen />
+    if (pathname === '/login') return <>{children}</>
+    return <Navigate to="/login" replace />
   }
 
+  if (pathname === '/login') return <Navigate to="/" replace />
   return <>{children}</>
 }

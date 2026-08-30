@@ -27,6 +27,7 @@ const mockedDelete = vi.mocked(deleteConversation)
 
 beforeEach(() => {
   mockedDelete.mockReset()
+  localStorage.clear()
   useConversationsStore.setState({ items: [], loading: false })
 })
 
@@ -44,6 +45,29 @@ describe('replaceAll', () => {
       'mid',
       'old',
     ])
+  })
+
+  it('全量替换写入显示级缓存（disf_conversations_cache），remove 同步清缓存', () => {
+    useConversationsStore
+      .getState()
+      .replaceAll([
+        makeRecord('a', '2026-01-01T00:00:00Z'),
+        makeRecord('b', '2026-01-02T00:00:00Z'),
+      ])
+    let cached: ConversationRecord[] = JSON.parse(
+      localStorage.getItem('disf_conversations_cache') ?? '[]',
+    )
+    expect(cached.map((i) => i.conversation_id).sort()).toEqual(['a', 'b'])
+    // remove 后缓存同步移除（登出经 replaceAll([]) 清空同理）
+    mockedDelete.mockResolvedValue(undefined)
+    return useConversationsStore
+      .getState()
+      .remove('a')
+      .then((ok) => {
+        expect(ok).toBe(true)
+        cached = JSON.parse(localStorage.getItem('disf_conversations_cache') ?? '[]')
+        expect(cached.map((i) => i.conversation_id)).toEqual(['b'])
+      })
   })
 })
 

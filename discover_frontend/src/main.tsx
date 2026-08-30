@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router'
 import App from './App'
 import AuthGate from './components/AuthGate'
 import { Toaster } from './components/ui/sonner'
@@ -29,15 +30,18 @@ setupGlobalErrorHandler()
  * 应用根：Toaster 常驻根层（挂在 AuthGate 之上，不随登录态卸载）。
  * 登录页 / 主界面互斥挂载，toast 若挂在任一屏内，登录成功切屏即随卸载消失；
  * 根层保证登录页错误 / 成功提示在切到主界面后依然可见。主题经 theme store 全局共享。
+ * BrowserRouter 包在 AuthGate 之外：登录页 / 主界面共享同一路由上下文，认证守卫统一跳转。
  */
 function Root() {
   const isDark = useThemeStore((s) => s.isDark)
   return (
     <StrictMode>
-      <AuthGate>
-        <App />
-      </AuthGate>
-      <Toaster theme={isDark ? 'dark' : 'light'} />
+      <BrowserRouter>
+        <AuthGate>
+          <App />
+        </AuthGate>
+        <Toaster theme={isDark ? 'dark' : 'light'} />
+      </BrowserRouter>
     </StrictMode>
   )
 }

@@ -97,13 +97,17 @@ export function useChatStream(): ChatStreamApi {
       }
     }
 
-    /** 首次加载会话列表（侧栏骨架态）；失败静默保留现状 */
+    /**
+     * 加载会话列表。已有缓存 / 已加载列表时不再置骨架态（刷新 / 重回对话页直接显示旧列表，
+     * 后端就绪后 replaceAll 全量校准）；无数据首次加载仍显示骨架占位。
+     */
     async function loadList(): Promise<void> {
-      conversations().setLoading(true)
+      const hasItems = conversations().items.length > 0
+      if (!hasItems) conversations().setLoading(true)
       try {
         conversations().replaceAll(await fetchConversations())
       } catch {
-        // 首次拉取失败：保持空列表，不阻断对话
+        // 拉取失败：保留缓存 / 现状，不阻断对话
       } finally {
         conversations().setLoading(false)
       }

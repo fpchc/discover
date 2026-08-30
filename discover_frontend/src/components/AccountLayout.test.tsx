@@ -1,10 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { UserCenter } from '@/components/UserCenter'
+import { AccountLayout } from '@/components/AccountLayout'
+import { ProfilePage } from '@/components/ProfilePage'
+import { UsagePage } from '@/components/UsagePage'
 import { fetchAccountUsage, fetchAvatarConfig, fetchUsageDaily } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import { useViewStore } from '@/stores/view'
 import type { AccountRecord } from '@/types'
 
 // React.lazy 动态 chunk 在并行测试负载下解析可能超过默认 1s，放宽等待
@@ -55,10 +57,28 @@ const daily = {
   ],
 }
 
+/** 断言当前路由路径（返回对话 / 跳转后停留位置） */
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname}</div>
+}
+
+function renderAccount(initialPath: string) {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <Routes>
+        <Route element={<AccountLayout />}>
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/usage" element={<UsagePage />} />
+        </Route>
+      </Routes>
+      <LocationProbe />
+    </MemoryRouter>,
+  )
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  // 视图 store 独立于组件生命周期，测试间必须复位（默认对话页 + 个人中心菜单）
-  useViewStore.setState({ view: 'chat', centerTab: 'profile' })
   useAuthStore.setState({ status: 'authenticated', account, token: 'jwt-x' })
   vi.mocked(fetchAvatarConfig).mockResolvedValue({
     max_size_bytes: 2 * 1024 * 1024,
@@ -80,40 +100,35 @@ beforeEach(() => {
   vi.mocked(fetchUsageDaily).mockResolvedValue(daily)
 })
 
-describe('UserCenter 用户中心（DeepSeek 布局）', () => {
-  it('左侧展示两个菜单（个人中心 / 用量）', () => {
-    render(<UserCenter onBack={() => {}} />)
+describe('AccountLayout 账号页布局（个人中心 / 用量独立路由）', () => {
+  it('个人中心页（/profile）：左导航 + 个人信息内容', async () => {
+    renderAccount('/profile')
     expect(screen.getByRole('heading', { name: '用户中心' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '个人中心' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '用量' })).toBeTruthy()
-  })
-
-  it('默认展示个人中心内容，点击「用量」切换，再切回个人中心', async () => {
-    const user = userEvent.setup()
-    render(<UserCenter onBack={() => {}} />)
-    // 默认个人中心：顶栏标题 + 修改密码入口（异步 chunk 加载后出现）
+    expect(screen.getByRole('link', { name: '个人中心' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: '用量' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '个人信息' })).toBeTruthy()
     expect(
       await screen.findByRole('button', { name: '修改密码' }, { timeout: ASYNC_TIMEOUT }),
     ).toBeTruthy()
-    expect(screen.getByRole('heading', { name: '个人信息' })).toBeTruthy()
-    // 切到用量（写回视图 store，供刷新恢复）
-    await user.click(screen.getByRole('button', { name: '用量' }))
-    expect(useViewStore.getState().centerTab).toBe('usage')
+  })
+
+  it('点击「用量」跳转 /usage 展示用量信息，再跳回个人中心', async () => {
+    const user = userEvent.setup()
+    renderAccount('/profile')
+    await user.click(screen.getByRole('link', { name: '用量' }))
     expect(screen.getByRole('heading', { name: '用量信息' })).toBeTruthy()
     expect(await screen.findByText('总 Token', {}, { timeout: ASYNC_TIMEOUT })).toBeTruthy()
-    // 切回个人中心
-    await user.click(screen.getByRole('button', { name: '个人中心' }))
-    expect(useViewStore.getState().centerTab).toBe('profile')
+    await user.click(screen.getByRole('link', { name: '个人中心' }))
+    expect(screen.getByRole('heading', { name: '个人信息' })).toBeTruthy()
     expect(
       await screen.findByRole('button', { name: '修改密码' }, { timeout: ASYNC_TIMEOUT }),
     ).toBeTruthy()
   })
 
-  it('顶栏返回按钮回调 onBack', async () => {
+  it('顶栏返回按钮 → 回对话页（/）', async () => {
     const user = userEvent.setup()
-    const onBack = vi.fn()
-    render(<UserCenter onBack={onBack} />)
+    renderAccount('/profile')
     await user.click(screen.getByTitle('返回对话'))
-    expect(onBack).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('location').textContent).toBe('/')
   })
 })

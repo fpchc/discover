@@ -12,7 +12,6 @@ import { mapHttpError } from '@/lib/errors'
 import { useAssistantsStore } from '@/stores/assistants'
 import { useChatStore } from '@/stores/chat'
 import { useConversationsStore } from '@/stores/conversations'
-import { useViewStore } from '@/stores/view'
 import type { AccountRecord } from '@/types'
 
 /**
@@ -50,10 +49,6 @@ function resetAppState(): void {
   useConversationsStore.getState().setLoading(false)
   useAssistantsStore.getState().setCatalog([])
   useAssistantsStore.getState().resetForNewConversation()
-  // 视图回对话页并写回 localStorage，新登录不残留上一账号停留的页面 / 会话
-  useViewStore.getState().setView('chat')
-  useViewStore.getState().setCenterTab('profile')
-  useViewStore.getState().setSavedConversationId('')
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({

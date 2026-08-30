@@ -27,6 +27,7 @@
 | **shadcn/ui**（Radix + Tailwind） | 组件原语唯一来源（拷入 `src/components/ui/`，样式归本项目掌控）；`cn()` = `clsx` + `tailwind-merge` |
 | **motion**（前 framer-motion） | 微交互动画唯一实现（消息入场、侧栏抽屉、空态、thinking shimmer）；禁止引入其它动画库 |
 | **Zustand** | 跨组件共享状态唯一通道（第 3 节）；替代旧 Pinia |
+| **react-router** | 页面路由唯一实现（纯客户端 BrowserRouter，CLAUDE.md 第 1 节）；五条页面路由，URL 为页面导航唯一事实源，禁止再造非路由的页面状态切换（如旧 view/centerTab） |
 | **axios** | 普通 HTTP（blocking 模式）唯一出口，统一实例在 `src/lib/api.ts` |
 | **fetch + ReadableStream** | SSE 唯一实现方式。`POST` 无法用 `EventSource`，禁止 `EventSource` |
 | **react-markdown + remark-gfm + rehype-highlight** | Markdown 渲染唯一实现；默认不渲染原始 HTML（安全收敛，见第 6 节） |
@@ -117,7 +118,7 @@
 
 ## 7. 组件规范
 
-* 单文件组件 ≤ 300 行，职责单一；主编排组件（如 `App.tsx`）超行需 `// pragma: 简化 — 编排页`。
+* 单文件组件 ≤ 300 行，职责单一；主编排组件（如 `ChatPage.tsx`，`App.tsx` 仅路由表）超行需 `// pragma: 简化 — 编排页`。
 * 组件统一落位 `src/components/`（`ui/` 为 shadcn 拷入组件；其余按域分目录），禁止散落。
 * 可复用逻辑抽 `src/hooks/`（React 生命周期相关）与 `src/lib/`（纯逻辑），禁止组件内复制粘贴逻辑。
 * UI 一律 shadcn/ui + Tailwind；自定义视觉只做样式扩展（Tailwind 工具类 / CSS 变量），不改组件行为。
@@ -163,7 +164,11 @@
 ## 11. 本地持久化
 
 * 会话列表 / 消息历史均由**后端历史接口持有**（`GET /conversations`、`GET /conversations/{id}/messages`，
-  契约见 `.claude/feature/API.md`）；前端不做会话数据本地持久化（会话列表唯一事实源在后端）。
+  契约见 `.claude/feature/API.md`）；后端为唯一事实源，前端**不做持久数据源**。
+* **例外（显示级缓存）**：会话列表在 `src/stores/conversations.ts` 缓存到 localStorage
+  `disf_conversations_cache`，仅用于刷新 / 重回对话页时免闪加载骨架（三个空白）的即时展示，
+  每次 `loadList`/`reconcileList` 全量覆盖校准，登出 / 过期经 `replaceAll([])` 清空防跨账号泄漏；
+  会话消息正文仍一律从后端拉取，不回写。
 * 仅 UI 状态（如明暗主题 `disf_theme`）走 localStorage，`disf_` 前缀见 `src/lib/theme.ts`。
 * 回合粒度持久化由后端完成：流式中断未到 `message_end` 不回写后端，刷新后该半条不恢复。
 * 删除会话调后端 `DELETE /conversations/{id}`（软删除：`204`/`404` 均按已删除处理，

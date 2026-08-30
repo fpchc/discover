@@ -32,7 +32,7 @@ ChatGPT 风格单页对话应用。账号体系（手机号+密码登录，JWT �
 ```
 src/
 ├── main.tsx                    入口：createRoot + 全局样式 + 主题初始化
-├── App.tsx                     应用壳层 + 页面编排（侧栏 / 主区 / 输入区串联）
+├── App.tsx                     应用路由表（/login、/、/conversations/:conversationId、/profile、/usage，其余回退 /）
 ├── index.css                   Tailwind + 设计令牌（明暗双主题）+ 全局 markdown 样式
 ├── types.ts                    后端契约类型（映射 pydantic；禁止组件内散落重复定义）
 ├── env.ts                      环境配置唯一入口（VITE_* 类型化收窄，禁止组件直读 import.meta.env）
@@ -54,14 +54,18 @@ src/
 │
 ├── stores/                     Zustand 单一事实源（跨组件共享状态唯一通道）
 │   ├── chat.ts                 当前会话：activeMessages / conversationId / isStreaming / loadingHistory
-│   ├── conversations.ts        会话列表（后端 GET /conversations 为唯一事实源）
+│   ├── conversations.ts        会话列表（后端 GET /conversations 为唯一事实源；显示级 localStorage 缓存免刷新闪骨架）
 │   ├── assistants.ts           助手目录 + 当前选择（agent_id）
 │   └── auth.ts                 账号认证（status/account；resolveSession / login / logout / expire）
 │
 └── components/
     ├── ui/                     shadcn 拷入组件（button / dropdown-menu / input / skeleton / sonner 触发器等）
-    ├── AuthGate.tsx            认证闸门（loading → 登录页 → 主界面；main.tsx 包裹层）
-    ├── LoginScreen.tsx         登录页（手机号 + 密码 → POST /auth/login 得 JWT）
+    ├── AuthGate.tsx            认证闸门 + URL 守卫（loading → /login → 主界面；main.tsx 包裹层）
+    ├── LoginScreen.tsx         登录页（/login；手机号 + 密码 → POST /auth/login 得 JWT）
+    ├── ChatPage.tsx            对话页（/、/conversations/:conversationId；侧栏 + 会话窗口 + 输入区，URL↔store 同步）
+    ├── AccountLayout.tsx       账号页布局（/profile、/usage 共享左导航，NavLink + Outlet，内容懒加载）
+    ├── ProfilePage.tsx         个人中心（/profile 独立页；头像 / 资料 / 修改密码）
+    ├── UsagePage.tsx           用量（/usage 独立页；聚合卡片 + echarts 趋势）
     ├── Sidebar.tsx             侧栏（品牌区 / 新对话 / 技能与助手 / 最近对话 / 底部账号区 + 退出）
     ├── ChatWindow.tsx          对话主区（头部 / 空态 / 消息流 / 滚动）
     ├── ChatInput.tsx           输入区（平铺助手胶囊 / textarea / 附件 / 发送/停止）
@@ -95,27 +99,27 @@ SSE 解析唯一处在 `src/lib/sse.ts` + `src/lib/stream.ts`；共享状态唯�
 | `.claude/feature/` | 需求 / API 契约（只读参考，见 CLAUDE.md 第 12 节） |
 | `.claude/commands/*.md` | 单项职责规范：`architecture.md`（结构）、`performance.md`（性能红线） |
 | `.ai/*.md` | 架构快照 + 模块路径映射（结构变化后同步更新） |
-| `src/main.tsx` | 应用入口（React 19 `createRoot` + 全局样式 + 主题初始化 + 注册全局 401 回调 + AuthGate 包裹） |
-| `src/App.tsx` | 应用壳层 + 页面编排（单页无路由；订阅账号展示 / 退出） |
+| `src/main.tsx` | 应用入口（React 19 `createRoot` + BrowserRouter + 全局样式 + 主题初始化 + 注册全局 401 回调 + AuthGate 包裹） |
+| `src/App.tsx` | 应用路由表（/login、/、/conversations/:conversationId、/profile、/usage，其余回退 /；路径级懒加载账号页） |
 | `src/index.css` | Tailwind + 设计令牌 + markdown 全局样式 |
 | `src/types.ts` | 后端契约类型（映射 pydantic；含账号认证 AccountRecord / LoginResponse） |
 | `src/env.ts` | 环境配置唯一入口（`VITE_*` 类型化收窄） |
 | `src/lib/` | 纯逻辑（api / auth / errors / history / sse / stream / utils），无 React 依赖 |
 | `src/hooks/` | React 生命周期相关逻辑（useChatStream / useTheme / useFileUpload / useNetworkStatus） |
-| `src/stores/` | Zustand store（chat / conversations / assistants / auth） |
+| `src/stores/` | Zustand store（chat / conversations / assistants / auth / view（会话指针）） |
 | `src/components/ui/` | shadcn 拷入组件（button / dropdown-menu / input / skeleton 等） |
-| `src/components/` | 认证与域组件（AuthGate / LoginScreen / Sidebar / ChatWindow / ChatInput / MessageBubble / Markdown） |
+| `src/components/` | 认证与域组件（AuthGate / LoginScreen / ChatPage / AccountLayout / ProfilePage / UsagePage / Sidebar / ChatWindow / ChatInput / MessageBubble / Markdown） |
 
 ## 4. 模块职责与边界
 
 | 模块 | 负责 | 不负责 |
 |---|---|---|
-| `src/App.tsx` | 页面编排、会话与消息渲染的串联、全局快捷键 | 不发 HTTP、不解析 SSE |
+| `src/App.tsx` | 路由表（页面级懒加载、认证守卫联动）、`*` 回退 | 不发 HTTP、不解析 SSE、不订阅 store |
 | `src/components/MessageBubble.tsx` | 按 props 渲染消息 / 思考 / markdown / 复制 / 重试（`React.memo`） | 不改 store、不持有对话副本、流式不重解析（见 performance.md） |
 | `src/components/ChatInput.tsx` | 平铺助手胶囊 / 输入框 / 附件 / 发送/停止（纯展示 + 事件上报） | 不发 HTTP、不直接改 store |
 | `src/hooks/useChatStream.ts` | 发送编排 + 列表 / 历史加载、`AbortController` 取消 + 卸载清理 | 不做 UI 渲染、不碰 DOM |
 | `src/stores/chat.ts` | 消息追加、流式状态、取消复位、思考分区（单一事实源） | 不做 HTTP / SSE 读取 |
-| `src/stores/conversations.ts` | 会话列表状态（后端为唯一事实源） | 不做 HTTP / 不持久化 |
+| `src/stores/conversations.ts` | 会话列表状态（后端为唯一事实源）+ 显示级缓存（免刷新闪骨架，登出清空） | 不做 HTTP / 不持久化消息正文 |
 | `src/stores/auth.ts` | 登录态（status / account）、resolveSession / login / logout / expire、登出重置三 store 防跨账号泄漏 | 不做 UI 渲染 |
 | `src/lib/api.ts` | 对话 / 历史 / 文件 / 助手请求封装 + 认证（login / fetchMe / Bearer 拦截器 / 全局 401 回调）+ 错误映射 | 不被组件绕开裸 `fetch` |
 | `src/lib/auth.ts` | 令牌持久化（localStorage `disf_auth_token` 读写） | 不包含账号业务状态 |
@@ -135,7 +139,7 @@ SSE 解析唯一处在 `src/lib/sse.ts` + `src/lib/stream.ts`；共享状态唯�
 | SSE 传输 | `fetch` + `ReadableStream` | POST 语义无法用 `EventSource`，解析集中在 `lib/sse.ts` |
 | Markdown 渲染 | react-markdown + remark-gfm + rehype-highlight | 默认不渲染原始 HTML（安全收敛） |
 | 会话历史数据源 | 后端历史接口（`GET /conversations` 等） | 后端回合粒度持有，前端不持久化 |
-| 路由 | 无（单页） | 侧栏切换是状态不是路由；将来多页再加 react-router |
+| 路由 | react-router v8（`BrowserRouter`，纯客户端 SPA） | `/login` 登录、`/` 新对话、`/conversations/:conversationId` 会话页（URL 携带会话 ID）、`/profile` 个人中心、`/usage` 用量；nginx 已有 history 回退；账号页路径级懒加载（echarts 用量页独立 chunk）；URL 为页面导航唯一事实源（仅新建会话允许 store→URL 反向同步，复位/切换只由 URL 驱动，防点「新对话」误跳回旧会话） |
 | HTTP 出口 | `src/lib/api.ts` 统一实例 | 错误映射 / 契约集中一处 |
 
 ## 6. 结构性改动自检要点

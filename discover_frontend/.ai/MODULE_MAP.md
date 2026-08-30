@@ -4,8 +4,8 @@
 
 | 职责 | 文件 |
 |---|---|
-| 应用入口（createRoot + Root 根层 Toaster + 全局错误边界） | `src/main.tsx` |
-| 应用壳层 + 页面编排（Cmd+K / 主题切换，不承载 Toaster） | `src/App.tsx` |
+| 应用入口（createRoot + BrowserRouter + Root 根层 Toaster + 全局错误边界） | `src/main.tsx` |
+| 应用路由表（/login、/、/conversations/:conversationId、/profile、/usage、其余回退 /；账号页路径级懒加载） | `src/App.tsx` |
 | Tailwind + 双主题设计令牌（深蓝黑 / 极简冷白）+ 玻璃拟态工具类 + 自定义工具类 + Markdown 样式 | `src/index.css` |
 | 后端契约类型（pydantic 映射；含账号认证 AccountRecord / LoginResponse / AccountUsage / AvatarConfig / 资料请求体） | `src/types.ts` |
 | 环境配置唯一入口（类型化 VITE_*） | `src/env.ts` |
@@ -22,20 +22,20 @@
 | 网络状态（online/offline） | `src/hooks/useNetworkStatus.ts` |
 | 尾沿节流（流式 Markdown 降载，40ms） | `src/hooks/useThrottledValue.ts` |
 | 对话状态（activeMessages 独立切片 / 流式状态，单一事实源，不可变更新） | `src/stores/chat.ts` |
-| 会话列表（后端 `GET /conversations` 为唯一事实源，纯状态变更） | `src/stores/conversations.ts` |
+| 会话列表（后端 `GET /conversations` 为唯一事实源；显示级 localStorage 缓存 `disf_conversations_cache`，刷新/重回对话页免闪骨架，每次全量校准，登出/过期 replaceAll([]) 清空） | `src/stores/conversations.ts` |
 | 助手目录 + 当前选择（`GET /assistants` 为目录源；选择随下一次 /chat-messages 生效） | `src/stores/assistants.ts` |
 | 账号认证（status/account；resolveSession / login / applyAccount / logout / expire；登录写令牌对、登出调后端作废、过期清令牌对；登出重置 chat / conversations / assistants 防跨账号泄漏） | `src/stores/auth.ts` |
 | 主题状态（localStorage `disf_theme` 单一事实源；登录页 / App 壳 / 根层 Toaster 共享） | `src/stores/theme.ts` |
-| 视图状态（主区对话 / 用户中心 + 用户中心菜单个人中心 / 用量 + 当前会话 ID，localStorage `disf_view` / `disf_center_tab` / `disf_conversation_id` 持久化，刷新停留当前页面并恢复打开的对话；登出经 auth 复位回对话页） | `src/stores/view.ts` |
 | shadcn 组件（button / dropdown-menu / input / skeleton / sonner） | `src/components/ui/*.tsx` |
 | echarts 轻封装（按需装配 bar/line + grid/tooltip/legend + canvas；挂载初始化 / 卸载 dispose / resize） | `src/components/ui/chart.tsx` |
-| 用户中心内容顶栏（返回钮 + 居中标题，对齐 ChatWindow 顶栏 h-14） | `src/components/PageHeader.tsx` |
-| 用户中心（模仿 DeepSeek 开放平台布局：左菜单列 用量主区 + 左下角单独区域 个人中心 + 右侧内容区；菜单切换懒加载 Profile / Usage） | `src/components/UserCenter.tsx` |
-| 认证闸门（loading → 登录页 → 主界面；main.tsx 包裹层） | `src/components/AuthGate.tsx` |
-| 登录页（手机号 + 密码 → POST /auth/login 得 JWT） | `src/components/LoginScreen.tsx` |
-| 品牌左栏（品牌 / 新对话 Ctrl+K / 助手 / 最近对话 / 底部账号区含头像展示 + 点击打开用户中心 + 主题 / 退出；桌面折叠 → 64px 图标轨道） | `src/components/Sidebar.tsx` |
-| 个人中心内容区（用户中心左导航「个人中心」菜单切换进入，非独立页面；账号卡 + 账号信息只读行（昵称/手机号/注册时间/最近登录）+ 更换头像面板约束文案不常驻 + 修改密码点击展开；成功经 applyAccount 同步） | `src/components/ProfilePage.tsx` |
-| 用量内容区（用户中心左导航「用量」菜单切换进入，非独立页面；模仿用量看板：聚合大值卡片 + 明细卡片 + ECharts 按日趋势图，趋势时间范围可切换 近 7/30/90 天；聚合 GET /users/me/usage，趋势 GET /users/me/usage/daily?days=） | `src/components/UsagePage.tsx` |
+| 账号页内容顶栏（返回钮 → 回对话页 + 居中标题，对齐 ChatWindow 顶栏 h-14） | `src/components/PageHeader.tsx` |
+| 账号页布局（/profile、/usage 共享左导航：NavLink 用量主区 + 左下角单独区域 个人中心 + 右侧内容区 Outlet 懒加载） | `src/components/AccountLayout.tsx` |
+| 认证闸门 + URL 守卫（loading → 非 /login 重定向 /login → authenticated 挂载路由；已登录在 /login 回退 /；main.tsx 包裹层） | `src/components/AuthGate.tsx` |
+| 登录页（/login；手机号 + 密码 → POST /auth/login 得 JWT） | `src/components/LoginScreen.tsx` |
+| 对话页（/、/conversations/:conversationId；侧栏 + 会话窗口 + 输入区；URL↔store 同步：URL 参数驱动打开/复位、新会话 ID 同步回 URL；落地 / 恒为新对话空态，恢复会话由 URL 深链承担；Cmd+K；useChatStream 挂载于此，离开即卸载清理） | `src/components/ChatPage.tsx` |
+| 品牌左栏（品牌 / 新对话 Ctrl+K / 助手 / 最近对话 / 底部账号区含头像展示 + 点击进入个人中心 /profile + 主题 / 退出；桌面折叠 → 64px 图标轨道） | `src/components/Sidebar.tsx` |
+| 个人中心（/profile 独立页；账号卡 + 账号信息只读行（昵称/手机号/注册时间/最近登录）+ 更换头像面板约束文案不常驻 + 修改密码点击展开；成功经 applyAccount 同步） | `src/components/ProfilePage.tsx` |
+| 用量（/usage 独立页；模仿用量看板：聚合大值卡片 + 明细卡片 + ECharts 按日趋势图，趋势时间范围可切换 近 7/30/90 天；聚合 GET /users/me/usage，趋势 GET /users/me/usage/daily?days=；echarts 独立 chunk） | `src/components/UsagePage.tsx` |
 | 消息窗（顶栏：侧栏钮 + 标题脉冲 + 新对话 / 主题；turn 分组消息流 + 回合细线分隔 + 历史加载态） | `src/components/ChatWindow.tsx` |
 | 空态（时段问候 + 探索方向助手卡片） | `src/components/EmptyState.tsx` |
 | 悬浮输入区 composer（平铺助手胶囊 + Enter 发送 / 停止 / 长度校验 / 文件上传 / 免责声明 + 快捷键提示） | `src/components/ChatInput.tsx` |

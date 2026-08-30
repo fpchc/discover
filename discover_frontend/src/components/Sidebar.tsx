@@ -45,8 +45,8 @@ interface SidebarProps {
   onCollapse: () => void
   /** 点选专家助手 → 新建绑定该助手的工作会话 */
   onSelectAssistant: (id: string) => void
-  /** 点击账号区 → 打开个人资料弹窗 */
-  onOpenUserCenter: () => void
+  /** 点击账号区 → 进入个人中心页（/profile） */
+  onOpenProfile: () => void
   onToggleTheme: () => void
   /** 退出登录（清令牌并回到登录页） */
   onLogout: () => void
@@ -78,7 +78,7 @@ export function Sidebar({
   onDelete,
   onCollapse,
   onSelectAssistant,
-  onOpenUserCenter,
+  onOpenProfile,
   onToggleTheme,
   onLogout,
 }: SidebarProps) {
@@ -209,8 +209,8 @@ export function Sidebar({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onOpenUserCenter}
-            title="用户中心"
+            onClick={onOpenProfile}
+            title="个人中心"
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-surface-hover"
           >
             {accountAvatar !== null ? (
