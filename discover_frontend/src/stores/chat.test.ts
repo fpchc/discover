@@ -67,6 +67,15 @@ describe('思考分区', () => {
     expect(streaming?.thinkingStatus).toBe('done')
     expect(streaming?.thinkingDurationMs).toBe(2300)
   })
+
+  it('多段思考：各段 thinking_ended 耗时累加为总耗时', () => {
+    useChatStore.getState().beginTurn('推理')
+    const { endThinking } = useChatStore.getState()
+    endThinking(1200)
+    endThinking(800)
+    const streaming = useChatStore.getState().activeMessages[1]
+    expect(streaming?.thinkingDurationMs).toBe(2000)
+  })
 })
 
 describe('completeAssistant / failAssistant', () => {

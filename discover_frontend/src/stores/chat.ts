@@ -133,7 +133,8 @@ export const useChatStore = create<ChatState>((set) => ({
       activeMessages: updateStreamingMessage(state.activeMessages, (current) => ({
         ...current,
         thinkingStatus: 'done',
-        thinkingDurationMs: durationMs,
+        // 多段思考：thinking_ended 每段一发，各段耗时累加为总耗时（单段时等价于原值）
+        thinkingDurationMs: (current.thinkingDurationMs ?? 0) + durationMs,
       })),
     })),
 

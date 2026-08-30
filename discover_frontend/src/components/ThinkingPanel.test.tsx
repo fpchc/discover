@@ -33,4 +33,42 @@ describe('ThinkingPanel', () => {
     fireEvent.click(header)
     expect(screen.queryByText('推理过程')).toBeNull()
   })
+
+  it('streaming 分段 thinking_ended 不折叠（多段思考期间保持展开）', () => {
+    render(
+      <ThinkingPanel
+        message={makeMessage({ thinking: '推理过程', thinkingStatus: 'done', status: 'streaming' })}
+      />,
+    )
+    expect(screen.getByText('推理过程')).toBeTruthy()
+  })
+
+  it('streaming 进行中强制展开，点击头部不折叠（toggle 锁定）', () => {
+    render(
+      <ThinkingPanel
+        message={makeMessage({
+          thinking: '推理过程',
+          thinkingStatus: 'thinking',
+          status: 'streaming',
+        })}
+      />,
+    )
+    fireEvent.click(screen.getByText('深度思考'))
+    expect(screen.getByText('推理过程')).toBeTruthy()
+  })
+
+  it('整轮结束后折叠并显示累计耗时', () => {
+    render(
+      <ThinkingPanel
+        message={makeMessage({
+          thinking: '推理过程',
+          thinkingStatus: 'done',
+          status: 'done',
+          thinkingDurationMs: 2500,
+        })}
+      />,
+    )
+    expect(screen.queryByText('推理过程')).toBeNull()
+    expect(screen.getByText('3 秒')).toBeTruthy()
+  })
 })

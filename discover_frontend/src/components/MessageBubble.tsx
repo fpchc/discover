@@ -40,7 +40,8 @@ function MessageBubbleInner({ message, onRetry, canRegenerate = false }: Message
   const streamingEmpty = isAssistant && streaming && message.content === ''
 
   const hasThinking = FEATURE_THINKING && isAssistant && message.thinkingStatus !== undefined
-  const thinkingActive = hasThinking && message.thinkingStatus === 'thinking'
+  // 思考一旦开始即由思考分区头部整轮承载状态；期间不再叠加「生成中」徽章，避免分段闪烁
+  const thinkingActive = hasThinking && streaming
 
   // ---- 结构化参数：用户消息解析全文；助手消息解析开头参数段（≥2 块才结构化） ----
   const userParams = useMemo(() => extractStructuredParams(message.content), [message.content])

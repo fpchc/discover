@@ -5,7 +5,8 @@ import type { ChatMessage } from '@/types'
 
 /**
  * 思考分区（视觉重构 —— AI 回复区域）。
- * - 多段思考（思考→工具→再思考）追加同一分区：首个 thinking_started 打开，末次 thinking_ended 收起。
+ * - 多段思考（思考→工具→再思考）追加同一分区；思考一旦开始，整轮流式期间保持展开，
+ *   仅整轮结束（message_end / 停止）后折叠显示累计耗时，避免分段反复开合。
  * - 进行中：顶部粒子流（.particle-track）+ 头部 shimmer + 旋转指示；结束时折叠显示耗时。
  * - 头部按钮可折叠；进行中强制展开（toggle 锁定）。
  */
@@ -15,7 +16,11 @@ interface ThinkingPanelProps {
 
 export function ThinkingPanel({ message }: ThinkingPanelProps) {
   const [expanded, setExpanded] = useState(false)
-  const active = message.thinkingStatus === 'thinking'
+  const streaming = message.status === 'streaming'
+  // 展开态由「整轮」决定而非分段：思考一旦开始，整轮流式期间保持展开；
+  // 分段 thinking_ended 不折叠，仅 message_end / 停止后落到折叠态（避免多段思考反复开合）
+  const hasThinking = message.thinkingStatus !== undefined
+  const active = streaming && hasThinking
   const open = active || expanded
 
   function toggle(): void {
@@ -53,7 +58,7 @@ export function ThinkingPanel({ message }: ThinkingPanelProps) {
         <BrainCircuit className={cn('h-3.5 w-3.5', active ? 'text-brand-2' : 'text-text-3')} />
         <span className="text-[13px] font-medium text-text-2">深度思考</span>
         {active && <LoaderCircle className="ml-auto h-3.5 w-3.5 animate-spin text-brand-2" />}
-        {message.thinkingStatus === 'done' && (
+        {!active && message.thinkingStatus === 'done' && (
           <span className="ml-auto font-mono text-xs text-text-3">{formatDuration()}</span>
         )}
         <ChevronDown
