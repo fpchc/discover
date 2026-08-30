@@ -108,7 +108,8 @@ export function ChatInput({
                 type="button"
                 disabled={disabled}
                 title={item.description}
-                onClick={() => onAssistantChange(item.id)}
+                // 再次点击已选中的胶囊 = 取消选择，退回默认「通用对话」（generic 不在平铺列表里）
+                onClick={() => onAssistantChange(selected ? GENERIC_ASSISTANT_ID : item.id)}
                 className={cn(
                   'inline-flex h-7 cursor-pointer items-center gap-1 rounded-full border pl-2 pr-2.5 text-[12px] transition-colors',
                   selected

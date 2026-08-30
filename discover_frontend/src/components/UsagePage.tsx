@@ -294,7 +294,6 @@ export function UsagePage() {
               value={formatNumber(usage.total_tokens)}
               unit="tokens"
             />
-            <UsageStatCard label="消息数" value={formatNumber(usage.message_count)} unit="条" />
           </div>
 
           <div className="my-4 border-t border-border" aria-hidden="true" />
@@ -305,11 +304,6 @@ export function UsagePage() {
             <UsageStatCard label="输出 Token" value={formatNumber(usage.completion_tokens)} />
             <UsageStatCard label="缓存读 Token" value={formatNumber(usage.cached_read_tokens)} />
             <UsageStatCard label="缓存写 Token" value={formatNumber(usage.cached_write_tokens)} />
-            <UsageStatCard
-              label="会话数"
-              value={formatNumber(usage.conversation_count)}
-              unit="个"
-            />
           </div>
         </>
       )}

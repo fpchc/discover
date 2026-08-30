@@ -56,13 +56,11 @@ describe('UsagePage 用量内容区', () => {
   it('渲染聚合指标卡（异步拉取后展示）', async () => {
     render(<UsagePage />)
     expect(await screen.findByText('总 Token')).toBeTruthy()
-    expect(screen.getByText('消息数')).toBeTruthy()
     expect(screen.getByText('150')).toBeTruthy()
     expect(screen.getByText('输入 Token')).toBeTruthy()
     expect(screen.getByText('输出 Token')).toBeTruthy()
     expect(screen.getByText('缓存读 Token')).toBeTruthy()
     expect(screen.getByText('缓存写 Token')).toBeTruthy()
-    expect(screen.getByText('会话数')).toBeTruthy()
   })
 
   it('聚合拉取失败时降级为骨架占位，不抛错', async () => {
