@@ -26,6 +26,6 @@ logs/
 *.log
 
 # ---- IDE ----
-.vscode/*
+# .vscode/*
 !.vscode/settings.json
 .idea/

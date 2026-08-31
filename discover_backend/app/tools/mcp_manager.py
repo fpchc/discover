@@ -6,12 +6,16 @@
 空闲回收入口（当前由接入层按需触发，无后台定时任务）。
 """
 
+import logging
+
 import anyio
 
 from app.config.loader import MCPRegistry, MCPServer
 from app.config.settings import Settings
 from app.errors.base import ConfigError
 from app.tools.mcp_client import MCPClient
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_token(server: MCPServer, *, settings: Settings) -> str:
@@ -51,9 +55,11 @@ class MCPManager:
         async with self._lock:
             client = self._clients.get(server_id)
             if client is None:
+                logger.debug("MCP 首启握手：server=%s", server_id)
                 client = await self._start(server)
                 self._clients[server_id] = client
             self._refs[server_id] = self._refs.get(server_id, 0) + 1
+            logger.debug("MCP acquire：server=%s 引用数=%d", server_id, self._refs[server_id])
             return client
 
     def release(self, server_id: str) -> None:
@@ -63,6 +69,7 @@ class MCPManager:
             self._refs[server_id] = refs - 1
         else:
             self._refs.pop(server_id, None)
+        logger.debug("MCP release：server=%s 剩余引用=%d", server_id, self._refs.get(server_id, 0))
 
     async def close_idle(self, server_id: str) -> None:
         """无引用时关闭连接并移除。仍有引用则不动作。"""
@@ -70,6 +77,7 @@ class MCPManager:
             return
         client = self._clients.pop(server_id, None)
         if client is not None:
+            logger.debug("MCP 空闲回收：server=%s", server_id)
             await client.__aexit__(None, None, None)
 
     async def close_all(self) -> None:
@@ -77,6 +85,7 @@ class MCPManager:
         clients = list(self._clients.values())
         self._clients.clear()
         self._refs.clear()
+        logger.debug("MCP 关闭全部连接：%d 个", len(clients))
         for client in clients:
             await client.__aexit__(None, None, None)
 

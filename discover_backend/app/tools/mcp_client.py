@@ -8,6 +8,8 @@ list_tools / call_tool。响应可能是 application/json 或 text/event-stream�
 from __future__ import annotations
 
 import json
+import logging
+import time
 from itertools import count
 from types import TracebackType
 from typing import Any
@@ -32,6 +34,8 @@ _CLIENT_NAME = "agent-platform"
 _CLIENT_VERSION = "0.1.0"
 _JSON_RPC_INVALID_PARAMS = -32602
 _ACCEPT_HEADER = "application/json, text/event-stream"
+
+logger = logging.getLogger(__name__)
 
 
 class MCPToolInfo(BaseModel):
@@ -127,6 +131,7 @@ class MCPClient:
 
     # ---- 握手 ----
     async def _initialize(self) -> None:
+        logger.debug("MCP 握手开始：server=%s url=%s", self._server.id, self._server.base_url)
         params: dict[str, object] = {
             "protocolVersion": _PROTOCOL_VERSION,
             "capabilities": {},
@@ -149,6 +154,11 @@ class MCPClient:
             if isinstance(session, str):
                 self._session_id = session
         await self._notify("notifications/initialized", {})
+        logger.debug(
+            "MCP 握手完成：server=%s session=%s",
+            self._server.id,
+            "已获取" if self._session_id else "服务端无会话态",
+        )
 
     async def _notify(self, method: str, params: dict[str, object]) -> None:
         """发送不需要响应的 JSON-RPC 通知。"""
@@ -172,12 +182,22 @@ class MCPClient:
                     input_schema=_as_dict(tool.get("inputSchema")),
                 )
             )
+        logger.debug("MCP 工具列表：server=%s 工具数=%d", self._server.id, len(infos))
         return infos
 
     async def call_tool(self, name: str, arguments: dict[str, object]) -> MCPCallResult:
+        logger.debug("MCP 调用工具：server=%s tool=%s", self._server.id, name)
         result = await self._request("tools/call", {"name": name, "arguments": arguments})
         is_error = bool(result.get("isError", False))
-        return MCPCallResult(content=_extract_text(result.get("content")), is_error=is_error)
+        call_result = MCPCallResult(content=_extract_text(result.get("content")), is_error=is_error)
+        logger.debug(
+            "MCP 工具调用完成：server=%s tool=%s is_error=%s 结果长度=%d",
+            self._server.id,
+            name,
+            call_result.is_error,
+            len(call_result.content),
+        )
+        return call_result
 
     # ---- 传输 ----
     async def _request_raw(self, method: str, params: dict[str, object]) -> dict[str, object]:
@@ -214,15 +234,39 @@ class MCPClient:
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
         url = self._server.base_url.rstrip("/")
+        method = str(payload.get("method", "-"))
+        msg_id = payload.get("id")
+        logger.debug("MCP 请求发出：server=%s method=%s id=%s", self._server.id, method, msg_id)
+        started = time.monotonic()
         try:
             with anyio.fail_after(self._server.call_timeout_seconds):
-                return await http.post(url, json=payload, headers=headers)
+                response = await http.post(url, json=payload, headers=headers)
         except httpx.TimeoutException as exc:
+            logger.warning(
+                "MCP 请求超时：server=%s method=%s id=%s", self._server.id, method, msg_id
+            )
             raise MCPTimeoutError("调用 MCP 服务超时") from exc
         except httpx.RequestError as exc:
+            logger.warning(
+                "MCP 连接失败：server=%s method=%s id=%s", self._server.id, method, msg_id
+            )
             raise MCPConnectionError("连接 MCP 服务失败") from exc
         except TimeoutError as exc:
+            logger.warning(
+                "MCP 请求超时：server=%s method=%s id=%s", self._server.id, method, msg_id
+            )
             raise MCPTimeoutError("调用 MCP 服务超时") from exc
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        logger.debug(
+            "MCP 响应：server=%s method=%s id=%s status=%d content-type=%s %dms",
+            self._server.id,
+            method,
+            msg_id,
+            response.status_code,
+            response.headers.get("content-type", ""),
+            elapsed_ms,
+        )
+        return response
 
     async def _parse_body(self, response: httpx.Response) -> dict[str, object]:
         await self._raise_for_status(response)

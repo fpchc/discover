@@ -124,47 +124,48 @@ x-common-env: &common-env
   ELECNEST_GET_USER_INFO_URL: ${ELECNEST_GET_USER_INFO_URL:-https://id.elecnest.cn/api/login/getUserInfo}
   ELECNEST_SSO_TIMEOUT_SECONDS: ${ELECNEST_SSO_TIMEOUT_SECONDS:-10}
 
-name: discover
+name: discover-test
 
 services:
+
   discover_backend:
     build:
       context: ./discover_backend
       dockerfile: Dockerfile
-      target: dev
-    container_name: discover-backend
+    image: discover-backend:test
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
     environment:
       <<: *common-env
-    volumes:
-      # 源码热挂载 + .venv 匿名卷（不污染宿主机）
-      - ./discover_backend:/app
-      - /app/.venv
+    volumes:  
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./workspaces:/app/workspaces
     networks:
       - discover-net
-    ports:
-      - "8000:8000"
 
   discover_frontend:
     build:
       context: ./discover_frontend
       dockerfile: Dockerfile
-      target: dev
-    container_name: discover-frontend
+      target: runtime
+      args:
+        VITE_APP_ENV: test
+        VITE_API_BASE_URL: /api/v1
+    image: discover-frontend:test
+    restart: unless-stopped
     depends_on:
       - discover_backend
     ports:
-      - "5173:5173"
-    volumes:
-      # 源码热挂载 + node_modules 匿名卷
-      - ./discover_frontend:/app
-      - /app/node_modules
+      # 宿主机 80/443 已被 nginx:latest 网关占用，前端保持 9003，域名经网关反代接入
+      - "9003:80"
     networks:
       - discover-net
     environment:
-      # dev 代理：/api 反代到 compose 内 backend 服务（免 CORS）
-      - VITE_PROXY_TARGET=http://discover_backend:8000
-    stdin_open: true
-    tty: true
+      - BACKEND_PROXY_PASS=http://discover_backend:8000
+      # server_name：research.elecnest.cn（网关反代进入后 Host 透传匹配）
+      - SERVER_NAME=research.elecnest.cn
 
 networks:
   discover-net:

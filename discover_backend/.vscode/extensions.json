@@ -1,0 +1,11 @@
+{
+  // 本项目 settings.json 依赖以下扩展，缺失则相关配置不生效
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "ms-python.mypy-type-checker",
+    "tamasfe.even-better-toml"
+  ]
+}

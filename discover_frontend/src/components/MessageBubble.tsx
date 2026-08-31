@@ -1,13 +1,13 @@
 import { Copy, RotateCcw, Sparkles } from 'lucide-react'
 import { motion } from 'motion/react'
-import { memo, useDeferredValue, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Markdown } from '@/components/Markdown'
 import { StatusBadge } from '@/components/StatusBadge'
 import { StructuredParams } from '@/components/StructuredParams'
 import { ThinkingPanel } from '@/components/ThinkingPanel'
 import { FEATURE_THINKING } from '@/env'
-import { useThrottledValue } from '@/hooks/useThrottledValue'
+import { useStreamReveal } from '@/hooks/useStreamReveal'
 import { extractLeadingParams, extractStructuredParams, stripParamBlocks } from '@/lib/structure'
 import { cn } from '@/lib/utils'
 import type { ChatMessage } from '@/types'
@@ -15,8 +15,8 @@ import type { ChatMessage } from '@/types'
 /**
  * 消息气泡（performance.md §1 React.memo 隔离）。
  * - 历史消息 props 引用不变即绝不重渲（store 不可变更新保证，见 stores/chat.ts）。
- * - 流式消息：正文经 useThrottledValue(40ms) + useDeferredValue 双重降载后渲染
- *   Markdown，高亮仅收尾后启用（performance.md §2）。
+ * - 流式消息：正文经 useStreamReveal 打字机揭示后渲染 Markdown（增量以固定速率
+ *   逐字符前进，后端末尾大段也平滑展开），高亮仅最终文本启用（performance.md §2）。
  * - 思考分区：抽取 ThinkingPanel；进行中粒子流 + shimmer，结束可折叠显示耗时。
  * - 结构化参数（视觉重构）：用户输入 / AI 回复中的「【键】值」自动解析为
  *   KV 卡片网格 / 胶囊（StructuredParams），不再露出一串 【】 字符。
@@ -33,10 +33,12 @@ interface MessageBubbleProps {
 function MessageBubbleInner({ message, onRetry, canRegenerate = false }: MessageBubbleProps) {
   const isAssistant = message.role === 'assistant'
   const streaming = message.status === 'streaming'
-  // 流式期尾沿节流（40ms）合并增量 + useDeferredValue 让出主线程；收尾后直接用最终文本
-  const throttledContent = useThrottledValue(message.content, 40)
-  const deferredContent = useDeferredValue(throttledContent)
-  const renderContent = streaming ? deferredContent : message.content
+  // 打字机揭示：流式期 + 收尾后均按固定速率逐字符展开，直到追上全文；历史消息直接显示。
+  // pragma: 简化 — 流式期不用 useDeferredValue（性能.md §2）：并发调度下它的后台渲染
+  // 被持续涌入的增量饿死，正文冻结到 message_end 才整块出现；揭示 33ms 已把重解析频率封顶
+  const renderContent = useStreamReveal(message.content)
+  // 揭示未追上全文（正文仍在变化）：用于压制高亮直到最终文本（性能.md §2）
+  const revealPending = renderContent.length < message.content.length
   const streamingEmpty = isAssistant && streaming && message.content === ''
 
   const hasThinking = FEATURE_THINKING && isAssistant && message.thinkingStatus !== undefined
@@ -127,7 +129,7 @@ function MessageBubbleInner({ message, onRetry, canRegenerate = false }: Message
           </div>
         ) : (
           <div className={cn('markdown-wrap', streaming && 'is-streaming')}>
-            <Markdown content={displayContent} streaming={streaming} />
+            <Markdown content={displayContent} streaming={streaming || revealPending} />
           </div>
         )}
 
