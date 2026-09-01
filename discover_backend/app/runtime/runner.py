@@ -28,6 +28,7 @@ from app.llm.models import (
 )
 from app.llm.providers import ProviderRegistry
 from app.llm.stream_parser import (
+    PhaseSwitchChunk,
     TextChunk,
     ThinkingChunk,
     ToolCall,
@@ -331,6 +332,12 @@ class Runtime:
                     await self._emit(ThinkingStartedEvent())
                     thinking_open = True
                 self._emit_sync_guard().thinking_delta(chunk.text)
+            elif isinstance(chunk, PhaseSwitchChunk):
+                if chunk.to != "thinking" and thinking_open:
+                    await self._emit(
+                        ThinkingEndedEvent(duration_ms=int((time.perf_counter() - start) * 1000))
+                    )
+                    thinking_open = False
             elif isinstance(chunk, TextChunk):
                 self._emit_sync_guard().text_delta(chunk.text)
                 text_parts.append(chunk.text)
@@ -453,8 +460,9 @@ class Runtime:
         provider = self._providers.resolve(self._settings.default_provider_id)
         api_key = self._resolve_api_key(provider)
         index = self._registry.index()
+        # 只暴露 display_name：模型正文不得回显内部 agent_id（页面统一用展示名）
         agents_text = "\n".join(
-            f"- {a.agent_id}（{a.display_name}）：{a.description}" for a in index.agents.values()
+            f"- {a.display_name}：{a.description}" for a in index.agents.values()
         )
         system = (
             "你是多智能体平台助手。以下专家可用：\n"
@@ -476,6 +484,12 @@ class Runtime:
                     await self._emit(ThinkingStartedEvent())
                     thinking_open = True
                 self._emit_sync_guard().thinking_delta(chunk.text)
+            elif isinstance(chunk, PhaseSwitchChunk):
+                if chunk.to != "thinking" and thinking_open:
+                    await self._emit(
+                        ThinkingEndedEvent(duration_ms=int((time.perf_counter() - start) * 1000))
+                    )
+                    thinking_open = False
             elif isinstance(chunk, TextChunk):
                 self._emit_sync_guard().text_delta(chunk.text)
                 text_parts.append(chunk.text)

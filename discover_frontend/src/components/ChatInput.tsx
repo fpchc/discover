@@ -232,7 +232,7 @@ export function ChatInput({
               className={cn(
                 'flex h-9 w-9 items-center justify-center rounded-full text-white shadow-glow-brand transition-all',
                 canSend
-                  ? 'bg-brand-gradient hover:scale-105 hover:shadow-[0_8px_26px_rgba(139,92,246,0.5)]'
+                  ? 'bg-brand-gradient hover:scale-105 hover:shadow-[0_8px_26px_rgba(109,93,251,0.5)]'
                   : 'bg-surface-hover text-text-3 shadow-none',
               )}
             >

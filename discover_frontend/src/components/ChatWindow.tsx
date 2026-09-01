@@ -91,7 +91,7 @@ export function ChatWindow({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="flex h-14 flex-shrink-0 items-center gap-2.5 px-4">
+      <header className="glass-surface mx-4 mt-3 flex h-12 flex-shrink-0 items-center gap-2.5 rounded-2xl border border-border px-3.5 shadow-composer">
         {/* 移动端侧栏钮（<768px 生效） */}
         <button
           type="button"

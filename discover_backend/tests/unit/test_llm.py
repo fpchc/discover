@@ -60,6 +60,29 @@ def test_stream_parser_text_and_phase() -> None:
     assert chunks[1] == TextChunk(text="你好")
 
 
+def test_parser_strips_think_tags_from_content() -> None:
+    parser = StreamParser(thinking_field="reasoning_content")
+    chunks = parser.feed(
+        '{"choices": [{"delta": {"content": "</think>东莞市钿威电子科技有限公司"}}]}'
+    )
+    text = "".join(c.text for c in chunks if isinstance(c, TextChunk))
+    assert text == "东莞市钿威电子科技有限公司"
+    assert "</think>" not in text
+
+
+def test_parser_strips_think_tags_from_reasoning() -> None:
+    parser = StreamParser(thinking_field="reasoning_content")
+    payload = (
+        '{"choices": [{"delta": {"reasoning_content": "<think>先分析证据</think>",'
+        ' "content": ""}}]}'
+    )
+    chunks = parser.feed(payload)
+    thinking = "".join(c.text for c in chunks if isinstance(c, ThinkingChunk))
+    assert thinking == "先分析证据"
+    assert "<think>" not in thinking
+    assert "</think>" not in thinking
+
+
 def test_parser_does_not_complete_tool_call_early() -> None:
     parser = StreamParser(thinking_field="reasoning_content")
     first = parser.feed(

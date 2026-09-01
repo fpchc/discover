@@ -4,6 +4,9 @@
 流程控制仍由图与脚本承担，不写成自然语言提示词（红线 §4）。
 """
 
+import logging
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.config.loader import MCPRegistry
@@ -17,19 +20,24 @@ from app.registry.manifests import (
     ThinkingPreference,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class CapabilityPlan(BaseModel):
-    """能力装配计划：运行时按候选服务器顺序主备切换（failover）。
+    """能力装配计划。
 
-    能力由注册表解析为候选服务器列表；第一个可用者生效，失败自动切换。
-    required 能力全候选失败 → 拒绝激活；optional 能力全失败 → 降级并继续。
+    strategy="failover"（默认）：按候选服务器顺序主备切换，第一个可用者生效。
+    strategy="all"：全部候选各自激活为独立工具，调用哪个由模型（re-act）决定，
+    不做切换也不做降级——用于多搜索提供方并存场景。
 
     能力级降级（注册表 `MCSCapability.fallback`）：主候选全部不可用时，装配层
     解析 fallback 能力的候选服务器（fallback_servers）随计划下发；代理层命中后
     视为「已降级至 fallback 能力」，降级说明由系统生成，不来自技能清单。
+    strategy="all" 时忽略 fallback。
     """
 
     capability: str
+    strategy: Literal["failover", "all"] = "failover"
     candidate_servers: list[str] = Field(default_factory=list)
     core_tools: list[str] = Field(default_factory=list)
     required: bool = True
@@ -95,6 +103,12 @@ def _build_system_prompt(agent: AgentManifest, skill: SkillManifest) -> str:
     if skill.gates:
         gate_lines = "\n".join(f"- {gate.id}：{gate.condition}" for gate in skill.gates)
         sections.append(f"# 门禁\n{gate_lines}")
+    sections.append(
+        "# 平台红线（强制）\n"
+        "- 涉及智能体身份时一律使用展示名（display_name）。\n"
+        "- 思考过程与可见回答中，严禁出现内部 agent_id / 智能体标识字符串"
+        "（如包名、目录名、工具命名空间前缀等）。"
+    )
     return "\n\n".join(sections)
 
 
@@ -116,6 +130,9 @@ class SkillAssembler:
         core_tool_names: list[str] = []
         for dep in skill.mcp_dependencies:
             core_tool_names.extend(dep.core_tools)
+            if not self._mcp_registry.server_enabled(dep.server):
+                logger.info("MCP 服务 %s 已显式禁用（enabled: false），跳过装配", dep.server)
+                continue
             if dep.required:
                 required.append(dep.server)
             else:
@@ -151,11 +168,16 @@ class SkillAssembler:
                 fallback = self._mcp_registry.capabilities.get(fallback_capability)
                 if fallback is None:
                     raise RegistryValidationError(f"能力降级目标未注册：{fallback_capability}")
-                fallback_servers = list(fallback.servers)
+                fallback_servers = [
+                    sid for sid in fallback.servers if self._mcp_registry.server_enabled(sid)
+                ]
             plans.append(
                 CapabilityPlan(
                     capability=dep.capability,
-                    candidate_servers=list(capability.servers),
+                    strategy=capability.strategy,
+                    candidate_servers=[
+                        sid for sid in capability.servers if self._mcp_registry.server_enabled(sid)
+                    ],
                     core_tools=dep.core_tools,
                     required=dep.required,
                     degrade_note=dep.degrade_note,

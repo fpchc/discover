@@ -1,32 +1,64 @@
 # MCP 服务注册表样例（复制为 config/mcp-servers.yaml 后使用）
 # 字段定义见 .claude/commands/mcp-integration-spec.md §3
 # 认证令牌只存环境变量名，值从环境读取；代码中不出现端点 URL 字面量。
+#
+# enabled 显式开关：false → 装配时剔除，系统不尝试连接该服务；缺省视为 true。
+# 占位 / 未接入的服务保持 false，接入后改 true。
 
 servers:
-  - id: alibaba_search
+  # 本地自建腾讯联网搜索 MCP（local_mcp/tencent_mcp 包，python -m local_mcp.tencent_mcp.main 启动，端口 10001）：
+  # 只暴露 web_search_tencent 一个工具，平台经 Streamable HTTP 连接。
+  - id: tencent_mcp
     transport: streamable_http
-    base_url: "https://your-endpoint.example.com/mcp"
+    base_url: "http://127.0.0.1:10001/mcp"
     auth:
       type: bearer_token
-      token_env: "ALIBABA_SEARCH_TOKEN"
+      token_env: "TENCENT_MCP_TOKEN"
     per_session: false
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
+    enabled: true
+  # 本地自建东方财富 MCP（local_mcp/eastmoney_mcp 包，python -m local_mcp.eastmoney_mcp.main 启动，端口 10002）：
+  # 只暴露 web_search_eastmoney 一个工具。作为 financial_data 备源，本地服务在线即启用。
+  - id: eastmoney_mcp
+    transport: streamable_http
+    base_url: "http://127.0.0.1:10002/mcp"
+    auth:
+      type: bearer_token
+      token_env: "EASTMONEY_MCP_TOKEN"
+    per_session: false
+    handshake_timeout_seconds: 30
+    call_timeout_seconds: 30
+    concurrency_limit: 3
+    enabled: true
 
 # 能力 = 技能与具体服务之间的抽象层（agent-package-spec §4）。
 # strategy: failover = 主备切换，按 servers 顺序优先，第一个可用者生效。
+#           all = 全部候选激活为独立工具，调用哪个由模型（re-act）决定，不做切换。
 # fallback = 系统级降级（不写进技能清单/提示词）：本能力全部候选服务器不可用时，
 # 降级到 fallback 指向的能力继续尝试；命中视为「已降级为 fallback 能力」。只允许一级降级。
 capabilities:
   web_search:
-    strategy: failover
+    strategy: all
     servers:
       - alibaba_search
-      - yuanbao_search
+      - tencent_mcp
   enterprise_business:
     strategy: failover
     servers:
       - tyc_mcp
       - qcc_mcp
+    fallback: web_search
+  enterprise_risk:
+    strategy: failover
+    servers:
+      - qcc_mcp
+      - tyc_mcp
+    fallback: web_search
+  financial_data:
+    strategy: failover
+    servers:
+      - tushare_mcp
+      - eastmoney_mcp
     fallback: web_search

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gate_final_qa 输入约束",
+  "description": "Final QA 门禁校验器入参：answer 传信息卡正文，校验其不泄露技能内部信息且结构合规。",
+  "type": "object",
+  "required": ["answer"],
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "信息卡正文（一句话定位 / 工商信息 / 主营业务）"
+    }
+  }
+}

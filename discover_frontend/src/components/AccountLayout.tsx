@@ -47,9 +47,10 @@ export function AccountLayout() {
   const isUsage = location.pathname.startsWith('/usage')
 
   return (
-    <div className="flex h-full min-h-0 min-w-0">
+    <div className="relative flex h-full min-h-0 min-w-0">
+      <div className="chat-bg" aria-hidden="true" />
       {/* 左导航：菜单列（DeepSeek 风格） */}
-      <aside className="flex w-[220px] flex-shrink-0 flex-col border-r border-border bg-surface-1">
+      <aside className="glass-surface relative z-10 flex w-[220px] flex-shrink-0 flex-col border-r border-border shadow-card">
         <div className="flex h-14 flex-shrink-0 items-center gap-2.5 border-b border-border px-4">
           <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-white">
             <User className="h-4 w-4" />
@@ -68,7 +69,7 @@ export function AccountLayout() {
       </aside>
 
       {/* 右内容区：顶栏 + 滚动内容 */}
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="relative z-10 flex min-w-0 flex-1 flex-col">
         <PageHeader title={isUsage ? '用量信息' : '个人信息'} onBack={() => navigate('/')} />
         <div className="flex-1 overflow-y-auto">
           <Suspense fallback={<PageLoading />}>

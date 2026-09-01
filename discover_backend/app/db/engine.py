@@ -28,6 +28,7 @@ class Database:
             # pragma: 简化 — P1 本地低并发，连接按会话即开即关（NullPool）即可，
             # 避免连接池跨事件循环复用；负载上来再换 QueuePool。
             poolclass=NullPool,
+            connect_args={"ssl": False}
         )
         self.session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
             self._engine,

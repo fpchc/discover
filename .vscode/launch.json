@@ -1,7 +1,4 @@
 {
-  // ===== 仓库根目录聚合 launch 配置 =====
-  // 把 discover_backend / discover_frontend 两个子工程的 .vscode/launch.json
-  // 聚合到根目录，打开本仓库即可选择全部调试命令；路径均以 ${workspaceFolder}/子目录 定位。
   "version": "0.2.0",
   "configurations": [
     {
@@ -26,48 +23,83 @@
         "PYTHONPATH": "${workspaceFolder}/discover_backend",
         "LOG_LEVEL": "DEBUG"
       },
-      "console": "integratedTerminal"
+      // ✅ 使用内部调试控制台，避免终端冲突
+      "console": "internalConsole"
     },
     {
-      // 启动 Vite dev server（preLaunchTask）后打开 Chrome 调试
+      "name": "🛰️ 腾讯联网 MCP 服务 (tencent_mcp)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "local_mcp.tencent_mcp.main",
+      "jinja": true,
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}/discover_backend",
+      "python": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/discover_backend"
+      },
+      // ✅ 使用内部调试控制台
+      "console": "internalConsole"
+    },
+    {
+      "name": "🛰️ 东财 MCP 服务 (eastmoney_mcp)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "local_mcp.eastmoney_mcp.main",
+      "jinja": true,
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}/discover_backend",
+      "python": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/discover_backend"
+      },
+      // ✅ 使用内部调试控制台
+      "console": "internalConsole"
+    },
+    {
+      "name": "Debug in Chrome (Vite)",
       "type": "chrome",
       "request": "launch",
-      "name": "Debug in Chrome (Vite)",
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}/discover_frontend",
       "preLaunchTask": "dev: Vite dev server"
     },
     {
-      // 同 Chrome，浏览器换成 Edge
+      "name": "Debug in Edge (Vite)",
       "type": "msedge",
       "request": "launch",
-      "name": "Debug in Edge (Vite)",
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}/discover_frontend",
       "preLaunchTask": "dev: Vite dev server"
     },
     {
-      // 直接以 node 方式跑 Vitest，可在测试内打断点
+      "name": "Vitest (run)",
       "type": "node",
       "request": "launch",
-      "name": "Vitest (run)",
       "program": "${workspaceFolder}/discover_frontend/node_modules/vitest/vitest.mjs",
-      "args": ["run"],
+      "args": [
+        "run"
+      ],
       "cwd": "${workspaceFolder}/discover_frontend",
       "autoAttachChildProcesses": true,
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "console": "internalConsole"
     }
   ],
   "compounds": [
     {
-      "name": "🧩 前后端 Dev 一起启动（FastAPI + Vite + Chrome）",
+      "name": "🧩 前后端 Dev 一起启动 (MCP + FastAPI + Vite)",
       "configurations": [
+        "🛰️ 腾讯联网 MCP 服务 (tencent_mcp)",
+        "🛰️ 东财 MCP 服务 (eastmoney_mcp)",
         "🚀 FastAPI: 启动服务 (无 reload)",
         "Debug in Chrome (Vite)"
       ],
       "stopAll": true,
       "presentation": {
+        "hidden": false,
         "group": "1 组合启动",
         "order": 1
       }

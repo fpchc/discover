@@ -46,6 +46,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 技能耦合面 | 唯一耦合面是 `AGENT.md` / `SKILL.md` frontmatter | agent-package-spec |
 | 工具命名空间 | MCP = `server.tool`；脚本 = `agent.skill.script.name`；元工具无前缀 | tool-broker-spec |
 | 工具暴露 | 三级：Tier0 元工具 / Tier1 核心 / Tier2 懒加载 | tool-broker-spec |
+| 搜索 MCP 自建 | 腾讯 yuanbao 托管 MCP 已弃（不稳定）。**两个独立本地自建 MCP 服务，职责单一不混装**（CLAUDE.md §13.1），统一收拢在 `local_mcp/` 聚合包下：`local_mcp/tencent_mcp/`（腾讯 WSA SearchPro，`python -m local_mcp.tencent_mcp.main`，`127.0.0.1:10001/mcp`，工具 `web_search_tencent`，`TENCENT_MCP_TOKEN` 鉴权）+ `local_mcp/eastmoney_mcp/`（东财 JSONP 资讯，`python -m local_mcp.eastmoney_mcp.main`，`127.0.0.1:10002/mcp`，工具 `web_search_eastmoney`，`EASTMONEY_MCP_TOKEN` 鉴权，按 IP 限流 1s）。web_search 用 `strategy: all` 挂 alibaba_search + tencent_mcp；financial_data 用 `strategy: failover` 挂 tushare_mcp + eastmoney_mcp（东方财富本地备源）。平台侧纯 MCP 客户端一行不改 | 用户决策 2026-08-31（集中到 local_mcp/ 2026-09-01），mcp-integration-spec §2.1/§3.1 |
 | 脚本执行 | **P1 宿主 subprocess 直跑**（`sys.executable`，cwd=工作区，不做容器隔离）；脚本内禁止绝对路径字面量；对外开放脚本编辑后再评估轻量沙箱 | 用户决策 2026-08，script-sandbox-spec |
 | 脚本路径归一 | `agents_root_dir` 在 `AgentRegistry` 归一为绝对路径（`Path.resolve()`）——技能目录 / 脚本宿主路径 / `SKILL_ROOT_DIR` 一律绝对；否则 subprocess cwd=工作区会把相对脚本路径按工作区解析而找不到（实测：dedup_manager "No such file or directory"） | 实测修复 2026-08-24 |
 | 脚本入参契约 | 平台一律经 stdin 传 JSON，脚本须从 stdin 读入参；声明 `schema_path` 让模型可见正确参数约束。缺省 schema 只有 `input` 字段，多字段脚本（dedup/render/gate）必须补 schema，否则参数与脚本实际读取字段错位（实测：报告管线全部 `执行失败`） | 实测修复 2026-08-23 |

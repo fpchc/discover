@@ -1,4 +1,4 @@
-{
+l{
   "version": "0.2.0",
   "configurations": [
     {
@@ -21,12 +21,38 @@
         "LOG_LEVEL": "DEBUG"
       },
       "console": "integratedTerminal"
+    },
+    {
+      "name": "🛰️ 腾讯联网 MCP 服务 (tencent_mcp)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "local_mcp.tencent_mcp.main",
+      "jinja": true,
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "internalConsole"
+    },
+    {
+      "name": "🛰️ 东财 MCP 服务 (eastmoney_mcp)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "local_mcp.eastmoney_mcp.main",
+      "jinja": true,
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "internalConsole"
     }
   ],
   "compounds": [
     {
       "name": "🧩 主应用 + MCP Servers（全部）",
       "configurations": [
+        "🛰️ 腾讯联网 MCP 服务 (tencent_mcp)",
+        "🛰️ 东财 MCP 服务 (eastmoney_mcp)",
         "🚀 FastAPI: 启动服务 (无 reload)"
       ],
       "stopAll": true,

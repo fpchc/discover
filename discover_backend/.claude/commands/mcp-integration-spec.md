@@ -23,13 +23,35 @@ P2 阶段根据实际可用性逐步接入其他数据源，恢复评分维度�
 
 **Streamable HTTP（远程 MCP）**，不是 stdio。
 
-理由：stdio MCP 需要在平台侧拉起子进程，而阿里百炼服务已运行在远端，只需通过 HTTP 调用。Streamable HTTP 协议是 MCP 规范为远程服务设计的变体。
+理由：stdio MCP 需要在平台侧拉起子进程，而 MCP 服务运行在远端，只需通过 HTTP 调用。Streamable HTTP 协议是 MCP 规范为远程服务设计的变体。
 
 传输细节：
 - 基于标准 HTTP，每次调用独立请求
 - 认证用 Bearer Token，从环境变量读取
 - 请求体与响应体为 MCP 协议定义的 JSON 结构
 - 支持流式响应（对搜索结果逐条返回，适配打字机场景）
+
+### 2.1 本地自建 MCP 服务（tencent_mcp / eastmoney_mcp）
+
+联网搜索与财务数据改为**平台本地自建 MCP 服务**，不再依赖阿里百炼 / 腾讯元宝等第三方托管
+的 MCP 服务端。为遵循 CLAUDE.md §13.1 单一职责，腾讯与东方财富拆为**两个独立本地 MCP
+服务**，各暴露一个工具、各占一个端口与令牌，禁止混装：
+
+- `local_mcp/tencent_mcp/`（`python -m local_mcp.tencent_mcp.main`，默认 `127.0.0.1:10001/mcp`）：
+  暴露 `web_search_tencent`（腾讯 WSA SearchPro）一个工具，内部经 httpx 直连 REST。
+- `local_mcp/eastmoney_mcp/`（`python -m local_mcp.eastmoney_mcp.main`，默认 `127.0.0.1:10002/mcp`）：
+  暴露 `web_search_eastmoney`（东方财富 JSONP 资讯搜索）一个工具；按 IP 限流，
+  `eastmoney_min_interval_seconds` 默认 1.0s。
+
+两个服务统一收拢在 `local_mcp/` 聚合包下（`local_mcp/__init__.py` Facade），
+服务边界不混装（CLAUDE.md §13.1）。
+
+- 平台侧仍只是 MCP 客户端（`app/tools/mcp_client.py`，Streamable HTTP），一行不用改。
+- 鉴权：平台分别以 `Authorization: Bearer $TENCENT_MCP_TOKEN` / `$EASTMONEY_MCP_TOKEN`
+  连接，服务端校验（fail-closed）。
+- 服务配置（令牌 / 端点 / 限流间隔）走 `local_mcp/tencent_mcp/settings.py` /
+  `local_mcp/eastmoney_mcp/settings.py`（pydantic-settings），环境变量可覆盖；`.env.example` 见对应令牌。
+- 注册表分别指向两个服务（见 §3），平台自动 `list_tools` 发现各自工具（Tier 2）。
 
 ---
 
@@ -48,21 +70,35 @@ P2 阶段根据实际可用性逐步接入其他数据源，恢复评分维度�
 | 启动握手超时 | 不适用（远程服务无启动） |
 | 调用超时 | 建议 30 秒（搜索类通常数秒返回，留余量防网络抖动） |
 | 单服务并发上限 | 按上游 API 限流策略填写，典型值 2-5 |
+| 显式开关 | `enabled`：`false` 时装配剔除；缺省 `true` |
 
 **认证令牌只存变量名，值从环境读取**，不写进配置文件也不写进代码。
 
+`enabled` 显式开关：置 `false` 的条目装配时直接从能力候选 / 降级清单剔除，系统不尝试连接
+该服务（占位或未启动的本地服务建议关闭，省握手超时），也不产生降级日志。**禁用 ≠ 注销**——
+仍参与注册表校验（能力引用校验照常通过），只是不参与装配。占位条目（tyc/qcc/tushare）与
+未接入的本地服务（eastmoney_mcp）保持 `enabled: false`，接入真实端点与令牌后改 `true`。
+
 ### 3.1 capabilities 能力段
 
-搜索类提供方可互换，技能不点名具体服务，改声明能力。注册表把多个候选提供方
-归入同一能力，运行期按顺序主备切换（failover）：
+搜索类提供方可互换，技能不点名具体服务，改声明能力。注册表把候选提供方归入同一能力：
+
+- `strategy: failover`：主备切换，按 `servers` 顺序优先，首个可用者生效，失败自动切换。
+- `strategy: all`：全部候选各自激活为独立工具，调用哪个由模型（re-act）推理决定，
+  不做切换不做降级——多搜索提供方并存时用（如 web_search 同时挂阿里百炼与本地 tencent_mcp）：
 
 ```yaml
 capabilities:
   web_search:
-    strategy: failover      # 主备切换：首个可用者生效，失败自动切换
+    strategy: all           # 全部候选激活，模型（re-act）自行选调，不做主备切换
     servers:
-      - alibaba_search
-      - yuanbao_search
+      - alibaba_search       # 阿里百炼（稳定，保留）
+      - tencent_mcp          # 本地自建：web_search_tencent（腾讯 WSA）
+  financial_data:
+    strategy: failover       # 上市财务数据：Tushare 主、东方财富本地 eastmoney_mcp 备
+    servers:
+      - tushare_mcp
+      - eastmoney_mcp        # 本地自建：web_search_eastmoney（东财资讯搜索）
 ```
 
 加 / 删 / 换搜索提供方只改本注册表，智能体包内任何文件（清单、正文、参考文档）不动。

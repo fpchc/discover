@@ -156,7 +156,7 @@ export function ProfilePage() {
   return (
     <div className="mx-auto w-full max-w-[600px] px-4 pb-10 pt-6 sm:px-6">
       {/* 账号卡：模仿侧栏底部账号区（头像 + 昵称 + 手机号横排） */}
-      <section className="rounded-xl border border-border bg-surface-1 p-5">
+      <section className="glass-surface rounded-xl border border-border p-5">
         <div className="flex items-center gap-4">
           <div className="relative flex-shrink-0">
             {avatarSrc !== null ? (
@@ -226,7 +226,7 @@ export function ProfilePage() {
       </section>
 
       {/* 账号信息（只读展示） */}
-      <section className="mt-4 overflow-hidden rounded-xl border border-border bg-surface-1">
+      <section className="glass-surface mt-4 overflow-hidden rounded-xl border border-border">
         <div className="divide-y divide-border">
           <InfoRow label="昵称" value={account.name} />
           <InfoRow label="手机号" value={account.phone} />
@@ -239,7 +239,7 @@ export function ProfilePage() {
       </section>
 
       {/* 修改密码（点击展开，不常驻） */}
-      <section className="mt-4 rounded-xl border border-border bg-surface-1 p-5">
+      <section className="glass-surface mt-4 rounded-xl border border-border p-5">
         <Button
           variant="outline"
           className="w-full"

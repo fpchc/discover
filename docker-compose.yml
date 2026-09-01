@@ -54,7 +54,13 @@ x-common-env: &common-env
 
   # ---------- MCP ----------
   ALIBABA_SEARCH_TOKEN: ${ALIBABA_SEARCH_TOKEN:-}
-  YUANBAO_SEARCH_TOKEN: ${YUANBAO_SEARCH_TOKEN:-}
+  # 本地自建搜索 MCP 服务（tencent_mcp / eastmoney_mcp 容器，职责单一不混装）：
+  TENCENT_MCP_TOKEN: ${TENCENT_MCP_TOKEN:-}
+  EASTMONEY_MCP_TOKEN: ${EASTMONEY_MCP_TOKEN:-}
+  WSA_API_KEY: ${WSA_API_KEY:-}
+  # docker 内后端经网络 DNS 访问 MCP 容器；注册表 base_url 由此替换
+  TENCENT_MCP_BASE_URL: ${TENCENT_MCP_BASE_URL:-http://tencent_mcp:10001/mcp}
+  EASTMONEY_MCP_BASE_URL: ${EASTMONEY_MCP_BASE_URL:-http://eastmoney_mcp:10002/mcp}
 
   # ---------- 会话 ----------
   ARTIFACT_MAX_SIZE_BYTES: ${ARTIFACT_MAX_SIZE_BYTES:-104857600}
@@ -134,11 +140,14 @@ services:
       dockerfile: Dockerfile
     image: discover-backend:test
     restart: unless-stopped
+    depends_on:
+      - tencent_mcp
+      - eastmoney_mcp
     ports:
       - "8001:8000"
     environment:
       <<: *common-env
-    volumes:  
+    volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
       - ./workspaces:/app/workspaces
@@ -166,6 +175,46 @@ services:
       - BACKEND_PROXY_PASS=http://discover_backend:8000
       # server_name：research.elecnest.cn（网关反代进入后 Host 透传匹配）
       - SERVER_NAME=research.elecnest.cn
+
+  # 本地自建搜索 MCP 服务（职责单一不混装，CLAUDE.md §13.1）：
+  #   tencent_mcp → web_search_tencent（腾讯 WSA，10001）
+  #   eastmoney_mcp → web_search_eastmoney（东财资讯，10002）
+  # 后端经 docker 网络 DNS 以 TENCENT_MCP_BASE_URL=http://tencent_mcp:10001/mcp、
+  # EASTMONEY_MCP_BASE_URL=http://eastmoney_mcp:10002/mcp 访问（注册表 base_url 由此替换）。
+  tencent_mcp:
+    build:
+      context: ./discover_backend
+      dockerfile: Dockerfile
+    image: discover-tencent-mcp:test
+    restart: unless-stopped
+    command: ["uv", "run", "--no-dev", "python", "-m", "local_mcp.tencent_mcp.main"]
+    ports:
+      - "10001:10001"
+    environment:
+      TENCENT_MCP_TOKEN: ${TENCENT_MCP_TOKEN:-}
+      WSA_API_KEY: ${WSA_API_KEY:-}
+      # 容器内须绑 0.0.0.0，否则同网络其他容器无法访问
+      TENCENT_MCP_HOST: "0.0.0.0"
+      TENCENT_MCP_PORT: "10001"
+    networks:
+      - discover-net
+
+  eastmoney_mcp:
+    build:
+      context: ./discover_backend
+      dockerfile: Dockerfile
+    image: discover-eastmoney-mcp:test
+    restart: unless-stopped
+    command: ["uv", "run", "--no-dev", "python", "-m", "local_mcp.eastmoney_mcp.main"]
+    ports:
+      - "10002:10002"
+    environment:
+      EASTMONEY_MCP_TOKEN: ${EASTMONEY_MCP_TOKEN:-}
+      # 容器内须绑 0.0.0.0，否则同网络其他容器无法访问
+      EASTMONEY_MCP_HOST: "0.0.0.0"
+      EASTMONEY_MCP_PORT: "10002"
+    networks:
+      - discover-net
 
 networks:
   discover-net:

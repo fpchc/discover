@@ -1004,3 +1004,74 @@ async def test_script_failure_falls_back_to_stderr(tmp_path: Path) -> None:
     )
     assert results[0].ok is False
     assert "stderr 详情" in results[0].message
+
+
+# ---- 能力策略 all：全部候选激活供 re-act 选调 ----
+def _capability_all_plan(candidates: list[str], *, required: bool = True) -> AssemblyPlan:
+    return AssemblyPlan(
+        agent_id="finder",
+        skill_id="research",
+        system_prompt="系统提示",
+        capabilities=[
+            CapabilityPlan(
+                capability="web_search",
+                strategy="all",
+                candidate_servers=candidates,
+                required=required,
+            )
+        ],
+        env_whitelist=[],
+    )
+
+
+async def test_activate_capability_all_activates_every_candidate(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS)
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_capability_all_plan(["alibaba_search", "tencent_mcp"]),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    assert activation.started_services == ["alibaba_search", "tencent_mcp"]
+    assert activation.degraded_services == []
+    assert "alibaba_search.web_search" in broker._descriptors  # type: ignore[attr-defined]
+    assert "tencent_mcp.web_search" in broker._descriptors  # type: ignore[attr-defined]
+
+
+async def test_activate_capability_all_partial_failure_degrades_only_that_candidate(
+    tmp_path: Path,
+) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"tencent_mcp"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_capability_all_plan(["alibaba_search", "tencent_mcp"]),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    assert activation.started_services == ["alibaba_search"]
+    assert activation.degraded_services == ["tencent_mcp"]
+    assert "alibaba_search.web_search" in broker._descriptors  # type: ignore[attr-defined]
+    assert "tencent_mcp.web_search" not in broker._descriptors  # type: ignore[attr-defined]
+
+
+async def test_activate_capability_all_required_all_fail_rejects(tmp_path: Path) -> None:
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search", "tencent_mcp"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_capability_all_plan(["alibaba_search", "tencent_mcp"]),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is False
+    assert set(activation.failed_required) == {"alibaba_search", "tencent_mcp"}

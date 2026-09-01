@@ -9,10 +9,10 @@
 
 /*
  * 双主题设计令牌（唯一主题变量源，对齐 CLAUDE.md 第 7 节）。
- * - :root = 极简冷白；html.dark = 深蓝黑科技（class 由 useTheme 维护，见 index.html 防 FOUC 脚本）。
- * - 深色（旗舰）：#0F172A 系深蓝黑 + 荧光青 #06B6D4 点亮，玻璃拟态（backdrop-blur +
- *   1px 微发光边框 + 内顶高光）制造「深浅层次 + 动态发光质感」。
- * - 浅色：极纯 #FAFAFA 白底，提高字体内饰对比度，微弱的渐变阴影拉开图层深度。
+ * - :root = EDA365 灵动紫玻璃拟态；html.dark = 深蓝黑科技（class 由 useTheme 维护，见 index.html 防 FOUC 脚本）。
+ * - 品牌（明暗同族）：灵动紫 #6d5dfb → 星空蓝 #5b8cff 渐变，辅以青 #46c6ff / 翡翠 #4fd2b4。
+ * - 浅色：淡紫底 #f4f2fb + 半透白玻璃（backdrop-blur + 紫调描边）+ 紫调柔和分层阴影，仿 EDA365 AI CRM。
+ * - 深色：近黑 #0B0C10 + 深灰面，品牌紫 #6d5dfb 点亮，保留原玻璃拟态层次。
  * - 组件只允许通过 var(--xxx) 或 Tailwind 工具类（bg-surface-1 / text-text-2 等）引用，禁止硬编码色值。
  */
 
@@ -79,34 +79,34 @@
 }
 
 :root {
-  /* ---- 品牌（浅色：靛 → 紫 → 浅紫，Discover 原版配色） ---- */
-  --brand-1: #6366f1;
-  --brand-2: #8b5cf6;
-  --brand-3: #a78bfa;
-  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a78bfa 100%);
+  /* ---- 品牌（浅色：灵动紫 #6d5dfb → 星空蓝 #5b8cff，EDA365 玻璃拟态） ---- */
+  --brand-1: #6d5dfb;
+  --brand-2: #7c6cf6;
+  --brand-3: #8c7bff;
+  --brand-gradient: linear-gradient(135deg, #6d5dfb 0%, #5b8cff 100%);
 
-  /* ---- 表面与文字（浅色：极简冷白，高对比） ---- */
-  --background: #f6f7fb;
+  /* ---- 表面与文字（浅色：淡紫底 + 半透白玻璃，高对比） ---- */
+  --background: #f4f2fb;
   --surface-1: #ffffff;
-  --surface-2: #f1f2f7;
-  --surface-hover: #e9eaf2;
-  --border-subtle: rgba(17, 24, 39, 0.07);
-  --border-strong: rgba(17, 24, 39, 0.13);
-  --text-1: #171a23;
-  --text-2: #5b6172;
-  --text-3: #9aa1b1;
-  --link-color: #4f46e5;
+  --surface-2: #f6f5fd;
+  --surface-hover: #efecfb;
+  --border-subtle: rgba(155, 150, 196, 0.16);
+  --border-strong: rgba(125, 136, 162, 0.24);
+  --text-1: #23253a;
+  --text-2: #666980;
+  --text-3: #9a9db2;
+  --link-color: #6d5dfb;
 
   /* ---- 氛围（浅色：空态极光光晕透明度） ---- */
   --aurora-opacity: 0.55;
 
-  /* ---- 玻璃拟态（浅色：白玻璃 + 细灰描边 + 白色内顶高光） ---- */
-  --glass-bg: rgba(255, 255, 255, 0.72);
-  --glass-blur: 18px;
+  /* ---- 玻璃拟态（浅色：白玻璃 + 紫调描边） ---- */
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-blur: 20px;
 
   /* ---- 思考粒子 / 悬停微光 ---- */
-  --particle-color: rgba(139, 92, 246, 0.8);
-  --success: #059669;
+  --particle-color: rgba(140, 123, 255, 0.85);
+  --success: #20b26c;
 
   /* ---- shadcn 变量映射（浅色） ---- */
   --foreground: var(--text-1);
@@ -122,11 +122,11 @@
   --muted-foreground: var(--text-3);
   --accent: var(--surface-hover);
   --accent-foreground: var(--text-1);
-  --destructive: #ef4444;
+  --destructive: #ef5b7a;
   --border: var(--border-subtle);
   --input: var(--border-strong);
   --ring: var(--brand-2);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --sidebar: var(--surface-1);
   --sidebar-foreground: var(--text-1);
   --sidebar-primary: var(--brand-2);
@@ -135,18 +135,18 @@
   --sidebar-accent-foreground: var(--text-1);
   --sidebar-border: var(--border-subtle);
   --sidebar-ring: var(--brand-2);
-  --chart-1: #06b6d4;
-  --chart-2: #0ea5e9;
-  --chart-3: #6366f1;
-  --chart-4: #8b5cf6;
-  --chart-5: #ec4899;
+  --chart-1: #6d5dfb;
+  --chart-2: #5b8cff;
+  --chart-3: #46c6ff;
+  --chart-4: #4fd2b4;
+  --chart-5: #8c7bff;
 
-  /* ---- 阴影与光效（浅色：柔和分层阴影，微带青色冷调） ---- */
-  --shadow-composer: 0 8px 28px rgba(15, 23, 42, 0.08);
-  --shadow-card: 0 2px 12px rgba(15, 23, 42, 0.05);
-  --shadow-float: 0 12px 40px rgba(15, 23, 42, 0.14);
-  --glow-primary: 0 0 0 4px rgba(99, 102, 241, 0.14);
-  --glow-brand: 0 6px 22px rgba(139, 92, 246, 0.42);
+  /* ---- 阴影与光效（浅色：柔和紫调分层阴影） ---- */
+  --shadow-composer: 0 8px 28px rgba(73, 59, 127, 0.08);
+  --shadow-card: 0 2px 12px rgba(73, 59, 127, 0.05);
+  --shadow-float: 0 12px 40px rgba(73, 59, 127, 0.14);
+  --glow-primary: 0 0 0 4px rgba(109, 93, 251, 0.14);
+  --glow-brand: 0 6px 22px rgba(109, 93, 251, 0.42);
 
   /* ---- 代码块（明暗统一深色面板） ---- */
   --code-bg: #0d1117;
@@ -157,11 +157,11 @@
 }
 
 .dark {
-  /* ---- 品牌（深色：靛 → 紫 → 浅紫，Discover 原版配色） ---- */
-  --brand-1: #6366f1;
-  --brand-2: #8b5cf6;
-  --brand-3: #a78bfa;
-  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a78bfa 100%);
+  /* ---- 品牌（深色：灵动紫 → 星空蓝，与浅色同族） ---- */
+  --brand-1: #6d5dfb;
+  --brand-2: #7c6cf6;
+  --brand-3: #8c7bff;
+  --brand-gradient: linear-gradient(135deg, #6d5dfb 0%, #5b8cff 100%);
 
   /* ---- 表面与文字（深色：近黑 #0B0C10 + 深灰面，Discover 原版） ---- */
   --background: #0b0c10;
@@ -173,7 +173,7 @@
   --text-1: #eceef4;
   --text-2: #9ca3b3;
   --text-3: #6b7280;
-  --link-color: #a78bfa;
+  --link-color: #8c7bff;
 
   /* ---- 氛围（深色：空态极光光晕透明度） ---- */
   --aurora-opacity: 0.6;
@@ -183,8 +183,8 @@
   --glass-blur: 20px;
 
   /* ---- 悬停微光（列表项） ---- */
-  --particle-color: rgba(167, 139, 250, 0.9);
-  --success: #34d399;
+  --particle-color: rgba(140, 123, 255, 0.9);
+  --success: #4fd2b4;
 
   --foreground: var(--text-1);
   --card: var(--surface-1);
@@ -192,7 +192,7 @@
   --popover: var(--surface-2);
   --popover-foreground: var(--text-1);
   --primary: var(--brand-2);
-  --primary-foreground: #04151c;
+  --primary-foreground: #ffffff;
   --secondary: var(--surface-2);
   --secondary-foreground: var(--text-1);
   --muted: var(--surface-2);
@@ -206,22 +206,22 @@
   --sidebar: var(--surface-1);
   --sidebar-foreground: var(--text-1);
   --sidebar-primary: var(--brand-2);
-  --sidebar-primary-foreground: #04151c;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: var(--surface-hover);
   --sidebar-accent-foreground: var(--text-1);
   --sidebar-border: var(--border-subtle);
   --sidebar-ring: var(--brand-2);
-  --chart-1: #22d3ee;
-  --chart-2: #38bdf8;
-  --chart-3: #818cf8;
-  --chart-4: #6366f1;
-  --chart-5: #a78bfa;
+  --chart-1: #8c7bff;
+  --chart-2: #5b8cff;
+  --chart-3: #46c6ff;
+  --chart-4: #4fd2b4;
+  --chart-5: #6d5dfb;
 
   --shadow-composer: 0 8px 30px rgba(0, 0, 0, 0.55);
   --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.35);
   --shadow-float: 0 12px 44px rgba(0, 0, 0, 0.6);
-  --glow-primary: 0 0 0 4px rgba(139, 92, 246, 0.26);
-  --glow-brand: 0 6px 26px rgba(139, 92, 246, 0.5);
+  --glow-primary: 0 0 0 4px rgba(109, 93, 251, 0.26);
+  --glow-brand: 0 6px 26px rgba(109, 93, 251, 0.5);
 
   --code-border: rgba(255, 255, 255, 0.1);
 
@@ -348,7 +348,7 @@
 
 /* ===================== 页面布局（侧栏 / 遮罩 / 背景光晕） ===================== */
 
-/* 页面级氛围：Discover 原版极光光晕 —— 两团大色块（靛 / 紫）缓慢漂移 */
+/* 页面级氛围：EDA365 灵动紫极光光晕 —— 两团大色块（紫 / 青）缓慢漂移 */
 .chat-bg {
   position: fixed;
   inset: 0;
@@ -370,14 +370,14 @@
   height: 640px;
   top: -30%;
   left: -10%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 65%);
+  background: radial-gradient(circle, rgba(109, 93, 251, 0.32), transparent 65%);
 }
 .chat-bg::after {
   width: 560px;
   height: 560px;
   bottom: -32%;
   right: -8%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.26), transparent 65%);
+  background: radial-gradient(circle, rgba(70, 198, 255, 0.24), transparent 65%);
   animation-delay: -12s;
 }
 
@@ -440,10 +440,10 @@
   color: var(--text-3);
 }
 
-/* ---- 侧栏激活项：靛紫渐变底；--bar 变体追加左侧品牌色条 ---- */
+/* ---- 侧栏激活项：紫蓝渐变底；--bar 变体追加左侧品牌色条 ---- */
 .sidebar-active {
   position: relative;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(139, 92, 246, 0.08));
+  background: linear-gradient(135deg, rgba(109, 93, 251, 0.16), rgba(91, 140, 255, 0.08));
 }
 .sidebar-active--bar::before {
   content: '';
@@ -456,7 +456,7 @@
   background: var(--brand-gradient);
 }
 
-/* ---- 空态极光（Discover 原版）：三团靛/紫光晕缓慢漂移 ---- */
+/* ---- 空态极光（EDA365 灵动紫）：三团紫/青/浅紫光晕缓慢漂移 ---- */
 .aurora {
   position: absolute;
   inset: 0;
@@ -473,18 +473,18 @@
   animation: theme-aurora-drift 22s ease-in-out infinite alternate;
 }
 .aurora__blob--1 {
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.55), transparent 65%);
+  background: radial-gradient(circle, rgba(109, 93, 251, 0.5), transparent 65%);
   top: -12%;
   left: -10%;
 }
 .aurora__blob--2 {
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.42), transparent 65%);
+  background: radial-gradient(circle, rgba(70, 198, 255, 0.4), transparent 65%);
   top: 18%;
   right: -14%;
   animation-delay: -7s;
 }
 .aurora__blob--3 {
-  background: radial-gradient(circle, rgba(167, 139, 250, 0.32), transparent 65%);
+  background: radial-gradient(circle, rgba(140, 123, 255, 0.32), transparent 65%);
   bottom: -18%;
   left: 28%;
   animation-delay: -14s;
@@ -493,7 +493,9 @@
 /* ---- 输入面板（Discover 原版：实心卡 + 圆角 20 + 聚焦辉光） ---- */
 .input-panel {
   border: 1px solid var(--border-strong);
-  background: var(--surface-1);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
   box-shadow: var(--shadow-composer);
   border-radius: 20px;
   padding: 12px 16px 10px;
@@ -549,7 +551,7 @@
   background: linear-gradient(
     100deg,
     transparent 40%,
-    rgba(34, 211, 238, 0.13) 50%,
+    rgba(70, 198, 255, 0.14) 50%,
     transparent 60%
   );
   background-size: 220% 100%;

@@ -85,7 +85,7 @@ export function Sidebar({
   const accountInitial =
     accountName !== null && accountName !== '' ? accountName.trim().charAt(0) : '?'
   return (
-    <aside className="flex h-full min-w-0 flex-col border-r border-border bg-surface-1">
+    <aside className="glass-surface flex h-full min-w-0 flex-col border-r border-border shadow-card">
       <header className="flex flex-shrink-0 items-center justify-between px-4 pb-2.5 pt-4">
         <div className="flex items-center gap-2">
           <span className="flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-brand-gradient text-white shadow-glow-brand">
@@ -107,7 +107,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onNew}
-          className="relative flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-brand-gradient font-semibold text-white shadow-glow-brand transition-all hover:-translate-y-px hover:brightness-105 hover:shadow-[0_8px_26px_rgba(139,92,246,0.5)]"
+          className="relative flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-brand-gradient font-semibold text-white shadow-glow-brand transition-all hover:-translate-y-px hover:brightness-105 hover:shadow-[0_8px_26px_rgba(109,93,251,0.5)]"
         >
           <Plus className="h-4 w-4" />
           新对话

@@ -331,6 +331,9 @@ async def test_assemble_plan(tmp_path: Path) -> None:
     assert "完整工作流" in plan.system_prompt
     assert "参考文档" in plan.system_prompt
     assert "门禁" in plan.system_prompt
+    # 平台红线：所有专家智能体装配都注入「思考/可见回答禁露内部智能体标识」
+    assert "平台红线" in plan.system_prompt
+    assert "严禁出现内部 agent_id / 智能体标识字符串" in plan.system_prompt
     assert plan.required_mcp_servers == ["alibaba_search"]
     assert plan.core_tool_names == ["search", "search_news"]
     # 声明脚本 + 带校验器的门禁注册为脚本工具（graph-runtime-spec §6）
@@ -420,6 +423,104 @@ async def test_assemble_capability_resolves_fallback(tmp_path: Path) -> None:
     assert cap.required is False
     assert cap.fallback_capability == "web_search"
     assert cap.fallback_servers == ["yuanbao_search"]
+
+
+async def test_assemble_capability_filters_disabled_candidates(tmp_path: Path) -> None:
+    """enabled: false 的候选在装配时剔除，不进入 CapabilityPlan.candidate_servers。"""
+    _write_agent(
+        tmp_path,
+        skill_md=_skill_md(
+            mcp_dependencies=[],
+            capability_dependencies=[
+                {"capability": "web_search", "core_tools": [], "required": True}
+            ],
+        ),
+    )
+    settings = Settings(_env_file=None, agents_root_dir=tmp_path)
+    servers = [
+        MCPServer(
+            id="alibaba_search",
+            transport="streamable_http",
+            base_url="https://alibaba.example.com",
+            enabled=False,
+        ),
+        MCPServer(
+            id="yuanbao_search",
+            transport="streamable_http",
+            base_url="https://yuanbao.example.com",
+        ),
+    ]
+    caps = {"web_search": MCSCapability(servers=["alibaba_search", "yuanbao_search"])}
+    registry = AgentRegistry(settings, MCPRegistry(servers=servers, capabilities=caps))
+    await registry.refresh()
+    plan = registry.assemble("finder", "research")
+    assert len(plan.capabilities) == 1
+    assert plan.capabilities[0].candidate_servers == ["yuanbao_search"]
+
+
+async def test_assemble_disabled_candidates_fall_through_to_fallback(tmp_path: Path) -> None:
+    """候选全部被禁用 → candidate_servers 为空，fallback_servers 保留未禁用项。"""
+    _write_agent(
+        tmp_path,
+        skill_md=_skill_md(
+            mcp_dependencies=[],
+            capability_dependencies=[
+                {"capability": "enterprise_business", "core_tools": [], "required": False}
+            ],
+        ),
+    )
+    settings = Settings(_env_file=None, agents_root_dir=tmp_path)
+    servers = [
+        MCPServer(
+            id="tyc_mcp",
+            transport="streamable_http",
+            base_url="https://tyc.example.com",
+            enabled=False,
+        ),
+        MCPServer(
+            id="yuanbao_search",
+            transport="streamable_http",
+            base_url="https://yuanbao.example.com",
+        ),
+    ]
+    caps = {
+        "web_search": MCSCapability(servers=["yuanbao_search"]),
+        "enterprise_business": MCSCapability(servers=["tyc_mcp"], fallback="web_search"),
+    }
+    registry = AgentRegistry(settings, MCPRegistry(servers=servers, capabilities=caps))
+    await registry.refresh()
+    plan = registry.assemble("finder", "research")
+    assert len(plan.capabilities) == 1
+    cap = plan.capabilities[0]
+    assert cap.candidate_servers == []  # 唯一候选被禁用 → 空，交给代理层走 fallback
+    assert cap.fallback_capability == "web_search"
+    assert cap.fallback_servers == ["yuanbao_search"]  # fallback 未禁用，保留
+
+
+async def test_assemble_direct_mcp_dependency_disabled_skipped(tmp_path: Path) -> None:
+    """技能直接依赖（mcp_dependencies）指向已禁用服务时，装配跳过该依赖。"""
+    _write_agent(
+        tmp_path,
+        skill_md=_skill_md(
+            mcp_dependencies=[
+                {"server": "alibaba_search", "core_tools": ["search"], "required": True}
+            ],
+            capability_dependencies=[],
+        ),
+    )
+    settings = Settings(_env_file=None, agents_root_dir=tmp_path)
+    servers = [
+        MCPServer(
+            id="alibaba_search",
+            transport="streamable_http",
+            base_url="https://alibaba.example.com",
+            enabled=False,
+        ),
+    ]
+    registry = AgentRegistry(settings, MCPRegistry(servers=servers, capabilities={}))
+    await registry.refresh()
+    plan = registry.assemble("finder", "research")
+    assert plan.required_mcp_servers == []
 
 
 async def test_capability_not_registered_marks_skill_invalid(tmp_path: Path) -> None:

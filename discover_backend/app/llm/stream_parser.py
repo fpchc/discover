@@ -8,6 +8,7 @@ llm-provider-spec §6：工具调用参数跨分片累积；拼接完成判据�
 """
 
 import json
+import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -124,6 +125,14 @@ def _nested_int(usage: dict[str, object], path: list[str]) -> int:
     return _int_value(current)
 
 
+_THINK_TAG_RE = re.compile(r"</?think>", re.IGNORECASE)
+
+
+def _strip_think_tags(text: str) -> str:
+    """剥离推理模型残留的 <think>/</think> 标记，防其泄漏进正文或思考分区。"""
+    return _THINK_TAG_RE.sub("", text)
+
+
 class StreamParser:
     """流式分片语义分类器。每行 feed 产出该行的语义单元列表。"""
 
@@ -170,6 +179,8 @@ class StreamParser:
             chunks.extend(self._phase_chunks("thinking"))
             chunks.append(ThinkingChunk(text=thinking_text))
         content = delta.get("content")
+        if isinstance(content, str):
+            content = _strip_think_tags(content)
         if isinstance(content, str) and content:
             chunks.extend(self._phase_chunks("text"))
             chunks.append(TextChunk(text=content))
@@ -185,7 +196,7 @@ class StreamParser:
         if self._thinking_field is None:
             return ""
         value = delta.get(self._thinking_field)
-        return value if isinstance(value, str) else ""
+        return _strip_think_tags(value) if isinstance(value, str) else ""
 
     def _phase_chunks(self, to: Literal["thinking", "text", "tool_call"]) -> list[SemanticChunk]:
         if self._phase == to:

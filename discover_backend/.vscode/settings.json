@@ -1,22 +1,23 @@
 {
-  // ---- 解释器：绑定项目内 .venv（uv venv 创建） ----
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-  "python.terminal.activateEnvironment": true,
+  // ---- 解释器与终端执行优化（解决 compounds 启动崩溃问题） ----
+  "python.defaultInterpreterPath": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": false,
+  "terminal.integrated.defaultProfile.windows": "Command Prompt",
   // ---- 类型检查：交给 Mypy，关闭 Pylance 内建以免双重报错 ----
   "python.analysis.typeCheckingMode": "off",
   "python.analysis.autoImportCompletions": true,
   "python.analysis.extraPaths": [
-    "${workspaceFolder}"
+    "${workspaceFolder}/discover_backend"
   ],
-  // ---- Mypy（复用 pyproject.toml 的 strict 配置） ----
+  // ---- Mypy ----
   "mypy-type-checker.args": [
-    "--config-file=${workspaceFolder}/pyproject.toml"
+    "--config-file=${workspaceFolder}/discover_backend/pyproject.toml"
   ],
   "mypy-type-checker.importStrategy": "fromEnvironment",
-  // ---- Ruff（Lint + Format，替代 black/isort/flake8） ----
+  // ---- Ruff ----
   "ruff.importStrategy": "fromEnvironment",
-  "ruff.configuration": "${workspaceFolder}/pyproject.toml",
-  // ---- Python 文件保存行为：Ruff 格式化 + 自动修复 + import 整理 ----
+  "ruff.configuration": "${workspaceFolder}/discover_backend/pyproject.toml",
+  // ---- Python 文件保存行为 ----
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
@@ -29,11 +30,11 @@
     ],
     "editor.tabSize": 4
   },
-  // ---- Pytest（asyncio_mode=auto 已在 pyproject 配置） ----
+  // ---- Pytest ----
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestArgs": [
-    "tests"
+    "discover_backend/tests"
   ],
   // ---- 编辑器通用约束 ----
   "editor.formatOnSave": true,
@@ -65,7 +66,7 @@
     "**/*.egg-info": true,
     "**/.venv": false
   },
-  // ---- 搜索排除：不检索依赖与产物 ----
+  // ---- 搜索排除 ----
   "search.exclude": {
     "**/.venv": true,
     "**/__pycache__": true,
@@ -75,16 +76,12 @@
     "**/logs": true,
     "**/migrations/versions/*.py": false
   },
-  // ---- 文件监视排除：降低资源占用 ----
+  // ---- 文件监视排除 ----
   "files.watcherExclude": {
     "**/.venv/**": true,
     "**/__pycache__/**": true,
     "**/.mypy_cache/**": true,
     "**/.ruff_cache/**": true,
     "**/logs/**": true
-  },
-  // ---- 敏感文件保护：标记为只读，避免误改 ----
-  "files.readonlyInclude": {
-    // "**/.env": true
   }
 }

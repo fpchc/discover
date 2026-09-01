@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "score_calculator 输入约束",
-  "description": "八维评分计算脚本的入参约束。八维分数 0-10，红线为布尔。",
+  "description": "八维评分计算脚本的入参约束。八维分数 0-10，红线为布尔，score_trace 记录每维依据与来源（Score Trace）。",
   "type": "object",
-  "required": ["companies", "top_n"],
+  "required": ["companies"],
   "additionalProperties": false,
   "properties": {
     "companies": {
@@ -33,6 +33,18 @@
               "reach_feasibility": { "type": "number", "minimum": 0, "maximum": 10 },
               "decision_complex": { "type": "number", "minimum": 0, "maximum": 10 },
               "credit_safety": { "type": "number", "minimum": 0, "maximum": 10 }
+            }
+          },
+          "score_trace": {
+            "type": "object",
+            "description": "每维依据与来源（Score Trace），键名对应 scores 的八维",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "basis": { "type": "string", "description": "该维打分的依据摘要" },
+                "source": { "type": "string", "description": "依据来源" }
+              },
+              "additionalProperties": true
             }
           },
           "red_flags": {

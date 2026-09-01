@@ -91,6 +91,23 @@ async def test_load_mcp_servers(tmp_path: Path) -> None:
     assert capability.servers == ["alibaba_search", "yuanbao_search"]
 
 
+async def test_load_mcp_server_enabled_switch(tmp_path: Path) -> None:
+    """enabled 显式开关：解析 + server_enabled 查询；缺省 true；未知服务不静默过滤。"""
+    path = tmp_path / "mcp-servers.yaml"
+    modified = MCP_YAML.replace(
+        "    call_timeout_seconds: 30\n    concurrency_limit: 3",
+        "    call_timeout_seconds: 30\n    concurrency_limit: 3\n    enabled: false",
+        1,
+    )
+    path.write_text(modified, encoding="utf-8")
+    registry = await load_mcp_servers(path)
+    assert registry.servers[0].enabled is False
+    assert registry.servers[1].enabled is True  # 缺省 true
+    assert registry.server_enabled("alibaba_search") is False
+    assert registry.server_enabled("yuanbao_search") is True
+    assert registry.server_enabled("ghost_server") is True
+
+
 async def test_load_mcp_capability_references_missing_server(tmp_path: Path) -> None:
     path = tmp_path / "mcp-servers.yaml"
     path.write_text(
@@ -204,3 +221,29 @@ async def test_load_invalid_yaml_raises_config_error(tmp_path: Path) -> None:
     path.write_text("providers: not-a-list-of-anything", encoding="utf-8")
     with pytest.raises(ConfigError):
         await load_llm_providers(path)
+
+
+async def test_mcp_registry_env_substitution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """注册表 base_url 支持 ${VAR:-default}：未设取默认，docker 设环境变量则覆盖。"""
+    monkeypatch.delenv("TENCENT_MCP_BASE_URL", raising=False)
+    path = tmp_path / "mcp-servers.yaml"
+    path.write_text(
+        "servers:\n"
+        "  - id: tencent_mcp\n"
+        "    transport: streamable_http\n"
+        '    base_url: "${TENCENT_MCP_BASE_URL:-http://127.0.0.1:10001/mcp}"\n'
+        "capabilities:\n"
+        "  web_search:\n"
+        "    strategy: all\n"
+        "    servers:\n"
+        "      - tencent_mcp\n",
+        encoding="utf-8",
+    )
+    registry = await load_mcp_servers(path)
+    assert registry.servers[0].base_url == "http://127.0.0.1:10001/mcp"
+
+    monkeypatch.setenv("TENCENT_MCP_BASE_URL", "http://tencent_mcp:10001/mcp")
+    registry = await load_mcp_servers(path)
+    assert registry.servers[0].base_url == "http://tencent_mcp:10001/mcp"

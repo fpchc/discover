@@ -14,6 +14,7 @@ from app.llm.stream_parser import (
     FinishChunk,
     PhaseSwitchChunk,
     TextChunk,
+    ThinkingChunk,
     ToolCall,
     ToolCallsChunk,
 )
@@ -23,6 +24,9 @@ from app.protocol.events import (
     AgentSelectedEvent,
     DoneEvent,
     SkillSelectedEvent,
+    TextDeltaEvent,
+    ThinkingDeltaEvent,
+    ThinkingEndedEvent,
     ToolCallCompletedEvent,
     ToolCallStartedEvent,
     ToolsReadyEvent,
@@ -110,10 +114,12 @@ class FakeLLM:
         self,
         *,
         reason_text: str = "你好",
+        thinking_text: str | None = None,
         tool_call: tuple[str, dict[str, object]] | None = None,
         always_tool: bool = False,
     ) -> None:
         self._reason_text = reason_text
+        self._thinking_text = thinking_text
         self._tool_call = tool_call
         self._always_tool = always_tool
         self.reason_calls = 0
@@ -142,6 +148,9 @@ class FakeLLM:
             )
             yield FinishChunk(reason="tool_calls")
             return
+        if self._thinking_text is not None:
+            yield PhaseSwitchChunk(to="thinking")
+            yield ThinkingChunk(text=self._thinking_text)
         yield PhaseSwitchChunk(to="text")
         yield TextChunk(text=self._reason_text)
         yield FinishChunk(reason="stop")
@@ -351,6 +360,24 @@ async def test_unbound_goes_generic_chat(tmp_path: Path) -> None:
     assert final.active_target is None
     assert any(m.role == "assistant" and "你好" in (m.content or "") for m in final.messages)
     assert not any(isinstance(e, AgentSelectedEvent) for e in events)
+
+
+async def test_thinking_closes_before_answer(tmp_path: Path) -> None:
+    fake_llm = FakeLLM(thinking_text="先思考", reason_text="这是答案")
+    runtime, _script, session_id, target = await _runtime(tmp_path, fake_llm=fake_llm, bind=False)
+    emitter = QueueEmitter(Settings(_env_file=None))
+    await runtime.run_turn(
+        session_id=session_id,
+        user_input="随便聊聊",
+        emitter=emitter,
+        account_id=_ACCOUNT,
+        assistant_target=target,
+    )
+    events = await _collect(emitter)
+    kinds = [type(event) for event in events]
+    assert any(isinstance(event, ThinkingDeltaEvent) for event in events)
+    # 思考区必须在正文之前关闭，否则正文会被渲染进思考分区
+    assert kinds.index(ThinkingEndedEvent) < kinds.index(TextDeltaEvent)
 
 
 async def test_switch_target_reassembles(tmp_path: Path) -> None:

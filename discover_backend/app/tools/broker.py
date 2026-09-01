@@ -25,7 +25,7 @@ from app.errors.base import (
     RegistryValidationError,
 )
 from app.llm.models import ChatToolSpec
-from app.protocol.sanitize import sanitize_tool_args, truncate
+from app.protocol.sanitize import redact_sensitive, sanitize_tool_args, truncate
 from app.registry.assemble import AssemblyPlan
 from app.repositories.dedup import DedupStore
 from app.tools.descriptor import (
@@ -306,6 +306,28 @@ class ToolBroker:
         for cap in plan.capabilities:
             cap_failures: list[str] = []
             activated = False
+            if cap.strategy == "all":
+                # 全部候选激活：各自作为独立工具进目录，调用哪个由模型（re-act）决定，
+                # 不做主备切换也不做降级。单候选失败仅降级该候选，不影响其余。
+                for server_id in cap.candidate_servers:
+                    if server_id in acquired:
+                        activated = True
+                        continue
+                    try:
+                        client = await self._mcp_manager.acquire(server_id)
+                    except PlatformError:
+                        cap_failures.append(server_id)
+                        degraded.append(server_id)
+                        degrade_notes.append(cap.degrade_note or "数据源不可用，已跳过")
+                        continue
+                    await self._add_mcp_tools(server_id, client, cap.core_tools)
+                    self._clients[server_id] = client
+                    started.append(server_id)
+                    acquired.add(server_id)
+                    activated = True
+                if not activated and cap.required:
+                    failed_required.extend(cap_failures)
+                continue
             for server_id in cap.candidate_servers:
                 if server_id in acquired:
                     activated = True
@@ -601,13 +623,12 @@ class ToolBroker:
                 suggestion="该服务未在当前会话激活",
             )
         semaphore = self._service_slots.get(descriptor.namespace) or anyio.Semaphore(1)
-        logger.debug(
-            "调用 MCP 工具 %s（call_id=%s），入参：%s",
+        logger.info(
+            "调用 MCP 工具 %s（server=%s，call_id=%s），入参：%s",
             call.tool_name,
+            descriptor.namespace,
             call.call_id,
-            sanitize_tool_args(
-                json.dumps(call.arguments, ensure_ascii=False), max_length=_LOG_ARGS_SUMMARY_CHARS
-            ),
+            redact_sensitive(json.dumps(call.arguments, ensure_ascii=False)),
         )
         start = time.perf_counter()
         async with semaphore:
@@ -618,9 +639,10 @@ class ToolBroker:
         duration_ms = int((time.perf_counter() - start) * 1000)
         if result.is_error:
             logger.error(
-                "MCP 工具 %s 执行失败（%dms，call_id=%s）：%s",
+                "MCP 工具 %s 执行失败（%dms，server=%s，call_id=%s）：%s",
                 call.tool_name,
                 duration_ms,
+                descriptor.namespace,
                 call.call_id,
                 result.content or "工具执行失败",
             )
@@ -632,8 +654,13 @@ class ToolBroker:
                 duration_ms=duration_ms,
             )
         content = result.content or "未找到相关结果"
-        logger.debug(
-            "MCP 工具 %s 成功（%dms，call_id=%s）", call.tool_name, duration_ms, call.call_id
+        logger.info(
+            "MCP 工具 %s 成功（%dms，server=%s，call_id=%s），返回：%s",
+            call.tool_name,
+            duration_ms,
+            descriptor.namespace,
+            call.call_id,
+            content,
         )
         return await self._finish_success(call, content, duration_ms)
 

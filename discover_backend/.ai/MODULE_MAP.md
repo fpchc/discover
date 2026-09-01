@@ -84,6 +84,9 @@
 | 工具描述/限定名/chat spec | `app/tools/descriptor.py` |
 | MCP 客户端（Streamable HTTP JSON-RPC） | `app/tools/mcp_client.py` |
 | MCP 进程/连接池（引用计数、空闲回收） | `app/tools/mcp_manager.py` |
+| 本地自建 MCP 服务聚合包（Facade） | `local_mcp/__init__.py` |
+| 腾讯联网搜索 MCP 服务（自建服务端，Streamable HTTP） | `local_mcp/tencent_mcp/main.py` + `providers.py` |
+| 东方财富 MCP 服务（自建服务端，Streamable HTTP） | `local_mcp/eastmoney_mcp/main.py` + `providers.py` |
 | 脚本执行器（本地 subprocess、stdin/stdout、产物扫描） | `app/tools/script_executor.py` |
 
 ## 装配层（L2，registry）

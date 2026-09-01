@@ -3,6 +3,8 @@
 注册表文件是数据（非代码）。文件读写与解析走 anyio 线程池，避免阻塞事件循环。
 """
 
+import os
+import re
 from pathlib import Path
 from typing import Literal, Self
 
@@ -11,6 +13,8 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.errors.base import ConfigError
+
+_ENV_PATTERN = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
 
 
 class LLMProvider(BaseModel):
@@ -54,6 +58,7 @@ class MCPServer(BaseModel):
     handshake_timeout_seconds: float | None = None
     call_timeout_seconds: float = 30.0
     concurrency_limit: int = 3
+    enabled: bool = True
 
 
 class MCSCapability(BaseModel):
@@ -64,15 +69,17 @@ class MCSCapability(BaseModel):
 
     strategy: "failover" 主备切换——按 servers 顺序优先，第一个可用者生效，
     失败自动切换下一个；全失败时按依赖的 required 决定拒绝激活或降级。
+    "all" 全部候选激活——候选服务器各自作为独立工具进目录，调用哪个由模型
+    （re-act）推理决定，不做切换也不做降级。用于多搜索提供方并存场景。
 
     fallback: 能力级降级（系统机制，非提示词）。本能力全部候选服务器不可用时，
     装配层解析 fallback 指向的能力的候选服务器继续尝试；命中则视为「已降级为
     fallback 能力」继续激活，降级说明由系统生成。只允许一级降级（fallback 能力
-    自身不得再声明 fallback），防环。
+    自身不得再声明 fallback），防环。strategy="all" 时忽略 fallback。
     """
 
     servers: list[str] = Field(min_length=1)
-    strategy: Literal["failover"] = "failover"
+    strategy: Literal["failover", "all"] = "failover"
     fallback: str | None = None
 
 
@@ -99,6 +106,16 @@ class MCPRegistry(BaseModel):
                         f"能力 {name} 降级目标 {capability.fallback} 不能再声明降级（仅一级）"
                     )
         return self
+
+    def server_enabled(self, server_id: str) -> bool:
+        """查询服务显式开关（enabled: false 的条目装配时被剔除，不尝试连接）。
+
+        未知服务返回 True——交由调用方正常报错，不因查询失败而静默过滤。
+        """
+        for server in self.servers:
+            if server.id == server_id:
+                return server.enabled
+        return True
 
 
 def _read_text(path: Path) -> str:
@@ -130,9 +147,32 @@ async def load_llm_providers(path: Path) -> LLMRegistry:
 
 
 async def load_mcp_servers(path: Path) -> MCPRegistry:
-    """异步加载 MCP 服务注册表。文件缺失或格式非法抛 ConfigError。"""
-    data = await _load_yaml_registry(path, kind="MCP 服务")
+    """异步加载 MCP 服务注册表。文件缺失或格式非法抛 ConfigError。
+
+    读取后先做 `${VAR}` / `${VAR:-default}` 环境变量替换（部署差异，如 docker 内
+    tencent_mcp / eastmoney_mcp 容器地址），再做 YAML 解析。未设置的变量取默认值，无默认则为空串。
+    """
+    try:
+        raw = await anyio.to_thread.run_sync(_read_text, path)
+    except OSError as exc:
+        raise ConfigError(f"无法读取MCP服务注册表：{path}") from exc
+    raw = _substitute_env(raw)
+    data = await anyio.to_thread.run_sync(_parse_yaml, raw)
     try:
         return MCPRegistry.model_validate(data)
     except ValidationError as exc:
         raise ConfigError(f"MCP 服务注册表校验失败：{path}：{exc}") from exc
+
+
+def _substitute_env(text: str) -> str:
+    """替换 `${VAR}` 与 `${VAR:-default}` 为环境变量值（真实 os.environ）。"""
+
+    def _replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        default = match.group(2)
+        value = os.environ.get(name)
+        if value is None or value == "":
+            return default if default is not None else ""
+        return value
+
+    return _ENV_PATTERN.sub(_replace, text)

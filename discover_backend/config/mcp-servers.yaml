@@ -1,36 +1,46 @@
 # MCP 服务注册表（字段定义见 .claude/commands/mcp-integration-spec.md §3）
 # 认证令牌只存环境变量名，值从环境读取；代码中不出现端点 URL 字面量。
 #
+# enabled 显式开关（装配层过滤，见 loader.MCPServer.enabled）：
+#   enabled: false → 装配时直接从能力候选 / 降级清单剔除，系统不尝试连接该服务
+#   （省握手超时），也不对其产生降级日志。字段缺省视为 true。
+#   占位条目保持 false，接入真实端点与令牌后改 true。
+#
 # 能力级降级（agent-package-spec §4 / MCSCapability.fallback）：
 #   专有数据能力（enterprise_business / enterprise_risk / financial_data）的全部候选
-#   服务器不可用时，系统自动降级到 fallback 指向的能力（此处统一为 web_search，即腾讯
-#   联网搜索 yuanbao_search）。降级由本注册表 + 装配层/代理层执行，技能清单不写降级逻辑。
+#   服务器不可用时，系统自动降级到 fallback 指向的能力（此处统一为 web_search）。降级由
+#   本注册表 + 装配层/代理层执行，技能清单不写降级逻辑。
 #
-# 注意：tyc_mcp / qcc_mcp / tushare_mcp / mxds_mcp 为专有数据源占位条目——在拿到真实
-#   端点与令牌前保持占位（令牌环境变量未设置 → 装配时自动降级为 web_search，不影响激活）。
+# 当前启用状态：
+#   tencent_mcp（腾讯联网）启用——web_search 全部走它。
+#   eastmoney_mcp（东财资讯）启用——financial_data 的主候选（tushare 占位未接入），
+#   本地 10002 服务在线时激活为备选工具；离线则 financial_data 降级到 web_search。
+#   tyc_mcp / qcc_mcp / tushare_mcp 为专有数据源占位条目，未接入真实端点与令牌 → 关闭。
 
 servers:
-  - id: alibaba_search
+  - id: tencent_mcp
     transport: streamable_http
-    base_url: "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp"
+    base_url: "${TENCENT_MCP_BASE_URL:-http://127.0.0.1:10001/mcp}"
     auth:
       type: bearer_token
-      token_env: "ALIBABA_SEARCH_TOKEN"
+      token_env: "TENCENT_MCP_TOKEN"
     per_session: false
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
-  - id: yuanbao_search
+    enabled: true
+  - id: eastmoney_mcp
     transport: streamable_http
-    base_url: "https://api.wsa.cloud.tencent.com/Mcp"
+    base_url: "${EASTMONEY_MCP_BASE_URL:-http://127.0.0.1:10002/mcp}"
     auth:
       type: bearer_token
-      token_env: "YUANBAO_SEARCH_TOKEN"
+      token_env: "EASTMONEY_MCP_TOKEN"
     per_session: false
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
-  # ---- 专有数据源（占位，待接入真实端点与令牌）----
+    enabled: true
+  # ---- 专有数据源（占位，待接入真实端点与令牌；当前显式关闭）----
   - id: tyc_mcp
     transport: streamable_http
     base_url: "https://your-endpoint.example.com/tyc/mcp"
@@ -41,6 +51,7 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
+    enabled: false
   - id: qcc_mcp
     transport: streamable_http
     base_url: "https://your-endpoint.example.com/qcc/mcp"
@@ -51,6 +62,7 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
+    enabled: false
   - id: tushare_mcp
     transport: streamable_http
     base_url: "https://your-endpoint.example.com/tushare/mcp"
@@ -61,46 +73,39 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
-  - id: mxds_mcp
-    transport: streamable_http
-    base_url: "https://your-endpoint.example.com/mxds/mcp"
-    auth:
-      type: bearer_token
-      token_env: "MXDS_MCP_TOKEN"
-    per_session: true
-    handshake_timeout_seconds: 30
-    call_timeout_seconds: 30
-    concurrency_limit: 3
+    enabled: false
 
 # 能力 = 技能与具体服务之间的抽象层（agent-package-spec §4）。
 # 技能只声明「需要某能力」，提供方由本注册表决定；加 / 删 / 换提供方只改这里，
 # 不触碰智能体包内任何文件。
 # strategy: failover = 主备切换，按 servers 顺序优先，第一个可用者生效，失败自动切换。
+#           all = 全部候选激活为独立工具，调用哪个由模型（re-act）决定，不做切换不做降级。
 # fallback = 系统级降级：本能力全部候选不可用时，降级到该能力（只允许一级降级）。
 capabilities:
   web_search:
-    strategy: failover
+    strategy: all
     servers:
       # - alibaba_search
-      - yuanbao_search
-  # 企业工商画像（天眼查 / 企查查）
+      - tencent_mcp
+  # 企业工商画像（天眼查 / 企查查）：候选均显式关闭 → 实际直接降级到 web_search
   enterprise_business:
     strategy: failover
     servers:
       - tyc_mcp
       - qcc_mcp
     fallback: web_search
-  # 企业信用风险 / 司法 / 税务（企查查 / 天眼查）
+  # 企业信用风险 / 司法 / 税务（企查查 / 天眼查）：候选均显式关闭 → 实际直接降级到 web_search
   enterprise_risk:
     strategy: failover
     servers:
       - qcc_mcp
       - tyc_mcp
     fallback: web_search
-  # 上市财务数据（Tushare / 东方财富）
+  # 上市财务数据（Tushare 主 / 东方财富备）。当前两个候选均显式关闭
+  # （占位未接入 / 财务数据未实现）→ 实际直接降级到 web_search。
   financial_data:
     strategy: failover
     servers:
       - tushare_mcp
-      - mxds_mcp
+      - eastmoney_mcp
     fallback: web_search

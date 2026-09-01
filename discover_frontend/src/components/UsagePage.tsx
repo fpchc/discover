@@ -24,7 +24,7 @@ const DEFAULT_RANGE = 30
 const PALETTE = {
   input: '#0d9488',
   cached: '#d97706',
-  output: '#8b5cf6',
+  output: '#6d5dfb',
 }
 
 function formatNumber(value: number): string {
@@ -34,7 +34,7 @@ function formatNumber(value: number): string {
 /** 用量指标卡：小标签 + 大值（可选单位），对齐看板视觉 */
 function UsageStatCard({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-1 px-5 py-4">
+    <div className="glass-surface rounded-xl border border-border px-5 py-4">
       <p className="text-[13px] text-text-3">{label}</p>
       <p className="mt-2 flex items-baseline gap-1.5">
         <span className="text-2xl font-bold tabular-nums text-text-1">{value}</span>
@@ -83,7 +83,7 @@ function TrendChartCard({
     body = <Chart option={option} />
   }
   return (
-    <div className="rounded-xl border border-border bg-surface-1 p-4">
+    <div className="glass-surface rounded-xl border border-border p-4">
       <h2 className="mb-1 text-sm font-medium text-text-1">{title}</h2>
       <p className="mb-3 text-[12px] text-text-3">{description}</p>
       {body}
@@ -223,8 +223,8 @@ function buildMessageTrendOption(items: UsageDailyItem[], isDark: boolean): ECha
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: isDark ? 'rgba(139,92,246,0.35)' : 'rgba(139,92,246,0.28)' },
-              { offset: 1, color: 'rgba(139,92,246,0.02)' },
+              { offset: 0, color: isDark ? 'rgba(109,93,251,0.35)' : 'rgba(109,93,251,0.28)' },
+              { offset: 1, color: 'rgba(109,93,251,0.02)' },
             ],
           },
         },
