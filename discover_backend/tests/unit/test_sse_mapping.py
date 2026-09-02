@@ -4,9 +4,17 @@
 路由/工具等富事件在对外流中丢弃（返回 None）。纯函数测试，无网络无 DB。
 """
 
-from app.api.chat import _map_stream_event
-from app.errors.base import ErrorCategory
-from app.protocol.events import (
+from app.interfaces.http.chat import _map_stream_event
+from app.interfaces.schemas import (
+    ErrorStreamEvent,
+    MessageEndEvent,
+    MessageEvent,
+    PingEvent,
+    ThinkingDeltaFrame,
+    ThinkingEndFrame,
+    ThinkingStartFrame,
+)
+from app.runtime.events.events import (
     AgentEvent,
     DoneEvent,
     ErrorEvent,
@@ -17,15 +25,7 @@ from app.protocol.events import (
     ThinkingStartedEvent,
     ToolCallStartedEvent,
 )
-from app.schemas import (
-    ErrorStreamEvent,
-    MessageEndEvent,
-    MessageEvent,
-    PingEvent,
-    ThinkingDeltaFrame,
-    ThinkingEndFrame,
-    ThinkingStartFrame,
-)
+from app.shared.errors.base import ErrorCategory
 
 _MESSAGE_ID = "msg-1"
 _CONVERSATION_ID = "conv-1"

@@ -1,6 +1,6 @@
 """腾讯联网搜索 MCP 服务测试：提供方解析 + MCP 协议全链路互通 + 鉴权。
 
-全链路用例用平台真实客户端（app.tools.mcp_client.MCPClient）经 ASGITransport 连本服务，
+全链路用例用平台真实客户端（app.capabilities.mcp.client.MCPClient）经 ASGITransport 连本服务，
 验证 Streamable HTTP 握手 / list_tools / call_tool 与平台客户端完全兼容。所有 HTTP
 一律 MockTransport，不发真实网络请求。
 """
@@ -9,10 +9,10 @@ import json
 
 import httpx
 import pytest
+from app.capabilities.mcp.client import MCPClient
 from app.config.loader import MCPServer, MCPServerAuth
 from app.config.settings import Settings
-from app.errors.base import MCPAuthError
-from app.tools.mcp_client import MCPClient
+from app.shared.errors.base import MCPAuthError
 from local_mcp.tencent_mcp.main import create_app
 from local_mcp.tencent_mcp.providers import SearchServiceError, TencentSearchProvider
 from local_mcp.tencent_mcp.settings import TencentMCPSettings

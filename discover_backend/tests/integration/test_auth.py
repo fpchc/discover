@@ -16,20 +16,20 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 import pytest_asyncio
+from app.capabilities.tools.history import DedupStore
 from app.config.settings import Settings
-from app.db.engine import Database
-from app.db.models import Account, Message, UploadFileRecord
-from app.errors.base import BadRequestError, UnauthorizedError
-from app.extensions.storage.local_storage import LocalStorage
-from app.repositories.dedup import DedupStore
-from app.schemas.auth import AvatarConfig, LoginResponse
-from app.schemas.conversations import TurnRecord, TurnUsage
-from app.services.auth import AuthService
-from app.services.auth_security import JwtService, PasswordHasher
-from app.services.auth_session import SessionStore
-from app.services.conversations import ConversationService
-from app.services.elecnest_sso import ElecnestSSOClient
-from app.services.files import FileService
+from app.domain.auth.security import JwtService, PasswordHasher
+from app.domain.auth.service import AuthService
+from app.domain.auth.session import SessionStore
+from app.domain.auth.sso import ElecnestSSOClient
+from app.domain.conversation.service import ConversationService
+from app.domain.file.service import FileService
+from app.infrastructure.database.engine import Database
+from app.infrastructure.database.models import Account, Message, UploadFileRecord
+from app.infrastructure.storage.local import LocalStorage
+from app.interfaces.schemas.auth import AvatarConfig, LoginResponse
+from app.interfaces.schemas.conversations import TurnRecord, TurnUsage
+from app.shared.errors.base import BadRequestError, UnauthorizedError
 from sqlalchemy import select
 
 _DATABASE = Database(Settings(_env_file=None))

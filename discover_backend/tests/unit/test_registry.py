@@ -6,10 +6,10 @@ import pytest
 import yaml
 from app.config.loader import MCPRegistry, MCPServer, MCSCapability
 from app.config.settings import Settings
-from app.errors.base import RegistryValidationError
-from app.registry.hot_reload import HotReloader
-from app.registry.loader import AgentRegistrySnapshot
-from app.registry.registry import AgentRegistry
+from app.domain.skill.hot_reload import HotReloader
+from app.domain.skill.loader import AgentRegistrySnapshot
+from app.domain.skill.registry import AgentRegistry
+from app.shared.errors.base import RegistryValidationError
 
 
 def _agent_md(

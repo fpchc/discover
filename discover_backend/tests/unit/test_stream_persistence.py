@@ -10,11 +10,11 @@ from types import SimpleNamespace
 
 import anyio
 import pytest
-from app.api.chat import _blocking, _resolve_status, _stream_sse
-from app.errors.base import ErrorCategory, PlatformError
-from app.protocol.events import AgentEvent, ErrorEvent, TextDeltaEvent, ThinkingDeltaEvent
-from app.runtime.active_turns import ActiveTurn, ActiveTurnRegistry
-from app.schemas.conversations import ConversationSession, MessageStatus, TurnRecord
+from app.interfaces.http.chat import _blocking, _resolve_status, _stream_sse
+from app.interfaces.schemas.conversations import ConversationSession, MessageStatus, TurnRecord
+from app.runtime.events.events import AgentEvent, ErrorEvent, TextDeltaEvent, ThinkingDeltaEvent
+from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
+from app.shared.errors.base import ErrorCategory, PlatformError
 
 _MESSAGE_ID = "msg-interrupt-1"
 _CONVERSATION_ID = "conv-1"
@@ -92,7 +92,7 @@ async def _fake_events_platform_error(
 
 
 async def test_stream_persists_normal_on_complete(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.chat._run_turn_events", _fake_events_normal)
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
     services = _make_services()
     frames: list[str] = []
     async for frame in _stream_sse(
@@ -113,7 +113,7 @@ async def test_stream_persists_normal_on_complete(monkeypatch: pytest.MonkeyPatc
 
 
 async def test_stream_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.chat._run_turn_events", _fake_events_cancel)
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_cancel)
     services = _make_services()
 
     async def _consume() -> None:
@@ -134,7 +134,7 @@ async def test_stream_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyP
 
 
 async def test_stream_persists_interrupted_on_aclose(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.chat._run_turn_events", _fake_events_cancel)
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_cancel)
     services = _make_services()
     agen = _stream_sse(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())
     await anext(agen)
@@ -148,7 +148,7 @@ async def test_stream_persists_interrupted_on_aclose(monkeypatch: pytest.MonkeyP
 
 
 async def test_stream_persists_error_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.chat._run_turn_events", _fake_events_boom)
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_boom)
     services = _make_services()
     with pytest.raises(RuntimeError):
         async for _ in _stream_sse(
@@ -164,7 +164,7 @@ async def test_stream_persists_error_on_exception(monkeypatch: pytest.MonkeyPatc
 
 
 async def test_blocking_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.chat._run_turn_events", _fake_events_cancel)
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_cancel)
     services = _make_services()
     with anyio.move_on_after(0.05):
         await _blocking(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())
@@ -177,7 +177,7 @@ async def test_blocking_persists_interrupted_on_cancel(monkeypatch: pytest.Monke
 
 
 async def test_blocking_persists_error_and_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.chat._run_turn_events", _fake_events_platform_error)
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_platform_error)
     services = _make_services()
     with pytest.raises(PlatformError):
         await _blocking(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())

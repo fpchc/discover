@@ -9,19 +9,13 @@ from pathlib import Path
 import anyio
 import httpx
 import pytest
-from app.config.loader import MCPServer, MCPServerAuth
-from app.config.settings import Settings, SideEffectType
-from app.errors.base import (
-    ErrorCategory,
-    MCPAuthError,
-    MCPInvalidArgumentError,
-    MCPRateLimitError,
-    MCPTimeoutError,
+from app.capabilities.mcp.client import (
+    MCPCallResult,
+    MCPClient,
+    MCPToolInfo,
 )
-from app.registry.assemble import AssemblyPlan, CapabilityPlan
-from app.registry.manifests import ScriptDeclaration
-from app.tools.broker import ToolBroker, ToolCallRequest
-from app.tools.descriptor import (
+from app.capabilities.tools.broker import ToolBroker, ToolCallRequest
+from app.capabilities.tools.descriptor import (
     ToolDescriptor,
     ToolSource,
     mcp_qualified_name,
@@ -29,17 +23,23 @@ from app.tools.descriptor import (
     split_qualified_name,
     to_chat_tool_spec,
 )
-from app.tools.mcp_client import (
-    MCPCallResult,
-    MCPClient,
-    MCPToolInfo,
-)
-from app.tools.script_executor import (
+from app.capabilities.tools.script_executor import (
     ENV_SKILL_ROOT_DIR,
     ENV_WORKSPACE_DIR,
     ScriptExecution,
     ScriptExecutor,
     _scan_workspace,
+)
+from app.config.loader import MCPServer, MCPServerAuth
+from app.config.settings import Settings, SideEffectType
+from app.domain.skill.assemble import AssemblyPlan, CapabilityPlan
+from app.domain.skill.manifest import ScriptDeclaration
+from app.shared.errors.base import (
+    ErrorCategory,
+    MCPAuthError,
+    MCPInvalidArgumentError,
+    MCPRateLimitError,
+    MCPTimeoutError,
 )
 
 MCP_SERVER = MCPServer(

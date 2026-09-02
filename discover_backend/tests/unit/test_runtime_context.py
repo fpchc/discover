@@ -3,7 +3,7 @@
 import logging
 from typing import Literal
 
-from app.llm.models import ChatMessage
+from app.capabilities.llm.models import ChatMessage
 from app.runtime.context import (
     estimate_tokens,
     load_seed_history,

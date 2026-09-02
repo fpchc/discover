@@ -1,20 +1,19 @@
 """扩展加载单测：is_enabled 门控、init/startup/shutdown 顺序。
 
-以桩扩展替换 app.extensions.EXTENSIONS 验证加载器逻辑；真实扩展的默认
+以桩扩展替换 app.bootstrap.extensions.EXTENSIONS 验证加载器逻辑；真实扩展的默认
 顺序（logging 最先 / redis 默认关闭）单独断言。
 """
 
 from types import SimpleNamespace
 
-import app.extensions as ext_pkg
 import pytest
-from app.config.settings import Settings
-from app.extensions import (
+from app.bootstrap.extensions import (
     EXTENSIONS,
     initialize_extensions,
     shutdown_extensions,
     startup_extensions,
 )
+from app.config.settings import Settings
 
 _EVENTS: list[str] = []
 
@@ -50,7 +49,7 @@ def test_initialize_gates_disabled_and_orders_init(monkeypatch: pytest.MonkeyPat
     enabled = _StubExtension("a")
     disabled = _StubExtension("b", enabled=False)
     tail = _StubExtension("c")
-    monkeypatch.setattr(ext_pkg, "EXTENSIONS", (enabled, disabled, tail))
+    monkeypatch.setattr("app.bootstrap.extensions.EXTENSIONS", (enabled, disabled, tail))
     app = _fake_app()
     _EVENTS.clear()
     initialize_extensions(app, settings=Settings(_env_file=None))
@@ -61,7 +60,7 @@ def test_initialize_gates_disabled_and_orders_init(monkeypatch: pytest.MonkeyPat
 async def test_startup_then_shutdown_reverse(monkeypatch: pytest.MonkeyPatch) -> None:
     first = _StubExtension("a")
     second = _StubExtension("b")
-    monkeypatch.setattr(ext_pkg, "EXTENSIONS", (first, second))
+    monkeypatch.setattr("app.bootstrap.extensions.EXTENSIONS", (first, second))
     app = _fake_app()
     initialize_extensions(app, settings=Settings(_env_file=None))
     _EVENTS.clear()
@@ -81,14 +80,14 @@ def test_builtin_order_logging_first_redis_enabled() -> None:
     initialize_extensions(app, settings=Settings(_env_file=None, logging_enabled=False))
     names = [ext.__name__ for ext in app.state.enabled_extensions]
     assert names == [
-        "app.extensions.ext_database",
-        "app.extensions.ext_storage",
-        "app.extensions.ext_redis",
-        "app.extensions.ext_mcp",
-        "app.extensions.ext_llm",
+        "app.infrastructure.database.accessors",
+        "app.infrastructure.storage.accessors",
+        "app.infrastructure.redis.client",
+        "app.capabilities.mcp.accessors",
+        "app.capabilities.llm.accessors",
     ]
 
 
 def test_extensions_tuple_logging_first() -> None:
     """注册顺序即启动顺序：logging 必须在最前。"""
-    assert EXTENSIONS[0].__name__ == "app.extensions.ext_logging"
+    assert EXTENSIONS[0].__name__ == "app.infrastructure.logging.accessors"

@@ -13,11 +13,11 @@ from types import SimpleNamespace
 
 import anyio
 import pytest
-from app.api.chat import _stream_sse, stop_chat_message
-from app.errors.base import NotFoundError
-from app.runtime.active_turns import ActiveTurn, ActiveTurnRegistry
-from app.schemas import ChatStopResponse
-from app.schemas.conversations import ConversationSession, MessageStatus
+from app.interfaces.http.chat import _stream_sse, stop_chat_message
+from app.interfaces.schemas import ChatStopResponse
+from app.interfaces.schemas.conversations import ConversationSession, MessageStatus
+from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
+from app.shared.errors.base import NotFoundError
 
 _CONVERSATION_ID = "conv-stop-1"
 _MESSAGE_ID = "msg-stop-1"

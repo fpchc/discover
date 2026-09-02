@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 from app.config.settings import Settings
-from app.errors.base import ConfigError, UnauthorizedError
-from app.services.auth_security import JwtService, PasswordHasher
+from app.domain.auth.security import JwtService, PasswordHasher
+from app.shared.errors.base import ConfigError, UnauthorizedError
 
 _ACCOUNT_ID = "00000000-0000-0000-0000-0000000000aa"
 

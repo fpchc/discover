@@ -196,7 +196,7 @@ class Settings(BaseSettings):
     log_file: str = "app.log"
     log_file_max_size: int = 10
     log_file_backup_count: int = 5
-    # 模块级日志级别覆盖：{logger 名: 级别}，如 {"app.tools.broker": "DEBUG"}
+    # 模块级日志级别覆盖：{logger 名: 级别}，如 {"app.capabilities.tools.broker": "DEBUG"}
     log_module_levels: dict[str, str] = {}
 
     # ---- redis 插件 ----
@@ -257,3 +257,21 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """进程级配置单例（首次调用后缓存）。热重载场景需显式重建。"""
     return Settings()
+
+
+_ACTIVE_SETTINGS: Settings | None = None
+
+
+def active_settings() -> Settings:
+    """当前应用配置：扩展/访问器统一入口；未注入时回落进程级单例。
+
+    原位于 bootstrap/extensions/base.py（目录重构 2026-09-02），现随配置层归位——
+    infrastructure/capabilities 的访问器引用它时不反向依赖 bootstrap（避免循环）。
+    """
+    return _ACTIVE_SETTINGS if _ACTIVE_SETTINGS is not None else get_settings()
+
+
+def set_active_settings(settings: Settings) -> None:
+    """注入应用配置（create_app / 扩展加载时调用）。"""
+    global _ACTIVE_SETTINGS
+    _ACTIVE_SETTINGS = settings

@@ -12,12 +12,12 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from app.api.auth import router as auth_router
+from app.bootstrap.container import get_services
 from app.config.settings import Settings
-from app.container import get_services
-from app.errors.base import BadRequestError, UnauthorizedError
-from app.middleware.exceptions import ExceptionHandlingMiddleware
-from app.schemas.auth import LoginResponse
+from app.interfaces.http.auth import router as auth_router
+from app.interfaces.middleware.exceptions import ExceptionHandlingMiddleware
+from app.interfaces.schemas.auth import LoginResponse
+from app.shared.errors.base import BadRequestError, UnauthorizedError
 from fastapi import FastAPI
 
 

@@ -12,16 +12,21 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
-from app.catalog.assistant_catalog import AssistantCatalog
-from app.catalog.models import AssistantTarget, TargetType
 from app.config.loader import MCPRegistry
 from app.config.settings import Settings
-from app.db.engine import Database
-from app.db.models import Conversation, Message
-from app.errors.base import NotFoundError
-from app.registry.registry import AgentRegistry
-from app.schemas.conversations import ConversationStatus, MessageStatus, TurnRecord, TurnUsage
-from app.services.conversations import ConversationService
+from app.domain.assistant.catalog import AssistantCatalog
+from app.domain.assistant.models import AssistantTarget, TargetType
+from app.domain.conversation.service import ConversationService
+from app.domain.skill.registry import AgentRegistry
+from app.infrastructure.database.engine import Database
+from app.infrastructure.database.models import Conversation, Message
+from app.interfaces.schemas.conversations import (
+    ConversationStatus,
+    MessageStatus,
+    TurnRecord,
+    TurnUsage,
+)
+from app.shared.errors.base import NotFoundError
 
 _DATABASE = Database(Settings(_env_file=None))
 _ACCOUNT_ID = str(uuid.uuid4())
@@ -273,7 +278,7 @@ async def test_cross_account_isolation() -> None:
         for c in await service.list_conversations(other, limit=50, offset=0)
     )
     # B 读 A 的会话消息 → 404
-    from app.errors.base import NotFoundError
+    from app.shared.errors.base import NotFoundError
 
     try:
         await service.get_messages(other, cid, limit=50, offset=0)

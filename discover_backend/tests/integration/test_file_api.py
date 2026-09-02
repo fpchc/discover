@@ -4,7 +4,7 @@ GET  /files/upload 上传配置；POST /files/upload 上传；GET /files/{id}/pr
 """
 
 import httpx
-from app.schemas.files import FileResponse, UploadConfig
+from app.interfaces.schemas.files import FileResponse, UploadConfig
 
 
 async def test_upload_config(api_ctx: tuple[object, httpx.AsyncClient]) -> None:

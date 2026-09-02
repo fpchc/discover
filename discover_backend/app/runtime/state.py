@@ -9,10 +9,10 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from app.catalog.models import AssistantTarget
-from app.llm.models import ChatMessage
-from app.schemas.files import ArtifactRecord
-from app.tools.broker import ToolCallRequest
+from app.capabilities.llm.models import ChatMessage
+from app.capabilities.tools.broker import ToolCallRequest
+from app.domain.assistant.models import AssistantTarget
+from app.interfaces.schemas.files import ArtifactRecord
 
 
 def _append_messages(left: list[ChatMessage], right: list[ChatMessage]) -> list[ChatMessage]:

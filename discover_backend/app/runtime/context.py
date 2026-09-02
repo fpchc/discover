@@ -13,7 +13,7 @@ import logging
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.llm.models import ChatMessage
+from app.capabilities.llm.models import ChatMessage
 
 
 class HistoryProvider(Protocol):

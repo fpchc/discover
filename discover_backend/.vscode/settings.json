@@ -1,22 +1,22 @@
 {
   // ---- 解释器与终端执行优化（解决 compounds 启动崩溃问题） ----
-  "python.defaultInterpreterPath": "${workspaceFolder}/discover_backend/.venv/Scripts/python.exe",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
   "python.terminal.activateEnvironment": false,
   "terminal.integrated.defaultProfile.windows": "Command Prompt",
   // ---- 类型检查：交给 Mypy，关闭 Pylance 内建以免双重报错 ----
   "python.analysis.typeCheckingMode": "off",
   "python.analysis.autoImportCompletions": true,
   "python.analysis.extraPaths": [
-    "${workspaceFolder}/discover_backend"
+    "${workspaceFolder}"
   ],
   // ---- Mypy ----
   "mypy-type-checker.args": [
-    "--config-file=${workspaceFolder}/discover_backend/pyproject.toml"
+    "--config-file=${workspaceFolder}/pyproject.toml"
   ],
   "mypy-type-checker.importStrategy": "fromEnvironment",
   // ---- Ruff ----
   "ruff.importStrategy": "fromEnvironment",
-  "ruff.configuration": "${workspaceFolder}/discover_backend/pyproject.toml",
+  "ruff.configuration": "${workspaceFolder}/pyproject.toml",
   // ---- Python 文件保存行为 ----
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",

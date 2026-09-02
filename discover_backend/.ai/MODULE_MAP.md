@@ -1,178 +1,144 @@
 # 模块地图（职责 → 文件路径）
 
-> 新增/删除模块文件后必须同步更新本表。P1 快照：2026-08。
+> 新增/删除模块文件后必须同步更新本表。2026-09-02 目录重构快照（按业务核心分层 +
+> 基础设施下沉，替代原 L0–L5 技术横切分层，见 ARCHITECTURE.md「目录重构」行）。
+> 二轮（2026-09-02 下午）：domain/agent → domain/skill + manifest/definition 拆分、
+> 解析器归 runtime/resolver、新增 runtime/execution、extensions 摊平单文件 + 访问器归位、
+> 新增 infrastructure/redis、storage/logging 文件改名。
 
-## 基础层（L0）
-
-| 职责 | 路径 |
-|------|------|
-| 全局配置（pydantic-settings） | `app/config/settings.py` |
-| 注册表/配置 YAML 加载 | `app/config/loader.py` |
-| 领域异常 + 错误分类（含 ConflictError → 409） | `app/errors/base.py` |
-| AgentEvent 事件模型 | `app/protocol/events.py` |
-| QueueEmitter（seq/打字机/心跳/背压） | `app/protocol/emitter.py` |
-| 事件/错误消息脱敏 | `app/protocol/sanitize.py` |
-| 中文 grapheme 切分 | `app/protocol/graphemes.py` |
-
-## 持久化层（L0，db）
+## 组合根（bootstrap）
 
 | 职责 | 路径 |
 |------|------|
-| SQLAlchemy 声明式基类 + 命名约定 + UTC 时间 | `app/db/base.py` |
-| 异步引擎 + 会话工厂（NullPool 即开即关） | `app/db/engine.py` |
-| ORM 模型（accounts / conversations / messages / upload_files / dedup_clues；既有表带 from_account_id / created_by 账号关联） | `app/db/models.py` |
-
-## 存储层（L0，extensions/storage，Blob Engine）
-
-| 职责 | 路径 |
-|------|------|
-| BaseStorage 抽象（save/load_once/load_stream/download/exists/delete/url/scan） | `app/extensions/storage/base_storage.py` |
-| StorageType 枚举（local / s3 预留） | `app/extensions/storage/storage_type.py` |
-| LocalStorage（UUID 扁平、anyio 线程池） | `app/extensions/storage/local_storage.py` |
-| S3 后端占位（扩展点，未实现） | `app/extensions/storage/aws_s3_storage.py` |
-
-## 业务服务层（L0/L1，services）
-
-| 职责 | 路径 |
-|------|------|
-| 对话历史落库/读取/删除（ConversationService，按账号隔离；DB 降级内部消化，舱壁）+ 账号 token 用量聚合（aggregate_user_usage / usage_by_account） | `app/services/conversations.py` |
-| 文件注册表服务（register/upload/upload_avatar 头像校验/预览/使用标记，FileService + file_preview_path） | `app/services/files.py` |
-| 智能体工作区（创建/路径校验/防穿越，按 agent 键控跨会话共享，WorkspaceManager / Workspace） | `app/services/workspace.py` |
-
-## 持久化仓库层（L0，repositories）
-
-| 职责 | 路径 |
-|------|------|
-| 去重历史注入/回写（dedup_clues 表按账号隔离 + 组合主键 (created_by, clue_id)，脚本纯计算契约，DedupStore） | `app/repositories/dedup.py` |
-
-## 账号认证（L0/L4，services/auth + api/deps）
-
-| 职责 | 路径 |
-|------|------|
-| 账号认证门面（login / login_with_elecnest / validate_session / refresh / logout / get_account / get_user_usage / list_users_with_usage + 资料维护：update_account / change_avatar / change_password / avatar_config，AuthService） | `app/services/auth.py` |
-| 登录会话存储层（访问/刷新令牌 Redis 会话：SessionStore 协议 + RedisSessionStore fail-closed + NullSessionStore 降级 + key 规范 `auth:access\|refresh:{sha256}`） | `app/services/auth_session.py` |
-| 公司统一登录客户端（elecnest SSO：token + uid → 用户资料，ElecnestSSOClient） | `app/services/elecnest_sso.py` |
-| Argon2id 密码哈希 + JWT 访问令牌（PasswordHasher / JwtService，exp 取 `auth_access_token_ttl_seconds`） | `app/services/auth_security.py` |
-| FastAPI 认证依赖（get_current_account_id async 会话校验 / get_bearer_token / get_current_account / require_superuser） | `app/api/deps.py` |
-| 认证接口（/auth/login、/auth/login/elecnest、/auth/refresh、/auth/logout、/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
-| 预置账号 CLI（python -m app.services.auth_provision，无注册接口） | `app/services/auth_provision.py` |
-
-## LLM 层（L1）
-
-| 职责 | 路径 |
-|------|------|
-| LLM 客户端（httpx + 流式） | `app/llm/client.py` |
-| 请求/响应/工具模型 | `app/llm/models.py` |
-| 提供方注册表 + 别名解析 + 密钥解析 | `app/llm/providers.py` |
-| 流式分块解析（Text/Thinking/ToolCalls/Finish） | `app/llm/stream_parser.py` |
-| LLM 特定异常 | `app/llm/errors.py` |
-
-## 数据契约层（L0，schemas）
-
-| 职责 | 路径 |
-|------|------|
-| 会话历史 DTO（ConversationRecord / MessageRecord / TurnRecord 含 account_id / UsageAggregate / ConversationSession） | `app/schemas/conversations.py` |
-| 文件 DTO（ArtifactRecord 产物事件 / FileResponse / UploadConfig） | `app/schemas/files.py` |
-| 认证 DTO（LoginRequest / ElecnestLoginRequest / ElecnestUserInfo / LoginResponse / AccountRecord / UserUsage / AccountStatus / UserType + 资料维护：UpdateAccountRequest / ChangePasswordRequest / AvatarConfig） | `app/schemas/auth.py` |
-| 对话 SSE / 请求响应模型（chat-messages 契约） | `app/schemas/chat.py` |
-
-## 工具层（L1/L2）
-
-| 职责 | 路径 |
-|------|------|
-| ToolBroker：激活、三级暴露、并发 | `app/tools/broker.py` |
-| 工具描述/限定名/chat spec | `app/tools/descriptor.py` |
-| MCP 客户端（Streamable HTTP JSON-RPC） | `app/tools/mcp_client.py` |
-| MCP 进程/连接池（引用计数、空闲回收） | `app/tools/mcp_manager.py` |
-| 本地自建 MCP 服务聚合包（Facade） | `local_mcp/__init__.py` |
-| 腾讯联网搜索 MCP 服务（自建服务端，Streamable HTTP） | `local_mcp/tencent_mcp/main.py` + `providers.py` |
-| 东方财富 MCP 服务（自建服务端，Streamable HTTP） | `local_mcp/eastmoney_mcp/main.py` + `providers.py` |
-| 脚本执行器（本地 subprocess、stdin/stdout、产物扫描） | `app/tools/script_executor.py` |
-
-## 装配层（L2，registry）
-
-| 职责 | 路径 |
-|------|------|
-| AGENT/SKILL 清单模型 | `app/registry/manifests.py` |
-| 包扫描 + frontmatter 解析 + 加载期校验（绝对路径禁令） | `app/registry/loader.py` |
-| 两级索引（智能体/技能） | `app/registry/index.py` |
-| 技能装配（上下文注入 + 门禁脚本注册） | `app/registry/assemble.py` |
-| 热重载（开关驱动、快照语义） | `app/registry/hot_reload.py` |
-| 注册表门面 | `app/registry/registry.py` |
-
-## 助手目录层（L2，catalog）
-
-| 职责 | 路径 |
-|------|------|
-| AssistantTarget / TargetType / SelectionSource（选择域模型，保留字 generic） | `app/catalog/models.py` |
-| AssistantCatalog（专家目录，capabilities 取技能；通用对话为未绑定默认） | `app/catalog/assistant_catalog.py` |
-
-## 图运行时层（L3，runtime）
-
-| 职责 | 路径 |
-|------|------|
-| GraphState / GateStatus（active_target: AssistantTarget） | `app/runtime/state.py` |
-| 助手解析（读会话显式绑定，非 LLM 路由；未来 Policy/Workflow 插入） | `app/runtime/resolver/assistant_resolver.py` |
-| 技能解析（SkillResolver 确定性策略链：显式→默认→唯一→首个） | `app/runtime/resolver/skill_resolver.py` |
-| 节点实现（resolve_assistant / resolve_skill / assemble / agent / tool_node / generic_chat）+ 单轮执行入口 + 上下文裁剪 | `app/runtime/runner.py` |
-| LangGraph 拓扑构建 | `app/runtime/builder.py` |
-| 进行中回合句柄注册表（ActiveTurn/ActiveTurnRegistry：stop 接口取消；同会话并发 409 门；task.cancel == 客户端断连原语） | `app/runtime/active_turns.py` |
-
-## 接入层（L4）
-
-| 职责 | 路径 |
-|------|------|
-| 应用组装（工厂 + 扩展初始化 + 中间件注册 + 路由挂载） | `app/application.py` |
+| 应用组装工厂（create_app：扩展 + 中间件 + 路由挂载） | `app/bootstrap/application.py` |
+| 服务容器 DI（扩展访问器 + 领域组装 + assistant_catalog + get_runtime） | `app/bootstrap/container.py` |
 | 进程入口（uvicorn 启动，host/port 配置驱动） | `app/main.py` |
-| 服务容器 DI：扩展访问器 + 领域组装 + assistant_catalog() | `app/container.py` |
-| 对话接口（POST /chat-messages SSE/blocking + POST /chat-messages/{id}/stop，agent_id 显式绑定；Bearer 认证，会话归属账号；同会话并发 409） | `app/api/chat.py` |
-| 助手目录接口（GET /assistants，只读聚合，公开） | `app/api/assistants.py` |
-| 文件接口（上传需认证带归属账号；预览全局公开） | `app/api/files.py` |
-| 会话接口（/conversations 列表/消息/软删除；按账号隔离，跨账号 404） | `app/api/conversations.py` |
-| 认证接口（/auth/login 公开；/users/me、/users/me/usage、/users/me/avatar-config、PATCH /users/me、/users/me/avatar、/users/me/password、/users 超级用户） | `app/api/auth.py` |
+| 扩展加载器（EXTENSIONS 有序元组 + initialize/startup/shutdown；只组装不实现） | `app/bootstrap/extensions.py` |
+| 当前应用配置访问（active_settings / set_active_settings，随配置层归位） | `app/config/settings.py` |
 
-## 扩展层（L1，extensions，基础设施统一加载）
+## 对外接入（interfaces）
 
 | 职责 | 路径 |
 |------|------|
-| 扩展加载器（EXTENSIONS 有序元组 + initialize/startup/shutdown） | `app/extensions/__init__.py` |
-| 配置访问间接层（active_settings / set_active_settings） | `app/extensions/base.py` |
-| logging 扩展（非阻塞 QueueHandler/QueueListener 结构化日志） | `app/extensions/ext_logging.py` |
-| db 扩展（SQLAlchemy 异步引擎 + 会话工厂） | `app/extensions/ext_database.py` |
-| redis 扩展（客户端 + Cache/Lock 封装，默认关闭） | `app/extensions/ext_redis.py` |
-| storage 扩展（BaseStorage 后端选择，local / s3 预留） | `app/extensions/ext_storage.py` |
-| mcp 扩展（MCP 注册表 + MCPManager 引用计数） | `app/extensions/ext_mcp.py` |
-| llm 扩展（LLMClient + ProviderRegistry + 密钥解析） | `app/extensions/ext_llm.py` |
+| 对话接口（POST /chat-messages SSE/blocking + stop，agent_id 显式绑定） | `app/interfaces/http/chat.py` |
+| 助手目录接口（GET /assistants，只读聚合） | `app/interfaces/http/assistants.py` |
+| 会话接口（/conversations 列表/消息/软删除；按账号隔离） | `app/interfaces/http/conversations.py` |
+| 文件接口（/files 上传/预览，预览全局公开） | `app/interfaces/http/files.py` |
+| 认证接口（/auth/login、/users/me 等） | `app/interfaces/http/auth.py` |
+| FastAPI 认证依赖（get_current_account_id / require_superuser） | `app/interfaces/http/deps.py` |
+| 会话历史 DTO（ConversationRecord/TurnRecord/UsageAggregate/ConversationSession） | `app/interfaces/schemas/conversations.py` |
+| 文件 DTO（ArtifactRecord/FileResponse/UploadConfig） | `app/interfaces/schemas/files.py` |
+| 认证 DTO（LoginRequest/ElecnestUserInfo/AccountRecord/UserUsage/AvatarConfig） | `app/interfaces/schemas/auth.py` |
+| 对话 SSE / 请求响应模型（chat-messages 契约） | `app/interfaces/schemas/chat.py` |
+| 全局异常中间件（领域异常 → 统一 JSON） | `app/interfaces/middleware/exceptions.py` |
+| 请求日志中间件（request_id / trace_id / 耗时） | `app/interfaces/middleware/request_logging.py` |
 
-## 内核层（L0/L1，kernel）
+## 业务域（domain）
+
+### skill 注册域（Skill Pack：manifest 模型 / definition 聚合 / loader 加载）
 
 | 职责 | 路径 |
 |------|------|
-| 日志内核（SensitiveDataFilter / TraceFilter / trace 上下文 / 模块级别） | `app/kernel/logging.py` |
+| frontmatter 模型（AgentManifest + SkillManifest + 声明类） | `app/domain/skill/manifest.py` |
+| Skill Pack 定义聚合（AgentPackage / AgentRegistrySnapshot / 加载失败项） | `app/domain/skill/definition.py` |
+| 包扫描 + frontmatter 解析 + 加载期校验（绝对路径禁令） | `app/domain/skill/loader.py` |
+| 两级索引（智能体/技能） | `app/domain/skill/index.py` |
+| 技能装配（上下文注入 + 门禁脚本注册，AssemblyPlan/SkillAssembler） | `app/domain/skill/assemble.py` |
+| 热重载（开关驱动、快照语义） | `app/domain/skill/hot_reload.py` |
+| 注册表门面（AgentRegistry） | `app/domain/skill/registry.py` |
 
-## 中间件层（L4，middleware）
+### assistant 选择域
 
 | 职责 | 路径 |
 |------|------|
-| 全局异常中间件（领域异常 → 统一 JSON，泛型兜底 500 + traceback） | `app/middleware/exceptions.py` |
-| 请求日志中间件（request_id / X-Request-Id / trace_id / 耗时 / client_ip） | `app/middleware/request_logging.py` |
-| 对话接口（/chat-messages，SSE / blocking，controller） | `app/api/chat.py` |
-| 文件路由（/files/upload 配置、上传、{id}/preview 流式预览，controller） | `app/api/files.py` |
-| 会话接口（/conversations 列表/消息/软删除，controller） | `app/api/conversations.py` |
+| AssistantTarget / TargetType / SelectionSource（保留字 generic） | `app/domain/assistant/models.py` |
+| AssistantCatalog（专家目录，capabilities 取技能；经 app.domain 门面访问） | `app/domain/assistant/catalog.py` |
+
+### 会话 / 工作区 / 文件 / 认证
+
+| 职责 | 路径 |
+|------|------|
+| 对话历史落库/读取/删除 + 用量聚合（ConversationService，DB 降级内部消化） | `app/domain/conversation/service.py` |
+| 智能体工作区（创建/路径校验/防穿越，按 agent 键控） | `app/domain/workspace/service.py` |
+| 文件注册表服务（register/upload/upload_avatar/预览/使用标记） | `app/domain/file/service.py` |
+| 账号认证门面（AuthService：login/validate_session/refresh/logout/资料维护） | `app/domain/auth/service.py` |
+| 登录会话存储（SessionStore 协议 + RedisSessionStore fail-closed） | `app/domain/auth/session.py` |
+| 公司统一登录客户端（elecnest SSO） | `app/domain/auth/sso.py` |
+| Argon2id 密码哈希 + JWT 访问令牌（PasswordHasher / JwtService） | `app/domain/auth/security.py` |
+| 预置账号 CLI（python -m app.domain.auth.provision，无注册接口） | `app/domain/auth/provision.py` |
+
+## Agent 执行内核（runtime）
+
+| 职责 | 路径 |
+|------|------|
+| 图运行时（Runtime：节点实现 + 单轮执行入口 + 上下文裁剪） | `app/runtime/engine.py` |
+| LangGraph 拓扑构建 + 条件边（build_graph / route_*） | `app/runtime/transition.py` |
+| 进行中回合句柄注册表（ActiveTurn/ActiveTurnRegistry：stop 取消；同会话并发 409） | `app/runtime/turn.py` |
+| GraphState / GateStatus（active_target: AssistantTarget） | `app/runtime/state.py` |
+| 模型上下文组装（会话记忆 L1 + 上下文裁剪） | `app/runtime/context.py` |
+| 助手解析（用户显式选择，非 LLM 路由；服务 Runtime 单轮解析） | `app/runtime/resolver/assistant.py` |
+| 技能解析（SkillResolver 确定性策略链：显式→默认→唯一→首个） | `app/runtime/resolver/skill.py` |
+| 运行时动作词汇（Action = ToolCallRequest 别名） | `app/runtime/execution/action.py` |
+| 运行时观察词汇（Observation = ToolResult 别名） | `app/runtime/execution/observation.py` |
+| 工具执行器（ToolExecutor：Action→Tool/MCP→Observation 聚合 + 门禁 + 产物登记） | `app/runtime/execution/executor.py` |
+| AgentEvent 事件模型（含事件判别联合） | `app/runtime/events/events.py` |
+| QueueEmitter（seq/打字机/心跳/有界队列背压） | `app/runtime/events/emitter.py` |
+
+## 能力层（capabilities）
+
+| 职责 | 路径 |
+|------|------|
+| LLM 客户端（httpx + 流式） | `app/capabilities/llm/client.py` |
+| LLM 请求/响应/工具模型 | `app/capabilities/llm/models.py` |
+| 提供方注册表 + 别名解析 + 密钥解析 | `app/capabilities/llm/providers.py` |
+| 流式分块解析（Text/Thinking/ToolCalls/Finish） | `app/capabilities/llm/stream_parser.py` |
+| 回合用量聚合（UsageAggregator） | `app/capabilities/llm/usage.py` |
+| LLM 特定异常 | `app/capabilities/llm/errors.py` |
+| LLM 生命周期访问器（get_client / get_providers / resolve_api_key） | `app/capabilities/llm/accessors.py` |
+| ToolBroker：激活、三级暴露、并发分发 | `app/capabilities/tools/broker.py` |
+| 工具描述/限定名/chat spec | `app/capabilities/tools/descriptor.py` |
+| 脚本执行器（本地 subprocess、stdin/stdout、产物扫描） | `app/capabilities/tools/script_executor.py` |
+| 去重历史（DedupStore，dedup_clues 按账号隔离，脚本纯计算契约） | `app/capabilities/tools/history.py` |
+| MCP 客户端（Streamable HTTP JSON-RPC） | `app/capabilities/mcp/client.py` |
+| MCP 连接/引用计数管理器（acquire/release/close_idle） | `app/capabilities/mcp/manager.py` |
+| MCP 生命周期访问器（get_manager / get_registry） | `app/capabilities/mcp/accessors.py` |
+
+## 基础设施（infrastructure）
+
+| 职责 | 路径 |
+|------|------|
+| SQLAlchemy 声明式基类 + 命名约定 + UTC 时间 | `app/infrastructure/database/base.py` |
+| 异步引擎 + 会话工厂（NullPool 即开即关） | `app/infrastructure/database/engine.py` |
+| ORM 模型（accounts/conversations/messages/upload_files/dedup_clues） | `app/infrastructure/database/models.py` |
+| 数据库生命周期访问器（get_database） | `app/infrastructure/database/accessors.py` |
+| Redis 客户端 + Cache/Lock 封装 + 访问器（认证会话层硬依赖） | `app/infrastructure/redis/client.py` |
+| BaseStorage 抽象（save/load_once/load_stream/download/exists/delete/url/scan） | `app/infrastructure/storage/base.py` |
+| StorageType 枚举（local / s3 预留） | `app/infrastructure/storage/types.py` |
+| LocalStorage（UUID 扁平、anyio 线程池） | `app/infrastructure/storage/local.py` |
+| S3 后端占位（扩展点，未实现） | `app/infrastructure/storage/s3.py` |
+| 存储生命周期访问器（get_storage，按 storage_type 选择后端） | `app/infrastructure/storage/accessors.py` |
+| 日志内核（SensitiveDataFilter / TraceFilter / trace 上下文 / 模块级别） | `app/infrastructure/logging/logging.py` |
+| 日志生命周期访问器（非阻塞 QueueHandler/QueueListener 结构化日志） | `app/infrastructure/logging/accessors.py` |
+
+## 跨层共享（config / shared）
+
+| 职责 | 路径 |
+|------|------|
+| 全局配置（pydantic-settings + active_settings/set_active_settings） | `app/config/settings.py` |
+| 注册表/配置 YAML 加载（LLM 提供方 / MCP 服务） | `app/config/loader.py` |
+| 领域异常 + 错误分类（ErrorCategory / PlatformError / 各域异常） | `app/shared/errors/base.py` |
+| 事件/错误消息脱敏与截断 | `app/shared/utils/sanitize.py` |
+| 中文 grapheme 切分 | `app/shared/utils/graphemes.py` |
 
 ## 数据与配置（非代码）
 
 | 内容 | 路径 |
 |------|------|
-| discover 智能体包（三级结构：`agents/discover/client-finder/`） | `agents/discover/` |
-| discover-new 智能体包（客户调研：候选池评分推荐最优一家，输出 300 字信息卡；三级结构：`agents/discover-new/client-finder/`） | `agents/discover-new/` |
-| credit-period 智能体包（账期评估：单客户 F/R/S 三因子评分，输出完整账期评估文字报告；三级结构：`agents/credit-period/period-assessment/`） | `agents/credit-period/` |
-| credit-period 脚本：评分计算 / 门禁校验（period_calculator / gate_report_valid，stdin JSON 契约） | `agents/credit-period/period-assessment/scripts/` |
-| credit-period 脚本入参约束（period_input / gate_input，模型可见参数 schema） | `agents/credit-period/period-assessment/schemas/` |
-| discover 脚本入参约束（score/render/dedup/gate，模型可见参数 schema） | `agents/discover/client-finder/schemas/` |
-| discover 报告数据契约单一事实来源（required_fields/optional/compat，驱动 render_report.check_completeness） | `agents/discover/client-finder/schemas/report_schema.json` |
-| discover 脚本：评分 / 去重 / 渲染 / 门禁校验（stdin JSON 契约） | `agents/discover/client-finder/scripts/` |
-| 门禁声明入参约束（`GateDeclaration.schema_path` → 校验器脚本工具） | `app/registry/manifests.py` |
+| discover 智能体包（三级结构：`agents/{agent}/{skill}`） | `agents/discover/` |
+| discover-new 智能体包（候选池评分推荐） | `agents/discover-new/` |
+| credit-assessment 智能体包 | `agents/credit-assessment/` |
+| credit-period 智能体包（账期评估 F/R/S 三因子） | `agents/credit-period/` |
+| 本地自建 MCP 服务聚合包（tencent_mcp + eastmoney_mcp，Facade） | `local_mcp/` |
 | 迁移源（只读历史参考） | `eitia-client-finder/` |
 | MCP 服务注册表 | `config/mcp-servers.yaml`（example 可提交） |
 | LLM 提供方注册表 | `config/llm-providers.yaml`（example 可提交） |

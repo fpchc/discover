@@ -4,19 +4,11 @@ import json
 
 import httpx
 import pytest
-from app.config.loader import LLMProvider, LLMRegistry
-from app.config.settings import Settings
-from app.errors.base import (
-    ConfigError,
-    LLMAuthError,
-    LLMConnectionError,
-    LLMTimeoutError,
-)
-from app.llm.client import LLMClient
-from app.llm.errors import classify_stream_error
-from app.llm.models import ChatMessage, ChatRequest, ChatToolSpec, ToolFunction
-from app.llm.providers import ProviderRegistry
-from app.llm.stream_parser import (
+from app.capabilities.llm.client import LLMClient
+from app.capabilities.llm.errors import classify_stream_error
+from app.capabilities.llm.models import ChatMessage, ChatRequest, ChatToolSpec, ToolFunction
+from app.capabilities.llm.providers import ProviderRegistry
+from app.capabilities.llm.stream_parser import (
     PhaseSwitchChunk,
     SemanticChunk,
     StreamParser,
@@ -26,7 +18,15 @@ from app.llm.stream_parser import (
     ToolCallsChunk,
     UsageChunk,
 )
-from app.llm.usage import UsageAggregator
+from app.capabilities.llm.usage import UsageAggregator
+from app.config.loader import LLMProvider, LLMRegistry
+from app.config.settings import Settings
+from app.shared.errors.base import (
+    ConfigError,
+    LLMAuthError,
+    LLMConnectionError,
+    LLMTimeoutError,
+)
 
 
 def _provider() -> LLMProvider:

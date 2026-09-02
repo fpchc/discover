@@ -12,7 +12,7 @@ from typing import Annotated
 
 import httpx
 import pytest
-from app.schemas import (
+from app.interfaces.schemas import (
     ChatMessageResponse,
     ErrorStreamEvent,
     MessageEndEvent,

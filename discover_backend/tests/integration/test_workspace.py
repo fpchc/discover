@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 from app.config.settings import Settings
-from app.errors.base import SessionError
-from app.services.workspace import WorkspaceManager
+from app.domain.workspace.service import WorkspaceManager
+from app.shared.errors.base import SessionError
 
 
 def _manager(tmp_path: Path, **overrides: object) -> WorkspaceManager:

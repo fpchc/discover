@@ -4,13 +4,12 @@ import asyncio
 
 import pytest
 from app.config.settings import Settings
-from app.errors.base import ErrorCategory
-from app.protocol.emitter import (
+from app.runtime.events.emitter import (
     QueueEmitter,
     _BoundedEventQueue,
     _TypewriterChannel,
 )
-from app.protocol.events import (
+from app.runtime.events.events import (
     AgentEvent,
     AgentSelectedEvent,
     DoneEvent,
@@ -20,8 +19,9 @@ from app.protocol.events import (
     ToolCallCompletedEvent,
     event_adapter,
 )
-from app.protocol.graphemes import split_graphemes
-from app.protocol.sanitize import (
+from app.shared.errors.base import ErrorCategory
+from app.shared.utils.graphemes import split_graphemes
+from app.shared.utils.sanitize import (
     redact_sensitive,
     sanitize_error_message,
     sanitize_tool_args,

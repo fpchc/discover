@@ -15,24 +15,33 @@
 
 ## 分层与依赖方向
 
-依赖只能自上而下，禁止反向 import。
+依赖只能自上而下，禁止反向 import。2026-09-02 按「业务核心分层 + 基础设施下沉」
+重构（替代原 L0–L5 技术横切分层，见「关键设计决策」目录分层行）：
 
 ```
-L5  frontend/                  Chat UI（消费事件判别流）｜P1 未实现
-L4  api/（controller）          FastAPI 路由；应用组装（application.py）、DI（container.py）、DTO（schemas/）随接入层；
-                               中间件（middleware/：全局异常 + 请求日志）挂接入层；扩展（extensions/：基础设施统一加载）由容器消费
-L3  runtime/                   LangGraph 图：route_agent → route_skill → assemble
-                                → agent ⇄ tool_node，generic_chat 兜底
-L2  registry/ + tools/broker   装配层：清单解析/索引/热重载/装配；ToolBroker 工具目录与三级暴露
-L1  llm/ + tools/(mcp|script) + services/
-                               LLM 客户端、MCP（Streamable HTTP）、宿主 subprocess 脚本执行器（本地直跑）、
-                               业务服务层（会话历史/文件/工作区/认证）统一收拢
-L0  db/ + extensions/storage + repositories/ + config/ + errors/ + protocol/ + kernel/
-                               SQLAlchemy/ORM（PostgreSQL）、Blob 存储、持久化仓库（去重历史）、
-                               配置载体、领域异常、事件发射器；跨边界 DTO 统一在 schemas/
+bootstrap/                组合根：application.py（工厂）/ container.py（DI）/ extensions.py
+                          （扩展加载器：EXTENSIONS 元组 + 启停，只组装不实现；active_settings 在 config/settings）
+interfaces/               对外接入：http/（FastAPI 路由 + deps）、schemas/（DTO + SSE 帧）、
+                          middleware/（全局异常 + 请求日志）
+domain/                   业务域：skill/（Skill Pack 注册域：manifest 模型 + definition 聚合 +
+                          loader/index/assemble/hot_reload/registry）、assistant/（选择模型 + 目录）、
+                          conversation/（会话历史）、workspace/、file/、auth/
+runtime/                  Agent 执行内核：engine.py（Runtime 节点 + 单轮执行）、transition.py
+                          （LangGraph 拓扑 + 条件边）、turn.py（回合并发协调）、state.py、context.py、
+                          resolver/（assistant/skill 解析，服务单轮解析）、execution/
+                          （action/observation 词汇 + ToolExecutor 工具执行器）、events/（AgentEvent + QueueEmitter）
+capabilities/             Runtime 可调用的能力：llm/、tools/（broker/descriptor/script_executor/history）、mcp/
+infrastructure/           外部技术实现：database/（SQLAlchemy/ORM/PostgreSQL）、redis/
+                          （客户端 + Cache/Lock）、storage/（BaseStorage 抽象 + local/s3 后端）、
+                          logging/（日志内核）
+config/ + shared/         跨层共享：config/（Settings + 注册表 yaml）、shared/errors/（领域异常）、
+                          shared/utils/（脱敏 / grapheme 切分）
 ```
 
-L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注册表要装配上下文。
+依赖方向：interfaces → domain/runtime/capabilities → infrastructure → shared/config；bootstrap 组装全部，
+不承载业务逻辑。runtime 不直接认识 MCP 与脚本：只向 `ToolBroker`（capabilities/tools）要工具列表，
+向 agent 注册表要装配上下文。图中无任何智能体名 / 技能名 / 工具名字面量——唯一耦合面是
+`AGENT.md` / `SKILL.md` 清单。
 图中无任何智能体名 / 技能名 / 工具名字面量——唯一耦合面是 `AGENT.md` / `SKILL.md` 清单。
 
 ## 关键设计决策
@@ -64,7 +73,9 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 | 文件系统 | `upload_files` 多消费方共享注册表（agent 产物 / 用户上传 / 知识库），**删 session/agent 强绑定**，`created_by_role` 宽松消费方标识，`used`/`used_at` 强制标注使用状态供清理；`/files` API：`GET /files/upload`（上传限制配置）、`POST /files/upload`（字节上传，校验大小+扩展名）、`GET /files/{file_id}/preview`（按 record id 流式 inline 预览，预览即标记 used）；`FileService`（register 磁盘产物 / upload 字节上传 / get_content_stream_by_id 预览） | 用户决策 2026-08 |
 | 去重历史 | 结构化状态入 PG `dedup_clues`，脚本改纯计算：平台注入 `history`、add 模式经 `_upsert` 回写（声明 `history_store: true`） | 用户决策 2026-08 |
 | 目录结构 | 技能包三级 `agents/{agent}/{skill}`（去掉 skills/ 壳与 shared/）；工作区 `workspaces/{agent}` 按 agent 键控、跨会话共享，会话删除不再清工作区 | 用户决策 2026-08 |
-| 目录分层 | 业务服务统一收拢 `app/services/`（conversations/files/workspace/auth + auth_security/auth_provision），持久化仓库统一收拢 `app/repositories/`（dedup），跨边界 DTO 统一 `app/schemas/`，认证 FastAPI 依赖入 `app/api/deps.py`；删除散落的 feature 包（conversations/files/workspace/auth/dedup） | 用户决策 2026-08-28 |
+| 目录分层 | 业务服务统一收拢 `app/services/`（conversations/files/workspace/auth + auth_security/auth_provision），持久化仓库统一收拢 `app/repositories/`（dedup），跨边界 DTO 统一 `app/schemas/`，认证 FastAPI 依赖入 `app/api/deps.py`；删除散落的 feature 包（conversations/files/workspace/auth/dedup） | 用户决策 2026-08-28（**2026-09-02 已被目录重构取代**，见下行） |
+| 目录重构（2026-09-02） | 按「业务核心分层 + 基础设施下沉」整体迁移（非机械改名）：bootstrap（组合根：工厂/容器/扩展加载器）/ interfaces（http 路由 + schemas + middleware）/ domain（agent 注册域含技能聚合、assistant 选择域、conversation、workspace、file、auth）/ runtime（Agent 执行内核：engine/transition/turn/state/context/events）/ capabilities（llm/tools/mcp）/ infrastructure（database/storage/logging）/ config + shared（跨层共享）。关键裁决：agent 注册表（原 registry/）并入 `domain/agent/`（loader/manifests/assemble 同时处理 AGENT.md+SKILL.md，AgentPackage 为聚合体，不按 assistant/skill 拆）；删除 app/workspace/ 重复死代码与 repositories/kernel/catalog/protocol 空壳；DedupStore 归 capabilities/tools/history.py（唯一消费者 ToolBroker）；事件契约归 runtime/events/（emitter 产事件，interfaces/http 做 SSE 映射）；门面导出避免急切跨层 import（interfaces/、domain/assistant 空门面防 assemble⇄registry、interfaces.schemas⇄http 循环） | 用户决策 2026-09-02，实测验证：ruff/mypy 全绿、tests/unit 216 通过 |
+| 目录重构二轮（2026-09-02） | 在首轮基础上对齐「Agent Runtime 一等公民」：① `domain/agent/` → `domain/skill/`（Skill Pack 域，manifest.py=frontmatter 模型 + definition.py=AgentPackage 聚合，loader 只负责加载）；② 解析器归 `runtime/resolver/`（assistant/skill，服务单轮解析，不构成独立业务体系）；③ **重建 runtime/execution/**（首轮曾删，用户二次要求，回滚）：action/observation 为 Action/Observation 词汇（类型别名 ToolCallRequest/ToolResult），executor.py=ToolExecutor 承接 engine.tool_node（分发+事件+门禁+产物登记），Engine 只做状态转移，为未来 SOP→ReAct 留位；④ bootstrap/extensions.py 摊平单文件（只组装），6 访问器归位（database/redis/storage/logging + capabilities/llm/mcp），新建 infrastructure/redis/client.py；⑤ storage 文件改名 base/local/s3/types、logging/kernel→logging；⑥ active_settings 归 config/settings（避免 infra→bootstrap 反向依赖）。既有裁决不推翻：conversation 保留 service.py（非 repository）、保留 domain/file/、runtime 不拆 engine+runner 双文件、auth 保留 service.py 门面 | 用户决策 2026-09-02，实测验证：ruff/mypy 全绿、tests/unit 219 通过（新增 ToolExecutor 单测） |
 | DB 连接地址 | 默认 URL 用 `127.0.0.1` 而非 `localhost`（Windows + Docker 下 localhost 先解析 IPv6 `::1`，回环转发超时 ~21s） | 实测修复 |
 | 门禁执行 | 有校验器的门禁注册为脚本工具 `…script.gate_<id>`，tool_node 写 gate_status | graph-runtime-spec §6 |
 | 审批 | 已整体移除：无审批节点 / 事件 / 接口 / 策略，工具调用直接执行 | 用户决策 2026-08 |
@@ -101,7 +112,7 @@ L3 不直接认识 MCP 与脚本：只向 `ToolBroker` 要工具列表，向注�
 - 依赖：`uv sync`
 - 启动 PostgreSQL：`docker compose up -d`（本地 PG；停止并清卷 `docker compose down -v`）
 - 数据库迁移：`uv run alembic upgrade head`（改模型后 `uv run alembic revision --autogenerate -m "..."`）
-- 开发服务器：`uv run uvicorn app.application:create_app --factory`（host/port 配置驱动；或 `uv run python -m app.main`）
+- 开发服务器：`uv run uvicorn app.bootstrap.application:create_app --factory`（host/port 配置驱动；或 `uv run python -m app.main`）
 - 校验：`uv run ruff check app tests && uv run ruff format --check app tests && uv run mypy app`
 - 测试：`uv run pytest`（135 收集；测试四层结构 `tests/{unit,integration,http,e2e}`，按目录自动打标，可用
   `-m unit|integration|http|e2e` 过滤；unit/http 自包含可离线跑，integration 需要本地 PG（docker compose）

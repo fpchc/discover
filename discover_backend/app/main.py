@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uvicorn
 
-from app.application import create_app
+from app.bootstrap.application import create_app
 from app.config.settings import get_settings
 
 settings = get_settings()

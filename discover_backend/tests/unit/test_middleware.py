@@ -11,8 +11,8 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 from app.config.settings import Settings
-from app.errors.base import ErrorCategory, PlatformError
-from app.middleware import ExceptionHandlingMiddleware, RequestLoggingMiddleware
+from app.interfaces.middleware import ExceptionHandlingMiddleware, RequestLoggingMiddleware
+from app.shared.errors.base import ErrorCategory, PlatformError
 from fastapi import FastAPI
 
 
@@ -69,7 +69,9 @@ async def test_request_logging_with_request_id(
         response = await http.get("/ok")
     assert response.status_code == 200
     assert response.headers["x-request-id"]
-    records = [rec for rec in caplog.records if rec.name == "app.middleware.request_logging"]
+    records = [
+        rec for rec in caplog.records if rec.name == "app.interfaces.middleware.request_logging"
+    ]
     assert records
     rec = records[-1]
     assert rec.getMessage() == "http_request"

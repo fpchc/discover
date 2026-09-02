@@ -8,7 +8,7 @@ import asyncio
 import contextlib
 
 import anyio
-from app.runtime.active_turns import ActiveTurn, ActiveTurnRegistry
+from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
 
 
 def _turn(message_id: str = "msg-1") -> ActiveTurn:

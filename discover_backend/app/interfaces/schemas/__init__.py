@@ -1,0 +1,65 @@
+"""接入层数据契约（DTO）：HTTP 请求/响应、SSE 帧与跨边界领域模型。"""
+
+from app.interfaces.schemas.auth import (
+    AccountRecord,
+    AccountStatus,
+    DailyUsage,
+    LoginRequest,
+    LoginResponse,
+    UserUsage,
+)
+from app.interfaces.schemas.chat import (
+    ChatMessageRequest,
+    ChatMessageResponse,
+    ChatStopResponse,
+    ErrorStreamEvent,
+    MessageEndEvent,
+    MessageEvent,
+    PingEvent,
+    ThinkingDeltaFrame,
+    ThinkingEndFrame,
+    ThinkingStartFrame,
+)
+from app.interfaces.schemas.conversations import (
+    ConversationRecord,
+    ConversationSession,
+    ConversationStatus,
+    DailyUsageItem,
+    MessageRecord,
+    MessageStatus,
+    TurnRecord,
+    TurnUsage,
+    UsageAggregate,
+)
+from app.interfaces.schemas.files import ArtifactRecord, FileResponse, UploadConfig
+
+__all__ = [
+    "AccountRecord",
+    "AccountStatus",
+    "ArtifactRecord",
+    "ChatMessageRequest",
+    "ChatMessageResponse",
+    "ChatStopResponse",
+    "ConversationRecord",
+    "ConversationSession",
+    "ConversationStatus",
+    "DailyUsage",
+    "DailyUsageItem",
+    "ErrorStreamEvent",
+    "FileResponse",
+    "LoginRequest",
+    "LoginResponse",
+    "MessageEndEvent",
+    "MessageEvent",
+    "MessageRecord",
+    "MessageStatus",
+    "PingEvent",
+    "ThinkingDeltaFrame",
+    "ThinkingEndFrame",
+    "ThinkingStartFrame",
+    "TurnRecord",
+    "TurnUsage",
+    "UploadConfig",
+    "UsageAggregate",
+    "UserUsage",
+]

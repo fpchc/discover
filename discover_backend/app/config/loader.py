@@ -12,7 +12,7 @@ import anyio
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from app.errors.base import ConfigError
+from app.shared.errors.base import ConfigError
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
 

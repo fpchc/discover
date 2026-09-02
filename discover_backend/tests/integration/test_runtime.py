@@ -4,13 +4,8 @@ import json
 from pathlib import Path
 
 import anyio
-from app.catalog.models import AssistantTarget, TargetType
-from app.config.loader import LLMProvider, LLMRegistry, MCPRegistry, MCPServer
-from app.config.settings import Settings
-from app.db.engine import Database
-from app.extensions.storage.local_storage import LocalStorage
-from app.llm.providers import ProviderRegistry
-from app.llm.stream_parser import (
+from app.capabilities.llm.providers import ProviderRegistry
+from app.capabilities.llm.stream_parser import (
     FinishChunk,
     PhaseSwitchChunk,
     TextChunk,
@@ -18,8 +13,19 @@ from app.llm.stream_parser import (
     ToolCall,
     ToolCallsChunk,
 )
-from app.protocol.emitter import QueueEmitter
-from app.protocol.events import (
+from app.capabilities.mcp.client import MCPCallResult, MCPToolInfo
+from app.capabilities.tools.script_executor import ScriptExecution
+from app.config.loader import LLMProvider, LLMRegistry, MCPRegistry, MCPServer
+from app.config.settings import Settings
+from app.domain.assistant.models import AssistantTarget, TargetType
+from app.domain.file.service import FileService
+from app.domain.skill.registry import AgentRegistry
+from app.domain.workspace.service import WorkspaceManager
+from app.infrastructure.database.engine import Database
+from app.infrastructure.storage.local import LocalStorage
+from app.runtime.engine import Runtime
+from app.runtime.events.emitter import QueueEmitter
+from app.runtime.events.events import (
     AgentEvent,
     AgentSelectedEvent,
     DoneEvent,
@@ -31,14 +37,8 @@ from app.protocol.events import (
     ToolCallStartedEvent,
     ToolsReadyEvent,
 )
-from app.registry.registry import AgentRegistry
-from app.runtime.builder import route_from_resolve_assistant
-from app.runtime.runner import Runtime
 from app.runtime.state import GraphState
-from app.services.files import FileService
-from app.services.workspace import WorkspaceManager
-from app.tools.mcp_client import MCPCallResult, MCPToolInfo
-from app.tools.script_executor import ScriptExecution
+from app.runtime.transition import route_from_resolve_assistant
 
 AGENT_MD = """\
 ---

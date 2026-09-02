@@ -3,7 +3,7 @@
 策略顺序：显式 → 默认 → 唯一 → 首个；无技能 → None。
 """
 
-from app.runtime.resolver.skill_resolver import SkillResolutionContext, SkillResolver
+from app.runtime.resolver.skill import SkillResolutionContext, SkillResolver
 
 
 def _context(

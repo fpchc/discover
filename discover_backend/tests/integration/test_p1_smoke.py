@@ -20,36 +20,36 @@ import sys
 from pathlib import Path
 
 import pytest
-from app.catalog.models import AssistantTarget, TargetType
+from app.capabilities.llm.providers import ProviderRegistry
+from app.capabilities.llm.stream_parser import (
+    FinishChunk,
+    PhaseSwitchChunk,
+    TextChunk,
+)
+from app.capabilities.mcp.client import MCPCallResult, MCPToolInfo
+from app.capabilities.tools.script_executor import ScriptExecution
 from app.config.loader import (
     LLMProvider,
     load_llm_providers,
     load_mcp_servers,
 )
 from app.config.settings import Settings
-from app.db.engine import Database
-from app.extensions.storage.local_storage import LocalStorage
-from app.llm.providers import ProviderRegistry
-from app.llm.stream_parser import (
-    FinishChunk,
-    PhaseSwitchChunk,
-    TextChunk,
-)
-from app.protocol.emitter import QueueEmitter
-from app.protocol.events import (
+from app.domain.assistant.models import AssistantTarget, TargetType
+from app.domain.file.service import FileService
+from app.domain.skill.loader import _find_absolute_path_literals
+from app.domain.skill.registry import AgentRegistry
+from app.domain.workspace.service import WorkspaceManager
+from app.infrastructure.database.engine import Database
+from app.infrastructure.storage.local import LocalStorage
+from app.runtime.engine import Runtime
+from app.runtime.events.emitter import QueueEmitter
+from app.runtime.events.events import (
     AgentEvent,
     AgentSelectedEvent,
     DoneEvent,
     SkillSelectedEvent,
     ToolsReadyEvent,
 )
-from app.registry.loader import _find_absolute_path_literals
-from app.registry.registry import AgentRegistry
-from app.runtime.runner import Runtime
-from app.services.files import FileService
-from app.services.workspace import WorkspaceManager
-from app.tools.mcp_client import MCPCallResult, MCPToolInfo
-from app.tools.script_executor import ScriptExecution
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS_DIR = ROOT / "agents"
