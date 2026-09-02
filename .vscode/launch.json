@@ -24,7 +24,7 @@
         "LOG_LEVEL": "DEBUG"
       },
       // ✅ 使用内部调试控制台，避免终端冲突
-      "console": "internalConsole"
+      "console": "integratedTerminal"
     },
     {
       "name": "🛰️ 腾讯联网 MCP 服务 (tencent_mcp)",
@@ -85,7 +85,7 @@
       "skipFiles": [
         "<node_internals>/**"
       ],
-      "console": "internalConsole"
+      "console": "integratedTerminal"
     }
   ],
   "compounds": [

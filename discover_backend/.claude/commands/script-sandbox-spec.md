@@ -140,7 +140,7 @@ stdout 不是合法 JSON 时按纯文本处理，不报错——允许脚本打�
 
 - 脚本默认以平台所在解释器（`sys.executable`）运行，仅能用平台已装依赖。
 - 重依赖场景：优先做成 MCP 服务；确需脚本时，把依赖加入平台依赖（`pyproject.toml`），**禁止**在脚本内 pip install 或捆绑运行时（网络与权限均不保证）。
-- P1 示例：eitia 的 `render_report` 需要 `jinja2`，已加入平台依赖。
+- P1 示例：报告渲染类脚本需要 `jinja2` / `weasyprint` 时，已加入平台依赖（`pyproject.toml`）。
 
 ---
 

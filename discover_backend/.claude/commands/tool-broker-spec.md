@@ -45,7 +45,7 @@ Tier 2  懒加载工具（仅在目录中可被检索，参数约束按需展开
         来源：已激活 MCP 服务声明的其余全部工具
 ```
 
-**调用路径示例**：模型用 `search_tools("企业风险")` 找到若干候选工具名 → 用 `describe_tool("alibaba_search.web_search")` 拿参数约束 → 构造参数直接调用该工具。工具代理允许调用目录中任何已激活服务的工具，不要求先描述；但模型不知道参数就会调错，实践上会自然先描述。
+**调用路径示例**：模型用 `search_tools("企业风险")` 找到若干候选工具名 → 用 `describe_tool("<server>.<tool>")` 拿参数约束 → 构造参数直接调用该工具。工具代理允许调用目录中任何已激活服务的工具，不要求先描述；但模型不知道参数就会调错，实践上会自然先描述。
 
 ---
 
@@ -55,8 +55,8 @@ Tier 2  懒加载工具（仅在目录中可被检索，参数约束按需展开
 
 | 来源类型 | 前缀规则 | 示例 |
 |---------|---------|------|
-| MCP 服务 | 服务标识加点号 | `alibaba_search.web_search` |
-| 技能脚本 | 智能体 ID + 技能 ID + `script.` | `eitia.client_finder.script.score_calculator` |
+| MCP 服务 | 服务标识加点号 | `tencent_mcp.web_search_tencent` |
+| 技能脚本 | 智能体 ID + 技能 ID + `script.` | `discover.client_finder.script.score_calculator` |
 | 元工具 | 无前缀 | `search_tools` |
 
 服务标识中的连字符转下划线（保证工具名符合命名约束）。转换规则集中在一处，不散落。

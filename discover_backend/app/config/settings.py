@@ -223,9 +223,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     # 访问令牌有效期（秒）：JWT exp 与 Redis 访问会话 TTL 对齐（Redis 为准，key 缺失即
     # 登录失效）。短期令牌，到期后前端经 /auth/refresh 用刷新令牌续期。
-    auth_access_token_ttl_seconds: int = 60 * 60 * 24
+    auth_access_token_ttl_seconds: int = 60 * 60 * 24 * 7
     # 刷新令牌有效期（秒）：Redis 刷新会话 TTL（权威）。到期 / 被轮换 / 登出即需重新登录。
-    auth_refresh_token_ttl_seconds: int = 60 * 60 * 24 * 7
+    auth_refresh_token_ttl_seconds: int = 60 * 60 * 24 * 30
     # Argon2id 参数（OWASP 推荐强度：64 MiB、3 次迭代、4 并行）
     argon2_time_cost: int = 3
     argon2_memory_cost: int = 65536

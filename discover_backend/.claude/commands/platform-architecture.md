@@ -7,7 +7,7 @@
 - 生成项目骨架前的第一份必读规范
 - 判断某项能力属于「平台」还是属于「某个智能体」时
 
-> 单项细则不在本文件：智能体包契约见 `agent-package-spec.md`；技能装配见 `skill-assembly-spec.md`；工具暴露见 `tool-broker-spec.md`；MCP 接入见 `mcp-integration-spec.md`；图与状态见 `graph-runtime-spec.md`；LLM 调用见 `llm-provider-spec.md`；SSE 与打字机见 `sse-streaming-spec.md`；脚本执行见 `script-sandbox-spec.md`；容器部署见 `docker-deployment-spec.md`；eitia 迁移见 `eitia-migration-spec.md`。
+> 单项细则不在本文件：智能体包契约见 `agent-package-spec.md`；技能装配见 `skill-assembly-spec.md`；工具暴露见 `tool-broker-spec.md`；MCP 接入见 `mcp-integration-spec.md`；图与状态见 `graph-runtime-spec.md`；LLM 调用见 `llm-provider-spec.md`；SSE 与打字机见 `sse-streaming-spec.md`；脚本执行见 `script-sandbox-spec.md`。
 
 ---
 
@@ -213,7 +213,7 @@ L0  数据层（非代码）
 
 | 阶段 | 范围 | 验收标准 |
 |------|------|---------|
-| P1 | 单智能体端到端：助手选择 + 技能解析 + 装配 + 推理循环 + SSE 打字机 + 思考流 + 容器脚本 + 单一搜索类 MCP | eitia 走通全流程并产出报告 |
+| P1 | 单智能体端到端：助手选择 + 技能解析 + 装配 + 推理循环 + SSE 打字机 + 思考流 + 宿主直跑脚本 + 单一搜索类 MCP | 首个入驻智能体（`discover`）走通全流程并产出报告 |
 | P2 | 规模化：三级工具暴露 + 按需文档 + 并发与降级 + 上下文预算裁剪 | 工具数量增长后首轮上下文仍在预算内 |
 | P3 | 多智能体：智能体注册与热重载 + 产物管理 + 工作区隔离验证 | 两个以上智能体共存，多会话并发无互串 |
 | P4 | 加固：门禁校验器 + 健康看板 + 资源配额 + 审计日志 | 第三方智能体包可安全装载 |
@@ -243,8 +243,8 @@ L0  数据层（非代码）
 | 工具默认超时 | 单次工具调用上限 |
 | MCP 空闲回收阈值 | 无引用后多久停止 |
 | MCP 启动握手超时 | 建连上限 |
-| 脚本容器镜像标识 | 脚本执行环境 |
-| 脚本容器资源上限 | 内存、CPU、进程数、执行时长 |
+| 脚本执行超时 | 宿主直跑脚本的总时长上限（先 terminate 再 kill） |
+| 脚本输出截断上限 | 防 stdout 打爆内存，边读边限 |
 | 工具输出截断上限 | 防上下文被单次结果打爆 |
 | 单轮上下文预算 | 触发裁剪的阈值 |
 | 推理循环轮次上限 | 防无限循环 |
