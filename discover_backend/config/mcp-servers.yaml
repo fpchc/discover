@@ -15,7 +15,8 @@
 #   tencent_mcp（腾讯联网）启用——web_search 全部走它。
 #   eastmoney_mcp（东财资讯）启用——financial_data 的主候选（tushare 占位未接入），
 #   本地 10002 服务在线时激活为备选工具；离线则 financial_data 降级到 web_search。
-#   tyc_mcp / qcc_mcp / tushare_mcp 为专有数据源占位条目，未接入真实端点与令牌 → 关闭。
+#   tyc_mcp（天眼查）已接入真实端点并启用，令牌走 TYC_MCP_TOKEN 环境变量；
+#   qcc_mcp / tushare_mcp 仍为专有数据源占位条目，未接入真实端点与令牌 → 关闭。
 
 servers:
   - id: tencent_mcp
@@ -40,10 +41,10 @@ servers:
     call_timeout_seconds: 30
     concurrency_limit: 3
     enabled: true
-  # ---- 专有数据源（占位，待接入真实端点与令牌；当前显式关闭）----
+  # ---- 专有数据源（tyc_mcp 已接入天眼查真实端点；qcc/tushare 仍为占位，显式关闭）----
   - id: tyc_mcp
     transport: streamable_http
-    base_url: "https://your-endpoint.example.com/tyc/mcp"
+    base_url: "https://mcp.tianyancha.com/mcp"
     auth:
       type: bearer_token
       token_env: "TYC_MCP_TOKEN"
@@ -51,7 +52,7 @@ servers:
     handshake_timeout_seconds: 30
     call_timeout_seconds: 30
     concurrency_limit: 3
-    enabled: false
+    enabled: true
   - id: qcc_mcp
     transport: streamable_http
     base_url: "https://your-endpoint.example.com/qcc/mcp"
@@ -87,14 +88,14 @@ capabilities:
     servers:
       # - alibaba_search
       - tencent_mcp
-  # 企业工商画像（天眼查 / 企查查）：候选均显式关闭 → 实际直接降级到 web_search
+  # 企业工商画像（天眼查 / 企查查）：tyc_mcp 启用、qcc_mcp 关闭；tyc 不可用则降级到 web_search
   enterprise_business:
     strategy: failover
     servers:
       - tyc_mcp
       - qcc_mcp
     fallback: web_search
-  # 企业信用风险 / 司法 / 税务（企查查 / 天眼查）：候选均显式关闭 → 实际直接降级到 web_search
+  # 企业信用风险 / 司法 / 税务（企查查 / 天眼查）：qcc 关闭、tyc_mcp 启用；全不可用则降级到 web_search
   enterprise_risk:
     strategy: failover
     servers:
