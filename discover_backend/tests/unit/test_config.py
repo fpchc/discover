@@ -58,6 +58,11 @@ def test_settings_defaults() -> None:
     assert settings.agent_workspace_root_dir == Path("workspaces")
     assert settings.reasoning_max_turns == 40
     assert settings.typewriter_frame_interval_ms == 30
+    assert settings.agent_max_total_tokens == 150000
+    assert settings.agent_max_input_tokens == 120000
+    assert settings.agent_finalization_reserve_tokens == 5000
+    assert settings.agent_tool_message_max_chars == 2000
+    assert settings.mcp_hidden_tool_names == ("call_tool", "call_tools_batch")
 
 
 def test_settings_env_file_override() -> None:

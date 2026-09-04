@@ -65,6 +65,7 @@ from app.runtime.react.progress import (
     evaluate_progress,
     observation_fingerprint,
 )
+from app.shared.utils.sanitize import truncate
 
 
 class LLMRunnerPort(Protocol):
@@ -199,7 +200,11 @@ class BoundedReActExecutor:
                 call_index=state.iteration,
             )
         )
-        request = ChatRequest(messages=state.messages, tools=self._all_tool_specs(), thinking=True)
+        request = ChatRequest(
+            messages=state.messages,
+            tools=self._all_tool_specs(),
+            thinking=state.request.thinking_enabled,
+        )
         text_parts: list[str] = []
         tool_calls_accum: list[ToolCall] = []
         usage = {"input": 0, "output": 0, "total": 0, "cached_read": 0, "cached_write": 0}
@@ -368,7 +373,9 @@ class BoundedReActExecutor:
             ChatMessage(
                 role="tool",
                 tool_call_id=result.call_id,
-                content=_tool_message_content(result),
+                content=_tool_message_content(
+                    result, max_chars=state.request.tool_message_max_chars
+                ),
             )
             for result in results
         ]
@@ -522,10 +529,11 @@ def _observation_status(result: ToolResult) -> ObservationStatus:
     return ObservationStatus.FAILED
 
 
-def _tool_message_content(result: ToolResult) -> str:
+def _tool_message_content(result: ToolResult, *, max_chars: int) -> str:
     """ToolResult → role="tool" 消息正文：优先正文，失败时给错误/建议，避免空串。"""
     if result.ok:
-        return result.content or "（工具调用完成，无返回内容）"
+        content = result.content or "（工具调用完成，无返回内容）"
+        return truncate(content, max_length=max_chars)
     parts = [result.message, result.suggestion]
     text = "；".join(part for part in parts if part)
-    return text or "工具调用失败"
+    return truncate(text or "工具调用失败", max_length=max_chars)

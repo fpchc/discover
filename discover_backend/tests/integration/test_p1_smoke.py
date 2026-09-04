@@ -73,7 +73,6 @@ def _settings(tmp_path: Path) -> Settings:
         agent_workspace_root_dir=tmp_path / "workspaces",
         storage_root_dir=tmp_path / "storage",
         mcp_registry_path=MCP_REGISTRY_PATH,
-        tool_log_root_dir=tmp_path / "logs",
         hot_reload_enabled=False,
     )
 

@@ -10,7 +10,8 @@ scope:
   does_not_apply: 需要完整八维长篇客户发现报告的场景、与企业调研无关的通用咨询、闲聊
 default_skill: client-finder
 model_preference: opus
-thinking_preference: medium
+thinking_preference: low
+
 skills:
   - client-finder
 ---

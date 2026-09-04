@@ -228,6 +228,18 @@ def test_turn_recorder_terminal_events_drive_status() -> None:
     recorder_cancelled.absorb(RunCancelled(message="user_stop"))
     assert recorder_cancelled.build(exit_reason="normal").status is MessageStatus.INTERRUPTED
 
+    recorder_partial = TurnRecorder(message_id=_MESSAGE_ID, query="查询", session=_make_session())
+    recorder_partial.absorb(
+        RunCompleted(status="partial", termination_reason=TerminationReason.TOKEN_BUDGET)
+    )
+    assert recorder_partial.build(exit_reason="normal").status is MessageStatus.PARTIAL
+
+    recorder_succeeded = TurnRecorder(message_id=_MESSAGE_ID, query="查询", session=_make_session())
+    recorder_succeeded.absorb(
+        RunCompleted(status="succeeded", termination_reason=TerminationReason.COMPLETED)
+    )
+    assert recorder_succeeded.build(exit_reason="normal").status is MessageStatus.NORMAL
+
     recorder_no_terminal = TurnRecorder(
         message_id=_MESSAGE_ID, query="查询", session=_make_session()
     )

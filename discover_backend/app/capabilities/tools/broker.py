@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import shutil
 import time
 from pathlib import Path
 from typing import Protocol
@@ -92,7 +91,6 @@ class ToolResult(BaseModel):
     suggestion: str | None = None
     duration_ms: int = 0
     truncated: bool = False
-    log_path: str | None = None
     produced_files: list[str] = Field(default_factory=list)
 
 
@@ -115,20 +113,6 @@ class ToolHit(BaseModel):
     qualified_name: str
     description: str
     source: ToolSource
-
-
-def _write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-
-
-def _rmtree(path: Path) -> None:
-    shutil.rmtree(path, ignore_errors=True)
-
-
-def _safe_filename(name: str) -> str:
-    """工具名 / call_id 转安全文件名：替换 Windows 保留字符并限长。"""
-    return re.sub(r'[\\/:*?"<>|]', "_", name)[:80]
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -254,8 +238,6 @@ class ToolBroker:
         self._env_whitelist: list[str] = []
         self._loaded_docs: set[str] = set()
         self._activated = False
-        self._log_file_count = 0
-        self._log_swept = False
         self._install_meta_tools()
 
     # ---- 目录构建 ----
@@ -307,10 +289,6 @@ class ToolBroker:
         self._workspace = workspace
         self._session_id = session_id
         self._account_id = account_id
-        self._log_file_count = 0
-        if not self._log_swept:
-            await self._sweep_stale_logs()
-            self._log_swept = True
         self._env_whitelist = plan.env_whitelist
         self._service_slots = {}
         self._clients = {}
@@ -480,6 +458,11 @@ class ToolBroker:
         limit = self._mcp_manager.concurrency_limit(server_id)
         self._service_slots[server_id] = anyio.Semaphore(limit)
         for tool in tools:
+            if tool.name in self._settings.mcp_hidden_tool_names:
+                logger.info(
+                    "隐藏 MCP 泛化工具 %s（server=%s），不进入模型可见清单", tool.name, server_id
+                )
+                continue
             qualified = mcp_qualified_name(server_id, tool.name)
             tier = 1 if tool.name in core_tool_names else 2
             descriptor = ToolDescriptor(
@@ -854,8 +837,6 @@ class ToolBroker:
         self, call: ToolCallRequest, content: str, duration_ms: int
     ) -> ToolResult:
         truncated_content, truncated = self._truncate_content(content)
-        # 仅截断时落盘完整原文：未截断的输出与 ToolResult.content 逐字一致，写文件是纯冗余。
-        log_path = await self._write_full_log(call, content) if truncated else None
         return ToolResult(
             call_id=call.call_id,
             tool_name=call.tool_name,
@@ -863,7 +844,6 @@ class ToolBroker:
             content=truncated_content,
             duration_ms=duration_ms,
             truncated=truncated,
-            log_path=log_path,
         )
 
     def _success(self, call: ToolCallRequest, content: str, duration_ms: int) -> ToolResult:
@@ -948,38 +928,6 @@ class ToolBroker:
         if len(content) <= limit:
             return content, False
         return truncate(content, max_length=limit), True
-
-    async def _sweep_stale_logs(self) -> None:
-        """清理超过保留期的工具日志会话目录；retention_days <= 0 表示不清理。"""
-        retention_days = self._settings.tool_log_retention_days
-        root = self._settings.tool_log_root_dir
-        if retention_days <= 0 or not root.is_dir():
-            return
-        cutoff = time.time() - retention_days * 86400
-        for child in root.iterdir():
-            if not child.is_dir():
-                continue
-            try:
-                stale = child.stat().st_mtime < cutoff
-            except OSError:
-                continue
-            if stale:
-                logger.info("清理过期工具日志目录：%s", child)
-                await anyio.to_thread.run_sync(_rmtree, child)
-
-    async def _write_full_log(self, call: ToolCallRequest, content: str) -> str | None:
-        limit = self._settings.tool_log_max_files_per_session
-        if limit > 0 and self._log_file_count >= limit:
-            logger.warning("本会话工具日志已达上限 %d，停止落盘（call_id=%s）", limit, call.call_id)
-            return None
-        name = f"{_safe_filename(call.call_id)}_{_safe_filename(call.tool_name)}.txt"
-        path = self._settings.tool_log_root_dir / self._session_id / name
-        try:
-            await anyio.to_thread.run_sync(_write_text, path, content)
-        except OSError:
-            return None
-        self._log_file_count += 1
-        return str(path)
 
     def _suggestion_for(self, category: ErrorCategory, namespace: str) -> str:
         mapping: dict[ErrorCategory, str] = {

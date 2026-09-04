@@ -104,7 +104,6 @@ def _build_settings(tmp_path: Path) -> Settings:
         storage_root_dir=tmp_path / "storage",
         llm_providers_path=tmp_path / "llm-providers.yaml",
         mcp_registry_path=tmp_path / "mcp-servers.yaml",
-        tool_log_root_dir=tmp_path / "logs",
         hot_reload_enabled=False,
         # 关闭日志扩展：其非阻塞配置会替换根 logger handler，破坏 pytest 日志捕获
         logging_enabled=False,

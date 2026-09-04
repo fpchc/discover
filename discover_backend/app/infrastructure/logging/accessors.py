@@ -9,9 +9,13 @@ trace_id、模块级级别覆盖（均来自 app.infrastructure.logging.logging�
 from __future__ import annotations
 
 import copy
+import gzip
 import json
 import logging
 import logging.handlers
+import os
+import re
+import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
@@ -124,6 +128,76 @@ class _PreservingQueueHandler(logging.handlers.QueueHandler):
         return prepared
 
 
+class _TimedCompressedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
+    """按时间轮转 + gzip 压缩归档的生产级文件日志 handler。
+
+    轮转出的旧文件（如 app.log.2026-09-03）在落盘后立即压缩为 .gz；
+    backupCount 清理同时覆盖未压缩与已压缩归档，避免 .gz 无限堆积。
+    """
+
+    def __init__(
+        self,
+        filename: str | os.PathLike[str],
+        *,
+        when: str = "midnight",
+        interval: int = 1,
+        backupCount: int = 0,
+        encoding: str | None = None,
+        utc: bool = False,
+        atTime: datetime | None = None,
+        compress: bool = True,
+    ) -> None:
+        self._compress = compress
+        super().__init__(
+            filename,
+            when=when,
+            interval=interval,
+            backupCount=backupCount,
+            encoding=encoding,
+            utc=utc,
+            atTime=atTime,
+        )
+        self._archive_pattern = self._build_archive_pattern()
+
+    def _build_archive_pattern(self) -> re.Pattern[str]:
+        """由 self.suffix（如 %Y-%m-%d）构造匹配归档名的正则，兼容 .gz 后缀。"""
+        token_patterns = {
+            "%Y": r"\d{4}",
+            "%m": r"\d{2}",
+            "%d": r"\d{2}",
+            "%H": r"\d{2}",
+            "%M": r"\d{2}",
+            "%S": r"\d{2}",
+        }
+        parts = re.split(r"(%[YmdHMS])", self.suffix)
+        expr = "".join(token_patterns.get(part, re.escape(part)) for part in parts)
+        return re.compile(rf"^{expr}(?:\.gz)?$")
+
+    def rotate(self, source: str, dest: str) -> None:
+        super().rotate(source, dest)
+        if not self._compress or not os.path.exists(dest):
+            return
+        archive = f"{dest}.gz"
+        with open(dest, "rb") as src_fp, gzip.open(archive, "wb") as dst_fp:
+            shutil.copyfileobj(src_fp, dst_fp)
+        os.remove(dest)
+
+    def getFilesToDelete(self) -> list[str]:
+        if self.backupCount <= 0:
+            return []
+        dir_name, base_name = os.path.split(self.baseFilename)
+        prefix = f"{base_name}."
+        candidates = [
+            os.path.join(dir_name, name)
+            for name in os.listdir(dir_name)
+            if name.startswith(prefix) and self._archive_pattern.fullmatch(name[len(prefix) :])
+        ]
+        candidates.sort()
+        if len(candidates) <= self.backupCount:
+            return []
+        return candidates[: len(candidates) - self.backupCount]
+
+
 @dataclass(frozen=True, slots=True)
 class _LoggingRuntime:
     listener: logging.handlers.QueueListener
@@ -180,11 +254,13 @@ def _build_file_handler(level: int, formatter: logging.Formatter) -> logging.Han
         msg = "LOG_FILE must be a file name without directory components"
         raise ValueError(msg)
     log_dir.mkdir(parents=True, exist_ok=True)
-    handler = logging.handlers.RotatingFileHandler(
+    handler = _TimedCompressedRotatingFileHandler(
         log_dir / log_file,
-        maxBytes=settings.log_file_max_size * 1024 * 1024,
+        when=settings.log_rotation_when,
+        interval=settings.log_rotation_interval,
         backupCount=settings.log_file_backup_count,
         encoding="utf-8",
+        compress=settings.log_compress,
     )
     handler.setLevel(level)
     handler.setFormatter(formatter)

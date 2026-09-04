@@ -18,7 +18,7 @@ COPY . .
 RUN uv sync --frozen --no-dev
 
 # 运行时可写目录：storage / logs / workspaces 以卷挂载持久化，镜像内预留空目录
-RUN mkdir -p storage logs/tools workspaces
+RUN mkdir -p storage workspaces
 
 EXPOSE 8000
 # 启动：仅拉起 uvicorn（host/port 配置驱动；入口见 app/main.py）。

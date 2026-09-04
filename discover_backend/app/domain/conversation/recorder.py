@@ -115,7 +115,9 @@ class TurnRecorder:
             self._provider = event.provider or self._provider
             self._model = event.model or self._model
         elif isinstance(event, RunCompleted):
-            self._status = MessageStatus.NORMAL
+            self._status = (
+                MessageStatus.PARTIAL if event.status == "partial" else MessageStatus.NORMAL
+            )
             self._duration_ms = (
                 int(event.budget_snapshot.usage.duration_seconds * 1000)
                 if event.budget_snapshot is not None

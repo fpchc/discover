@@ -400,6 +400,11 @@ async def _run_agent_react(
             phase_input={"user_goal": user_input},
             context_summary=_history_summary(history, services.settings),
             allowed_tools=allowed_tools,
+            # 全局开关与装配层 thinking_preference 共同决定是否开启思考通道
+            thinking_enabled=(
+                services.settings.thinking_enabled and result.plan.thinking_preference != "off"
+            ),
+            tool_message_max_chars=services.settings.agent_tool_message_max_chars,
             budget=build_agent_budget(services.settings),
         )
         return await run_agent_turn(

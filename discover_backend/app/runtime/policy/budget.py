@@ -25,6 +25,12 @@ _DEFAULT_HARD_KINDS: frozenset[BudgetKind] = frozenset(
     }
 )
 
+# Finalization Reserve 生效维度：进入预留区（limit - reserve）即转为软性收尾，
+# 避免硬性终止在模型产出最终答案前截断。
+_RESERVE_KINDS: frozenset[BudgetKind] = frozenset(
+    {BudgetKind.TOTAL_TOKENS, BudgetKind.INPUT_TOKENS}
+)
+
 
 def check_budget(
     budget: BudgetState,
@@ -50,6 +56,8 @@ def check_budget(
                 hard_kinds_hit.append(kind)
             else:
                 soft_kinds.append(kind)
+        elif _in_reserve(budget, kind, used, limit):
+            soft_kinds.append(kind)
     budget_snapshot = budget.model_copy(
         update={"soft_exceeded": soft_kinds, "hard_exceeded": hard_kinds_hit}
     )
@@ -70,6 +78,14 @@ def check_budget(
             recoverable=True,
         )
     return PolicyDecision(decision=PolicyDecisionType.ALLOW, budget_snapshot=budget_snapshot)
+
+
+def _in_reserve(
+    budget: BudgetState, kind: BudgetKind, used: int | float, limit: int | float
+) -> bool:
+    """是否命中 Finalization Reserve：仅 token 维度且预留大于 0 时生效。"""
+    reserve = budget.limits.finalization_reserve_tokens
+    return kind in _RESERVE_KINDS and 0 < reserve < limit and used >= limit - reserve
 
 
 def _used_for(budget: BudgetState, kind: BudgetKind) -> int | float | None:

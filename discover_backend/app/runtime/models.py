@@ -298,6 +298,10 @@ class PhaseExecutionRequest(BaseModel):
     upstream_outputs: dict[str, PhaseOutput] = Field(default_factory=dict)
     context_summary: str = ""
     allowed_tools: list[str] = Field(default_factory=list)
+    # 是否向模型开启思考（thinking）通道：由全局开关与装配层 thinking_preference 共同决定
+    thinking_enabled: bool = True
+    # role="tool" 消息回传正文的截断上限（字符），防工具大结果撑爆上下文
+    tool_message_max_chars: int = 2000
     budget: BudgetState
     contract_refs: list[str] = Field(default_factory=list)
     used_usage: BudgetUsage = Field(default_factory=BudgetUsage)

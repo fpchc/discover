@@ -39,9 +39,10 @@ class _FakeLLM(LLMRunnerPort):
     def __init__(self, respond: Callable[[int], list[SemanticChunk]]) -> None:
         self._respond = respond
         self.calls = 0
+        self.last_request: object | None = None
 
     def stream(self, *, request: object) -> AsyncIterator[SemanticChunk]:
-        del request  # 测试桩不读请求
+        self.last_request = request
         return self._generate()
 
     async def _generate(self) -> AsyncIterator[SemanticChunk]:
@@ -237,3 +238,45 @@ async def test_graph_hard_budget_terminates() -> None:
     state = await _run(_executor(llm, _FakeTools(tool_result)), _request(max_iterations=2))
     assert state.outcome is not None
     assert state.budget.usage.iterations <= 2
+
+
+# ---- §24 场景 6：thinking_enabled 透传给 LLM 请求 ----
+async def test_graph_forwards_thinking_enabled_to_llm() -> None:
+    def respond(call_index: int) -> list[SemanticChunk]:
+        if call_index == 0:
+            return _tool_call("tool.a", '{"q": "x"}', call_id="c1")
+        return _tool_call("complete_phase", '{"output": {"ok": true}}', call_id="c2")
+
+    def tool_result(_call: ToolCallRequest, _index: int) -> ToolResult:
+        return ToolResult(call_id=_call.call_id, tool_name=_call.tool_name, ok=True, content="数据")
+
+    llm = _FakeLLM(respond)
+    request = _request().model_copy(update={"thinking_enabled": False})
+    state = await _run(_executor(llm, _FakeTools(tool_result)), request)
+    assert state.outcome is not None
+    assert llm.last_request is not None
+    assert llm.last_request.thinking is False
+
+
+# ---- §24 场景 7：工具结果回传按 tool_message_max_chars 截断 ----
+async def test_graph_truncates_tool_message_content() -> None:
+    def respond(call_index: int) -> list[SemanticChunk]:
+        if call_index == 0:
+            return _tool_call("tool.a", '{"q": "x"}', call_id="c1")
+        return _tool_call("complete_phase", '{"output": {"ok": true}}', call_id="c2")
+
+    def tool_result(_call: ToolCallRequest, _index: int) -> ToolResult:
+        return ToolResult(
+            call_id=_call.call_id,
+            tool_name=_call.tool_name,
+            ok=True,
+            content="x" * 3000,
+        )
+
+    request = _request().model_copy(update={"tool_message_max_chars": 100})
+    state = await _run(_executor(_FakeLLM(respond), _FakeTools(tool_result)), request)
+    tool_messages = [m for m in state.messages if m.role == "tool"]
+    assert len(tool_messages) == 1
+    content = tool_messages[0].content or ""
+    assert len(content) == 105  # 100 + "…(截断)"(5 字符)
+    assert content.endswith("…(截断)")

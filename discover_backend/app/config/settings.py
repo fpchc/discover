@@ -141,9 +141,8 @@ class Settings(BaseSettings):
     tool_batch_concurrency: int = 10
     tool_default_timeout_seconds: float = 30.0
     tool_output_truncate_chars: int = 6000
-    tool_log_root_dir: Path = Path("logs/tools")
-    tool_log_retention_days: int = 7
-    tool_log_max_files_per_session: int = 200
+    # MCP 服务暴露的泛化分发工具（call_tool / call_tools_batch），从模型可见清单剔除
+    mcp_hidden_tool_names: tuple[str, ...] = ("call_tool", "call_tools_batch")
 
     # ---- 脚本执行（本地直跑） ----
     # pragma: 简化 — 可信内部脚本，P1 一律宿主 subprocess 直跑，不做容器隔离；
@@ -180,11 +179,13 @@ class Settings(BaseSettings):
     agent_max_iterations: int = 20
     agent_max_llm_calls: int = 30
     agent_max_tool_calls: int = 40
-    agent_max_total_tokens: int = 100000
-    agent_max_input_tokens: int = 80000
+    agent_max_total_tokens: int = 150000
+    agent_max_input_tokens: int = 120000
     agent_max_duration_seconds: float = 300.0
     agent_max_repair_attempts: int = 2
     agent_finalization_reserve_tokens: int = 5000
+    # role="tool" 消息回传正文的截断上限（字符）
+    agent_tool_message_max_chars: int = 2000
     # 会话历史进 ReAct 上下文摘要的上限（消息数 / 总字符），防上下文撑爆
     agent_context_summary_max_messages: int = 10
     agent_context_summary_max_chars: int = 4000
@@ -206,11 +207,17 @@ class Settings(BaseSettings):
     log_output_format: Literal["text", "json"] = "text"
     # 日志时区（IANA 名称）
     log_tz: str = DEFAULT_LOG_TZ
-    # 日志目录与文件名（RotatingFileHandler，log_file_max_size 单位为 MB）
+    # 日志目录与文件名（按时间轮转，默认每天午夜切分；旧文件 gzip 压缩归档）
     log_dir: str = "logs"
     log_file: str = "app.log"
-    log_file_max_size: int = 10
-    log_file_backup_count: int = 5
+    # 轮转触发单位：S/M/H/D/midnight/W0-W6（同 TimedRotatingFileHandler）
+    log_rotation_when: str = "midnight"
+    # 轮转间隔（midnight 下通常为 1 天）
+    log_rotation_interval: int = 1
+    # 保留归档数（按天轮转即保留天数；0 表示不清理）
+    log_file_backup_count: int = 14
+    # 是否 gzip 压缩轮转出的旧文件
+    log_compress: bool = True
     # 模块级日志级别覆盖：{logger 名: 级别}，如 {"app.capabilities.tools.broker": "DEBUG"}
     log_module_levels: dict[str, str] = {}
 
