@@ -94,7 +94,7 @@
       "configurations": [
         "🛰️ 腾讯联网 MCP 服务 (tencent_mcp)",
         "🛰️ 东财 MCP 服务 (eastmoney_mcp)",
-        "🚀 FastAPI: 启动服务 (无 reload)",
+        // "🚀 FastAPI: 启动服务 (无 reload)",
         "Debug in Chrome (Vite)"
       ],
       "stopAll": true,

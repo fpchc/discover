@@ -7,7 +7,7 @@
 - 生成项目骨架前的第一份必读规范
 - 判断某项能力属于「平台」还是属于「某个智能体」时
 
-> 单项细则不在本文件：智能体包契约见 `agent-package-spec.md`；技能装配见 `skill-assembly-spec.md`；工具暴露见 `tool-broker-spec.md`；MCP 接入见 `mcp-integration-spec.md`；图与状态见 `graph-runtime-spec.md`；LLM 调用见 `llm-provider-spec.md`；SSE 与打字机见 `sse-streaming-spec.md`；脚本执行见 `script-sandbox-spec.md`。
+> 单项细则不在本文件：智能体包契约见 `agent-package-spec.md`；技能装配见 `skill-assembly-spec.md`；工具暴露见 `tool-broker-spec.md`；MCP 接入见 `mcp-integration-spec.md`；**Agent Runtime V2（Workflow + Bounded ReAct + Policy + Contract + Checkpoint）见 `react-runtime-v2-architecture.md`**（V1 graph-runtime-spec 已删除）；LLM 调用见 `llm-provider-spec.md`；SSE 与打字机见 `sse-streaming-spec.md`；脚本执行见 `script-sandbox-spec.md`。
 
 ---
 
@@ -52,9 +52,10 @@ L4  接入层
       鉴权、会话生命周期、事件编码与心跳、产物下载
               │
               ▼
-L3  运行时层
-      图装配与执行：智能体路由 → 技能装配 → 推理循环 → 工具执行
-      思考内容与正文的分离、轮次上限、上下文预算裁剪
+L3  运行时层（Agent Runtime V2）
+      Workflow 决定当前阶段 → 阶段内 Bounded ReAct → Policy 确定性约束
+      → Tool Runtime 管线 → Contract 判定完成 → Checkpoint 持久化 → Event 输出
+      思考内容与正文的分离、预算/无进展/死循环硬边界（见 react-runtime-v2-architecture.md）
               │
               ▼
 L2  装配层
@@ -181,11 +182,14 @@ L0  数据层（非代码）
      可选依赖不可用 → 记降级、发降级事件、注入降级说明
      发工具就绪事件
 
-5. 推理循环
-     模型思考 → 思考内容以独立事件类型流出（与正文分离）
-     模型正文 → 逐字符节流流出
-     模型请求工具 → 工具并发执行 → 结果事件流出
-     产出文件 → 登记产物、发产物事件
+5. 阶段执行（V2 Bounded ReAct，见 react-runtime-v2-architecture.md §10）
+     Workflow 推进当前阶段 → 阶段内 ReAct 循环：
+       模型思考 → 思考内容以独立事件类型流出（与正文分离）
+       模型正文 → 逐字符节流流出
+       模型请求工具 → Policy 预检 → Tool Runtime 管线执行 → 结果事件流出
+       产出文件 → 登记产物、发产物事件
+       预算 / 无进展 / 死循环 → 硬边界终止并产出部分结果（§10.2/§12.4）
+     阶段完成经 complete_phase 控制工具 → Contract 判定 → 推进或修复（§9.3）
 
 6. 收尾
      发完成事件，关闭流
@@ -201,7 +205,7 @@ L0  数据层（非代码）
 | 是否提供任意 shell 与文件编辑工具 | 不提供 | Web 多租户无法安全暴露；改为脚本白名单制 |
 | 是否预注入全部 MCP 工具 | 不预注入 | 工具数量增长会吃满上下文并降低选择准确率，改用三级暴露 |
 | 是否预注入全部参考文档 | 不预注入 | 改为按需读取，由模型自行判断何时需要 |
-| 图的复杂度 | 单推理循环 | 流程知识放清单与门禁脚本，不放图拓扑；新增智能体不改图 |
+| 执行内核 | Workflow 控制 + 阶段内 Bounded ReAct | 引擎拥有控制权，LLM 只有建议权；Policy/Contract 确定性约束；新增智能体不改内核（见 react-runtime-v2-architecture.md §5/§26） |
 | 对话传输 | chat-messages（streaming SSE / blocking JSON） | 客户端按 `response_mode` 选择；streaming 单向流更易穿透代理且适配打字机 |
 | 思考内容 | 独立事件类型 | 前端需分区渲染，与正文混流会导致无法折叠 |
 | 脚本隔离 | P1 宿主直跑，对外开放脚本编辑时再引入轻量沙箱 | 可信内部脚本，容器隔离属过度设计（2026-08 决策） |
@@ -213,7 +217,8 @@ L0  数据层（非代码）
 
 | 阶段 | 范围 | 验收标准 |
 |------|------|---------|
-| P1 | 单智能体端到端：助手选择 + 技能解析 + 装配 + 推理循环 + SSE 打字机 + 思考流 + 宿主直跑脚本 + 单一搜索类 MCP | 首个入驻智能体（`discover`）走通全流程并产出报告 |
+| P1 | 单智能体端到端：助手选择 + 技能解析 + 装配 + 阶段内 Bounded ReAct + SSE 打字机 + 思考流 + 宿主直跑脚本 + 单一搜索类 MCP | 首个入驻智能体（`discover`）走通全流程并产出报告 |
+| V2 | Agent Runtime V2 内核：契约 + Bounded ReAct + Policy + Contract + Checkpoint + Run API（见 react-runtime-v2-architecture.md） | 单阶段内核全链路可测；W8 灰度切换后下线 V1 Runtime |
 | P2 | 规模化：三级工具暴露 + 按需文档 + 并发与降级 + 上下文预算裁剪 | 工具数量增长后首轮上下文仍在预算内 |
 | P3 | 多智能体：智能体注册与热重载 + 产物管理 + 工作区隔离验证 | 两个以上智能体共存，多会话并发无互串 |
 | P4 | 加固：门禁校验器 + 健康看板 + 资源配额 + 审计日志 | 第三方智能体包可安全装载 |

@@ -2,11 +2,12 @@
  * 后端契约类型（映射 discover_backend pydantic 模型）。
  * 禁止在组件内散落重复定义；新契约字段先在此对齐。
  *
- * 边界已确认（discover_backend + `.claude/feature/API.md`）：
+ * 边界已确认（discover_backend chat-messages v2：run_stream.py + schemas/chat.py）：
  * SSE 判别帧共 7 种：message / message_end / ping / error 与思考三帧
  * thinking_started / thinking_delta / thinking_ended。message 帧 answer 为正文
  * 纯文本增量；thinking_* 帧携带思考过程，独立于正文。tool_call_* / artifact_ready
- * 仍为后端内部事件，不外泄到正文。
+ * 等高频 RunEvent（工具调用 / 进度 / Contract / 阶段切换 / LLMUsageUpdated）仍为
+ * 后端内部事件，map_run_event 返回 None 不对前端逐条下发。
  *
  * 历史接口（API.md §1）：会话列表 / 消息流均由后端提供，前端不落本地。
  * 助手选择（API.md §3）：GET /assistants 取目录；请求体 agent_id 显式绑定；
@@ -178,8 +179,43 @@ export interface AssistantInfo {
   id: string | null
 }
 
-/** 回合收尾元数据（message_end / blocking 的 metadata；assistant 回显生效助手） */
+/** 回合终态（RunStatus）：正常完成 / 部分完成 / 用户取消 */
+export type TurnStatus = 'succeeded' | 'partial' | 'cancelled'
+
+/** token 用量（TurnRecorder.compat_usage 兼容 5 键；streaming / blocking 同形） */
+export interface TurnUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cached_read_tokens: number
+  cached_write_tokens: number
+}
+
+/** 等待输入阶段通知（RunInputRequested → message_end，phase="waiting_input"） */
+export interface WaitingInputInfo {
+  phase: 'waiting_input'
+  question?: string
+  missing_fields?: string[]
+}
+
+/**
+ * 回合收尾元数据（message_end / blocking 的 metadata）。
+ * v2 终态契约：status / reason / limitations / unfinished_phases / usage / assistant；
+ * phase="waiting_input" 为暂停通知（前端当阶段通知，以流关闭为回合真正结束）。
+ */
 export interface TurnMetadata {
+  /** 终态：succeeded / partial / cancelled（RunStatus；缺省 = 兼容旧版未回传） */
+  status?: TurnStatus
+  /** 终止原因（TerminationReason.value）：completed / no_progress / token_budget / contract_failed / user_cancelled 等 */
+  reason?: string
+  /** 未满足的契约限制（contract 检查失败项） */
+  limitations?: string[]
+  /** 未完成阶段（如规划中途取消） */
+  unfinished_phases?: string[]
+  /** token 用量（compat_usage 5 键） */
+  usage?: TurnUsage
+  /** 暂停等阶段通知（RunInputRequested → waiting_input） */
+  phase?: WaitingInputInfo
   /** 缺失 = 新会话未绑定（相当于通用） */
   assistant?: AssistantInfo
 }
@@ -248,7 +284,7 @@ export interface SseMessageFrame extends SseFrameBase {
   created_at: number
 }
 
-/** message_end → 收尾帧，含 assistant 回显；流结束，无 [DONE] */
+/** message_end → 收尾帧，metadata 带 v2 终态契约；流结束，无 [DONE] */
 export interface SseMessageEndFrame extends SseFrameBase {
   event: 'message_end'
   metadata: TurnMetadata

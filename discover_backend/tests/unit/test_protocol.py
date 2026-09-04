@@ -9,16 +9,16 @@ from app.runtime.events.emitter import (
     _BoundedEventQueue,
     _TypewriterChannel,
 )
-from app.runtime.events.events import (
-    AgentEvent,
-    AgentSelectedEvent,
-    DoneEvent,
-    ErrorEvent,
-    HeartbeatEvent,
-    TextDeltaEvent,
-    ToolCallCompletedEvent,
-    event_adapter,
+from app.runtime.events.run_events import (
+    Heartbeat,
+    RunCompleted,
+    RunEvent,
+    RunFailed,
+    TextDelta,
+    ToolCallCompleted,
+    run_event_adapter,
 )
+from app.runtime.models import TerminationReason
 from app.shared.errors.base import ErrorCategory
 from app.shared.utils.graphemes import split_graphemes
 from app.shared.utils.sanitize import (
@@ -30,43 +30,59 @@ from app.shared.utils.sanitize import (
 
 
 def test_event_round_trip() -> None:
-    event: AgentEvent = AgentSelectedEvent(
-        agent_id="discover",
-        display_name="客户发现",
-        reason="匹配",
-        confidence=0.9,
+    event: RunEvent = ToolCallCompleted(
+        call_id="c1",
+        tool_name="search",
+        ok=True,
+        result_summary="ok",
+        duration_ms=12,
+        truncated=False,
     )
-    parsed = event_adapter.validate_json(event.model_dump_json())
+    parsed = run_event_adapter.validate_json(event.model_dump_json())
     assert parsed == event
 
 
 def test_event_adapter_picks_variant() -> None:
     raw = (
         '{"type": "tool_call_completed", "seq": 3, "call_id": "c1", "ok": true,'
-        ' "result_summary": "ok", "duration_ms": 12, "truncated": false}'
+        ' "tool_name": "search", "result_summary": "ok", "duration_ms": 12,'
+        ' "truncated": false}'
     )
-    parsed = event_adapter.validate_json(raw)
-    assert isinstance(parsed, ToolCallCompletedEvent)
+    parsed = run_event_adapter.validate_json(raw)
+    assert isinstance(parsed, ToolCallCompleted)
 
 
 def test_event_unknown_type_rejected() -> None:
     with pytest.raises(ValueError):
-        event_adapter.validate_json('{"type": "not_an_event", "seq": 1}')
+        run_event_adapter.validate_json('{"type": "not_an_event", "seq": 1}')
 
 
 async def test_emitter_seq_monotonic() -> None:
     settings = Settings(_env_file=None)
     emitter = QueueEmitter(settings)
     await emitter.emit(
-        AgentSelectedEvent(agent_id="a", display_name="A", reason="r", confidence=0.5)
+        ToolCallCompleted(
+            call_id="c1",
+            tool_name="search",
+            ok=True,
+            result_summary="ok",
+            duration_ms=1,
+            truncated=False,
+        )
     )
-    await emitter.emit(DoneEvent(turns=1, duration_ms=10, usage={}))
+    await emitter.emit(
+        RunCompleted(
+            type="run_completed",
+            status="succeeded",
+            termination_reason=TerminationReason.COMPLETED,
+        )
+    )
     first = await asyncio.wait_for(emitter.get(), timeout=1)
     second = await asyncio.wait_for(emitter.get(), timeout=1)
     assert first.seq == 1
     assert second.seq == 2
-    assert isinstance(first, AgentSelectedEvent)
-    assert isinstance(second, DoneEvent)
+    assert isinstance(first, ToolCallCompleted)
+    assert isinstance(second, RunCompleted)
 
 
 async def test_emitter_text_delta_content_preserved() -> None:
@@ -80,7 +96,7 @@ async def test_emitter_text_delta_content_preserved() -> None:
             event = await asyncio.wait_for(emitter.get(), timeout=0.2)
         except TimeoutError:
             break
-        if isinstance(event, TextDeltaEvent):
+        if isinstance(event, TextDelta):
             text += event.text
     assert text == "你好，世界！"
 
@@ -124,26 +140,44 @@ def test_truncate_preserves_head() -> None:
 
 async def test_bounded_queue_merges_delta_tail() -> None:
     queue = _BoundedEventQueue(maxsize=3)
-    await queue.put(TextDeltaEvent(text="你"))
-    await queue.put(TextDeltaEvent(text="好"))
+    await queue.put(TextDelta(text="你"))
+    await queue.put(TextDelta(text="好"))
     event = await asyncio.wait_for(queue.get(), timeout=1)
-    assert isinstance(event, TextDeltaEvent)
+    assert isinstance(event, TextDelta)
     assert event.text == "你好"
 
 
 async def test_bounded_queue_drops_heartbeat_when_full() -> None:
     queue = _BoundedEventQueue(maxsize=1)
-    await queue.put(DoneEvent(turns=1, duration_ms=1, usage={}))
-    await asyncio.wait_for(queue.put(HeartbeatEvent()), timeout=1)
+    await queue.put(
+        RunCompleted(
+            type="run_completed",
+            status="succeeded",
+            termination_reason=TerminationReason.COMPLETED,
+        )
+    )
+    await asyncio.wait_for(queue.put(Heartbeat()), timeout=1)
     event = await asyncio.wait_for(queue.get(), timeout=1)
-    assert isinstance(event, DoneEvent)
+    assert isinstance(event, RunCompleted)
 
 
 async def test_bounded_queue_critical_blocks_when_full() -> None:
     queue = _BoundedEventQueue(maxsize=1)
-    await queue.put(DoneEvent(turns=1, duration_ms=1, usage={}))
+    await queue.put(
+        RunCompleted(
+            type="run_completed",
+            status="succeeded",
+            termination_reason=TerminationReason.COMPLETED,
+        )
+    )
     put_task = asyncio.create_task(
-        queue.put(ErrorEvent(category=ErrorCategory.SERVER, message="x", recoverable=True))
+        queue.put(
+            RunFailed(
+                type="run_failed",
+                error_category=ErrorCategory.SERVER,
+                message="x",
+            )
+        )
     )
     await asyncio.sleep(0.05)
     assert not put_task.done()
@@ -158,7 +192,7 @@ def test_typewriter_channel_frames() -> None:
         chars_per_frame=2,
         catchup_threshold=100,
         catchup_ratio=2,
-        delta_factory=lambda chunk: TextDeltaEvent(text=chunk),
+        delta_factory=lambda chunk: TextDelta(text=chunk),
     )
     channel.append("你好世界")
     first = channel.next_event(force_all=False)
@@ -174,7 +208,7 @@ def test_typewriter_channel_catchup() -> None:
         chars_per_frame=2,
         catchup_threshold=4,
         catchup_ratio=3,
-        delta_factory=lambda chunk: TextDeltaEvent(text=chunk),
+        delta_factory=lambda chunk: TextDelta(text=chunk),
     )
     channel.append("a" * 20)
     first = channel.next_event(force_all=False)

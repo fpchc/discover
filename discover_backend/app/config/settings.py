@@ -174,6 +174,21 @@ class Settings(BaseSettings):
     agent_body_max_chars: int = 2000
     skill_body_max_chars: int = 8000
 
+    # ---- Agent Runtime（单阶段 Bounded ReAct，react-runtime-v2-architecture §8.3/§13）----
+    # 预算层级：平台硬上限 ≥ Agent 默认 ≥ Skill 默认 ≥ Phase 实际；下层只能收紧。
+    # 阈值一律进配置（CLAUDE.md §5），默认值取保守，防止单回合失控。
+    agent_max_iterations: int = 20
+    agent_max_llm_calls: int = 30
+    agent_max_tool_calls: int = 40
+    agent_max_total_tokens: int = 100000
+    agent_max_input_tokens: int = 80000
+    agent_max_duration_seconds: float = 300.0
+    agent_max_repair_attempts: int = 2
+    agent_finalization_reserve_tokens: int = 5000
+    # 会话历史进 ReAct 上下文摘要的上限（消息数 / 总字符），防上下文撑爆
+    agent_context_summary_max_messages: int = 10
+    agent_context_summary_max_chars: int = 4000
+
     # ---- 功能开关（{module}_enabled 命名） ----
     hot_reload_enabled: bool = False
     hot_reload_interval_seconds: float = 30.0

@@ -336,7 +336,7 @@ async def test_assemble_plan(tmp_path: Path) -> None:
     assert "严禁出现内部 agent_id / 智能体标识字符串" in plan.system_prompt
     assert plan.required_mcp_servers == ["alibaba_search"]
     assert plan.core_tool_names == ["search", "search_news"]
-    # 声明脚本 + 带校验器的门禁注册为脚本工具（graph-runtime-spec §6）
+    # 声明脚本 + 带校验器的门禁注册为脚本工具（由 Contract 体系统一执行，见 架构文档 §14）
     assert {s.name for s in plan.scripts} == {"run_research", "gate_sources_collected"}
     gate = next(s for s in plan.scripts if s.name == "gate_sources_collected")
     assert gate.schema_path == "schemas/gate_input.json"  # 门禁入参约束挂载

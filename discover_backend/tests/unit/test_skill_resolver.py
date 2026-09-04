@@ -1,4 +1,4 @@
-"""SkillResolver 确定性策略链单元测试（graph-runtime-spec §4）。
+"""SkillResolver 确定性策略链单元测试（V1 迁移期，见 react-runtime-v2-architecture.md §9）。
 
 策略顺序：显式 → 默认 → 唯一 → 首个；无技能 → None。
 """

@@ -101,15 +101,19 @@ ChatGPT 风格的对话页，作为 `discover_backend`（多智能体承载平�
 | 事件 | 载荷 | 前端行为 |
 |---|---|---|
 | `message` | `{answer, created_at}` | 正文增量，追加当前助手消息 |
-| `message_end` | `{metadata: {assistant?}, created_at}` | **流结束，无 `[DONE]`**；回显助手、完成消息 |
+| `message_end` | `{metadata: {status, reason, limitations, unfinished_phases, usage, assistant?, phase?}, created_at}` | **流结束，无 `[DONE]`**；`status="cancelled"`（用户 stop）→ 停止语义（空内容移除 / 非空保留标记完成）；`phase="waiting_input"` → 阶段通知，以流关闭为回合真正结束 |
 | `thinking_started` | `{created_at}` | 打开思考分区 |
 | `thinking_delta` | `{content, created_at}` | 思考增量追加 |
 | `thinking_ended` | `{duration_ms, created_at}` | 收起思考分区并显示耗时 |
 | `ping` | — | 心跳，忽略 |
-| `error` | `{status, code, message}` | 错误态 + 统一文案 |
+| `error` | `{status, code, message}`（code = ErrorCategory.value，status 经 http_status_for 映射） | 失败收尾（RunFailed），错误态 + 统一文案 |
 
 所有帧（除 `ping`/`error`）带 `conversation_id`、`message_id`；会话 ID 以响应头
 `X-Conversation-Id` 为优先，帧内 `conversation_id` 兜底。
+
+高频运行事件（工具调用 / 进度 / Contract / 阶段切换 / LLMUsageUpdated）→ `map_run_event`
+返回 None，不对前端逐条下发；`RunCancelled` → `message_end(status="cancelled")`，
+`RunFailed` → `error` 帧，不落 `message_end`。
 
 ## 5. 性能要求（防坑点，见 performance.md 详细策略）
 

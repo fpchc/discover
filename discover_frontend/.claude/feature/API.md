@@ -124,13 +124,27 @@ interface ChatRequest {
 
 - 响应头 `X-Conversation-Id` 携带会话 ID（**优先级最高**），帧内 `conversation_id` 兜底。
 - `data:` 行按空行分隔为帧；帧 JSON 的 `event` 字段判别类型，共 7 种（见 `REQUIREMENTS.md` §4）。
-- `message_end` 为终止帧，**流结束，无 `[DONE]`**。载荷含 `metadata`：
+- `message_end` 为终止帧，**流结束，无 `[DONE]`**。载荷含 `metadata`（v2 终态契约）：
 
 ```ts
 interface TurnMetadata {
+  status?: 'succeeded' | 'partial' | 'cancelled'  // RunStatus；cancelled = 用户 stop
+  reason?: string                                  // 终止原因：completed / no_progress / token_budget / contract_failed / user_cancelled 等
+  limitations?: string[]
+  unfinished_phases?: string[]
+  usage?: {                                        // TurnRecorder.compat_usage 兼容 5 键
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+    cached_read_tokens: number
+    cached_write_tokens: number
+  }
+  phase?: { phase: 'waiting_input'; question?: string; missing_fields?: string[] }  // RunInputRequested 暂停通知
   assistant?: { type: 'expert' | 'generic'; id: string | null }  // 当前回合生效助手
 }
 ```
+
+- `RunCancelled`（用户 stop）→ `message_end` 且 `metadata.status="cancelled"`；`RunFailed` → `error` 帧，不落 `message_end`。
 
 #### 响应（blocking）—— JSON
 

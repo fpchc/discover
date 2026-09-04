@@ -6,7 +6,7 @@
 出参：{"passed": bool, "errors": [...], "warnings": [...]}
 
 阻断级：answer 出现内部机制名（工具 / 脚本 / 文档 / 门禁 / 能力名）→ 泄露，判失败。
-警告级：超 300 字 → 仅提示，不阻断（避免模型陷入重写循环）。
+警告级：超 450 字或低于 200 字 → 仅提示，不阻断（避免模型陷入重写循环）。
 
 用途：模型在输出信息卡前调用本门禁，校验可见 answer 不暴露技能内部信息 / 思考内容。
 信息卡已去模板化：不做固定分块结构校验（结构由内容自然决定）。
@@ -58,7 +58,8 @@ LEAK_PATTERNS: list[str] = [
     ".json",
 ]
 
-MAX_LENGTH = 300
+MIN_LENGTH = 200
+MAX_LENGTH = 450
 
 
 def check(answer: str) -> tuple[list[str], list[str]]:
@@ -69,6 +70,8 @@ def check(answer: str) -> tuple[list[str], list[str]]:
     for pattern in LEAK_PATTERNS:
         if pattern.lower() in lowered:
             errors.append(f"泄露内部机制名：{pattern}")
+    if len(answer) < MIN_LENGTH:
+        warnings.append(f"正文 {len(answer)} 字，低于 {MIN_LENGTH} 字下限")
     if len(answer) > MAX_LENGTH:
         warnings.append(f"正文 {len(answer)} 字，超过 {MAX_LENGTH} 字上限")
     return errors, warnings

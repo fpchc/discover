@@ -1,4 +1,4 @@
-"""助手解析层（graph-runtime-spec §4）：读用户显式选择，不做 LLM 路由。
+"""助手解析层（V1 迁移期，见 react-runtime-v2-architecture.md §9）：读用户显式选择，不做 LLM 路由。
 
 接口层保留（Protocol）：未来 Policy / Workflow resolver 可插入解析链。
 当前实现 ExplicitSelectionResolver：直接透传对话记录绑定的 assistant_target

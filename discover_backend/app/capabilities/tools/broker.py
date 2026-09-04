@@ -175,6 +175,59 @@ def _extract_section(text: str, section: str) -> str:
     return text
 
 
+def _coerce_nested_object_args(
+    descriptor: ToolDescriptor, arguments: dict[str, object]
+) -> dict[str, object]:
+    """把「被模型序列化成 JSON 字符串的嵌套对象/数组字段」回转为原生类型。
+
+    通用分派工具（tyc_mcp.call_tool / call_tools_batch）声明 arguments 为 object，但推理
+    模型常把内层 arguments 连同外层一起 JSON 序列化成字符串，远端 MCP 据此报
+    「arguments must be an object」，导致数据采集全部失败、最终无正文。分派字段名
+    arguments / calls 语义固定，按字段名确定性回退（不依赖远端 schema 是否准确声明
+    type）；其余字段仅当 schema 声明 object/array 时才解析，绝不猜测。
+    """
+    props = descriptor.parameters.get("properties")
+    props = props if isinstance(props, dict) else {}
+    out = dict(arguments)
+    for field, value in list(out.items()):
+        if not isinstance(value, str):
+            continue
+        parsed = _try_parse_json(value)
+        if field == "arguments" and isinstance(parsed, dict):
+            out[field] = parsed
+            continue
+        if field == "calls" and isinstance(parsed, list):
+            out[field] = [_coerce_call_item(item) for item in parsed]
+            continue
+        schema = props.get(field)
+        declared = schema.get("type") if isinstance(schema, dict) else None
+        if (declared == "object" and isinstance(parsed, dict)) or (
+            declared == "array" and isinstance(parsed, list)
+        ):
+            out[field] = parsed
+    return out
+
+
+def _coerce_call_item(item: object) -> object:
+    """批量分派 calls 数组内单个元素的 arguments 字段回转为对象。"""
+    if not isinstance(item, dict):
+        return item
+    raw = item.get("arguments")
+    if isinstance(raw, str):
+        parsed = _try_parse_json(raw)
+        if isinstance(parsed, dict):
+            return {**item, "arguments": parsed}
+    return item
+
+
+def _try_parse_json(value: str) -> object:
+    """把 JSON 字符串解析为原生对象；非法返回原字符串。"""
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
 class ToolBroker:
     """工具代理：每会话一个实例。三级目录 + 分发 + 并发 + 截断。"""
 
@@ -465,6 +518,14 @@ class ToolBroker:
         names = sorted(n for n in self._exposed if n in self._descriptors)
         return [to_chat_tool_spec(self._descriptors[n]) for n in names]
 
+    def catalog_tool_names(self) -> list[str]:
+        """目录中全部已激活工具的限定名（Tier 0 + Tier 1 + Tier 2）。
+
+        阶段白名单应取此全集而非 exposed_tools()：describe_tool 只是按需展开参数约束，
+        不构成调用授权（tool-broker-spec §2「允许调用目录中任何已激活服务的工具」）。
+        """
+        return sorted(self._descriptors)
+
     def search_tools(self, query: str, limit: int = 10) -> list[ToolHit]:
         """关键词匹配检索；只返回名称与简要说明，不含参数约束。"""
         terms = {t for t in re.split(r"[\W_]+", query.lower()) if t}
@@ -631,9 +692,10 @@ class ToolBroker:
             redact_sensitive(json.dumps(call.arguments, ensure_ascii=False)),
         )
         start = time.perf_counter()
+        arguments = _coerce_nested_object_args(descriptor, call.arguments)
         async with semaphore:
             try:
-                result = await client.call_tool(descriptor.short_name, call.arguments)
+                result = await client.call_tool(descriptor.short_name, arguments)
             except PlatformError as exc:
                 return self._failure_from_error(call, descriptor, exc, start)
         duration_ms = int((time.perf_counter() - start) * 1000)
@@ -654,7 +716,7 @@ class ToolBroker:
                 duration_ms=duration_ms,
             )
         content = result.content or "未找到相关结果"
-        logger.info(
+        logger.debug(
             "MCP 工具 %s 成功（%dms，server=%s，call_id=%s），返回：%s",
             call.tool_name,
             duration_ms,

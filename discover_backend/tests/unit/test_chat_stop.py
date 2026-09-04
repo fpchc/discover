@@ -9,13 +9,21 @@
 """
 
 import asyncio
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import anyio
 import pytest
+from app.capabilities.llm.stream_parser import TextChunk
 from app.interfaces.http.chat import _stream_sse, stop_chat_message
 from app.interfaces.schemas import ChatStopResponse
 from app.interfaces.schemas.conversations import ConversationSession, MessageStatus
+from app.runtime.checkpoint.memory import (
+    MemoryEventLog,
+    MemoryRunLease,
+    MemorySnapshotStore,
+)
+from app.runtime.service import RunService
 from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
 from app.shared.errors.base import NotFoundError
 
@@ -34,22 +42,27 @@ class _FakeHistory:
         self.turns.append(turn)
         return True
 
+    async def get_history_messages(
+        self, account_id: str, conversation_id: str, *, limit: int
+    ) -> list[object]:
+        return []
 
-class _FakeRuntime:
-    """伪运行时：产出部分正文后挂起，模拟进行中的 LLM 生成。"""
 
-    async def run_turn(
-        self,
-        *,
-        session_id: str,
-        user_input: str,
-        emitter: object,
-        account_id: str,
-        assistant_target: object | None,
-    ) -> None:
-        # 经 text_delta 走打字机通道（与真实节点一致），由 emitter.run 冲刷为事件
-        emitter.text_delta("部分正文")  # type: ignore[attr-defined]  # 桩 emitter，测试内已知
+class _FakeLLMClient:
+    """伪 LLM 客户端：产出部分正文后挂起，模拟进行中的 LLM 生成。"""
+
+    async def stream_chat(
+        self, *, provider: object, api_key: str, request: object
+    ) -> AsyncIterator[TextChunk]:
+        yield TextChunk(text="部分正文")
         await anyio.sleep_forever()
+
+
+class _FakeProviders:
+    """伪 Provider 注册表：resolve 返回占位 provider（假 client 不使用）。"""
+
+    def resolve(self, provider_id: str) -> SimpleNamespace:
+        return SimpleNamespace()
 
 
 def _fake_settings() -> SimpleNamespace:
@@ -63,6 +76,20 @@ def _fake_settings() -> SimpleNamespace:
         typewriter_catchup_ratio=4,
         thinking_frame_interval_ms=1,
         thinking_chars_per_frame=100,
+        default_provider_id="test-provider",
+        history_max_messages=50,
+        error_message_max_chars=500,
+        # _create_run 经 build_agent_budget 读取的预算字段
+        agent_max_iterations=20,
+        agent_max_llm_calls=30,
+        agent_max_tool_calls=40,
+        agent_max_total_tokens=100000,
+        agent_max_input_tokens=80000,
+        agent_max_duration_seconds=300.0,
+        agent_max_repair_attempts=2,
+        agent_finalization_reserve_tokens=5000,
+        agent_context_summary_max_messages=10,
+        agent_context_summary_max_chars=4000,
     )
 
 
@@ -71,7 +98,15 @@ def _services() -> SimpleNamespace:
         settings=_fake_settings(),
         conversation_service=_FakeHistory(),
         active_turns=ActiveTurnRegistry(),
-        get_runtime=lambda cid: _FakeRuntime(),
+        llm=_FakeLLMClient(),
+        providers=_FakeProviders(),
+        _resolve_api_key=lambda provider: "test-key",
+        run_service=RunService(
+            snapshots=MemorySnapshotStore(),
+            events=MemoryEventLog(),
+            lease=MemoryRunLease(),
+            owner_id="test",
+        ),
     )
 
 

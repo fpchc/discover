@@ -99,7 +99,7 @@
 
 * SSE 帧解析规则（后端契约，不可臆造）：
   * `data:` 行按空行分隔为帧；帧 JSON 的 `event` 字段判别类型。
-  * `message` → 正文增量，追加到当前回复；`message_end` → 收尾帧，含 `metadata.assistant`，**流结束，无 `[DONE]`**。
+  * `message` → 正文增量，追加到当前回复；`message_end` → 收尾帧，metadata 带 v2 终态契约（`status` / `reason` / `limitations` / `unfinished_phases` / `usage` / `assistant`），**流结束，无 `[DONE]`**；`status="cancelled"`（用户 stop）走停止语义（空内容移除 / 非空保留标记完成），失败走 `error` 帧不落 `message_end`。
   * `thinking_started` → 打开思考分区；`thinking_delta` → 思考增量（`content`）追加到思考分区；`thinking_ended` → 结束当前思考分段（`duration_ms` 每段一发，前端累加为总耗时）。
   * 思考可多段（思考→工具→再思考）：所有思考追加同一分区；思考一旦开始，分区在整轮流式期间保持展开，仅整轮结束（`message_end` / 停止）后折叠并显示累计耗时，避免分段反复开合；思考不进正文。
   * `ping` → 心跳，忽略；`error` → 错误帧 `{status, code, message}`，展示错误态。

@@ -17,7 +17,7 @@
 | 归属 | 内容 |
 |------|------|
 | L2 装配层（本文件） | SkillResolver 策略链、SkillAssembler 装配计划（`AssemblyPlan`）、系统提示组装、MCP 依赖 / 能力解析、门禁校验器注册 |
-| L3 运行时（`graph-runtime-spec.md` §4 assemble） | 执行 `AssemblyPlan`：启动 MCP 依赖、注入上下文、激活工具、发就绪 / 降级 / 错误事件 |
+| L3 运行时（Agent Runtime V2，见 `react-runtime-v2-architecture.md`） | 执行 `AssemblyPlan`：启动 MCP 依赖、注入上下文、激活工具、发就绪 / 降级 / 错误事件 |
 | L2 工具代理（`tool-broker-spec.md`） | 接收暴露集合、维护目录、分发调用，不参与装配决策 |
 
 判定标准：**算得出来什么 → 装配层；拿计划去干活 → 运行时。**
@@ -111,9 +111,9 @@
 
 ## 6. 门禁校验器注册
 
-有校验器的门禁注册为脚本工具 `<agent>.<skill>.script.gate_<id>`，模型调用后由
-运行时 `tool_node` 写 `gate_status`（见 `graph-runtime-spec.md` §6）。无校验器的门禁
-保持提示词自检（弱门禁）。
+有校验器的门禁注册为脚本工具 `<agent>.<skill>.script.gate_<id>`，V2 中由
+Contract 体系统一执行（ScriptGateExecutor 归一为 ContractExecutor，见
+`react-runtime-v2-architecture.md` §14）。无校验器的门禁保持提示词自检（弱门禁）。
 
 校验器脚本副作用一律标 `READ_ONLY`，不入注入清单之外的工具目录。
 

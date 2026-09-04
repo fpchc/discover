@@ -66,8 +66,9 @@ class AssemblyPlan(BaseModel):
 def _gate_validator_scripts(skill: SkillManifest) -> list[ScriptDeclaration]:
     """把有校验器的门禁注册为脚本工具 `<agent>.<skill>.script.gate_<id>`。
 
-    graph-runtime-spec §6：校验器即脚本工具，模型调用后由 tool_node 写门禁状态。
-    无校验器的门禁保持提示词自检（弱门禁）。
+    校验器即脚本工具，由 Contract 体系统一执行（ScriptGateExecutor 归一为
+    ContractExecutor，见 react-runtime-v2-architecture.md §14）。无校验器的门禁
+    保持提示词自检（弱门禁）。
     """
     declarations: list[ScriptDeclaration] = []
     for gate in skill.gates:

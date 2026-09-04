@@ -58,6 +58,14 @@ export interface ChatStreamHandlers {
 }
 
 /**
+ * v2 终态分流：message_end.metadata.status === "cancelled"（RunCancelled，用户 stop）
+ * → 停止语义（空内容移除 / 非空保留并标记完成）；succeeded / partial / 缺省 → 正常完成。
+ */
+export function resolveTurnEnd(metadata: TurnMetadata): 'complete' | 'abort' {
+  return metadata.status === 'cancelled' ? 'abort' : 'complete'
+}
+
+/**
  * 消费流：message → onDelta、thinking_* → 思考回调、message_end → onEnd、
  * error → onError、ping → 忽略。
  * 流自然结束（读到 EOF）但未到 message_end 视为异常中断，回调 STREAM_INTERRUPTED。

@@ -36,7 +36,12 @@ from app.infrastructure.database.engine import Database
 from app.infrastructure.redis.client import get_cache
 from app.infrastructure.storage.accessors import get_storage
 from app.infrastructure.storage.base import BaseStorage
-from app.runtime.engine import Runtime
+from app.runtime.checkpoint.memory import (
+    MemoryEventLog,
+    MemoryRunLease,
+    MemorySnapshotStore,
+)
+from app.runtime.service import RunService
 from app.runtime.turn import ActiveTurnRegistry
 
 
@@ -59,7 +64,13 @@ class AppServices:
         self.registry: AgentRegistry | None = None
         self.elecnest: ElecnestSSOClient | None = None
         self._elecnest_http: httpx.AsyncClient | None = None
-        self.runtimes: dict[str, Runtime] = {}
+        # Run 生命周期服务（v2 §16/§17）：checkpoint 内存实现，DB/Redis store 接线后替换
+        self.run_service = RunService(
+            snapshots=MemorySnapshotStore(),
+            events=MemoryEventLog(),
+            lease=MemoryRunLease(),
+            owner_id="api",
+        )
         # 进行中回合句柄注册表（stop 接口据此取消回合；回合退出后注销）
         self.active_turns = ActiveTurnRegistry()
         self._resolve_api_key: Callable[[LLMProvider], str] | None = None
@@ -102,10 +113,7 @@ class AppServices:
         self._reloader_task = asyncio.create_task(self._run_reloader(reloader, scope))
 
     async def shutdown(self, app: FastAPI) -> None:
-        """释放会话运行时 MCP 引用、停止热重载、逆序关停扩展。"""
-        for runtime in self.runtimes.values():
-            await runtime.close()
-        self.runtimes.clear()
+        """停止热重载、逆序关停扩展。"""
         if self._reloader_task is not None and self._reloader_scope is not None:
             self._reloader_scope.cancel()
             await self._reloader_task
@@ -135,43 +143,6 @@ class AppServices:
             timeout=httpx.Timeout(self.settings.elecnest_sso_timeout_seconds)
         )
         return ElecnestSSOClient(self.settings, self._elecnest_http)
-
-    def get_runtime(self, session_id: str) -> Runtime:
-        """获取（或创建）会话级运行时。创建后复用同一工具代理。"""
-        runtime = self.runtimes.get(session_id)
-        if runtime is None:
-            assert self.providers is not None
-            assert self.mcp_manager is not None
-            assert self.script_executor is not None
-            assert self.workspaces is not None
-            assert self.files is not None
-            assert self.registry is not None
-            assert self.db is not None
-            assert self.llm is not None
-            assert self._resolve_api_key is not None
-            runtime = Runtime(
-                settings=self.settings,
-                workspaces=self.workspaces,
-                files=self.files,
-                registry=self.registry,
-                llm=self.llm,
-                providers=self.providers,
-                resolve_api_key=self._resolve_api_key,
-                mcp_manager=self.mcp_manager,
-                script_executor=self.script_executor,
-                db=self.db,
-                history=self.conversation_service,  # 会话记忆 L1：首轮历史上下文恢复
-            )
-            self.runtimes[session_id] = runtime
-        return runtime
-
-    async def discard_runtime(self, session_id: str) -> bool:
-        """释放并移除会话运行时；存在则关停并回收 MCP 引用，返回 True；否则 False。"""
-        runtime = self.runtimes.pop(session_id, None)
-        if runtime is not None:
-            await runtime.close()
-            return True
-        return False
 
 
 def get_services(request: Request) -> AppServices:

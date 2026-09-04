@@ -20,11 +20,13 @@ class ActiveTurn:
 
     task 在生成器 / blocking 首次执行时捕获真正承载回合的任务；
     stop_requested 覆盖「已注册但未启动」窗口的停止请求（幂等）。
+    run_id 在回合启动时由 RunService.create 填充，stop 据此持久化 RunCancelled。
     """
 
     # pragma: 简化 — 纯内部可变句柄，非跨边界 DTO，无需 pydantic
 
     message_id: str
+    run_id: str | None = None
     task: asyncio.Task[object] | None = None
     stop_requested: bool = False
 

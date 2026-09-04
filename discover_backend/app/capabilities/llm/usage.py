@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.capabilities.llm.stream_parser import UsageChunk
 
-# UsageChunk 字段 → DoneEvent.usage 字典键
+# UsageChunk 字段 → LLMUsageUpdated.usage 字典键
 _FIELD_ALIASES: tuple[tuple[str, str], ...] = (
     ("input_tokens", "input"),
     ("output_tokens", "output"),

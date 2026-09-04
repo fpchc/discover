@@ -20,7 +20,7 @@
 
 | 职责 | 路径 |
 |------|------|
-| 对话接口（POST /chat-messages SSE/blocking + stop，agent_id 显式绑定） | `app/interfaces/http/chat.py` |
+| 对话接口（POST /chat-messages SSE/blocking + stop，agent_id 显式绑定；expert 走 Agent 技能包 ReAct 路径，通用走直接流式） | `app/interfaces/http/chat.py` |
 | 助手目录接口（GET /assistants，只读聚合） | `app/interfaces/http/assistants.py` |
 | 会话接口（/conversations 列表/消息/软删除；按账号隔离） | `app/interfaces/http/conversations.py` |
 | 文件接口（/files 上传/预览，预览全局公开） | `app/interfaces/http/files.py` |
@@ -69,20 +69,45 @@
 
 ## Agent 执行内核（runtime）
 
+### Agent Runtime（react-runtime-v2-architecture；正式内核，旧 V1 Runtime 已全量下线）
+
 | 职责 | 路径 |
 |------|------|
-| 图运行时（Runtime：节点实现 + 单轮执行入口 + 上下文裁剪） | `app/runtime/engine.py` |
-| LangGraph 拓扑构建 + 条件边（build_graph / route_*） | `app/runtime/transition.py` |
-| 进行中回合句柄注册表（ActiveTurn/ActiveTurnRegistry：stop 取消；同会话并发 409） | `app/runtime/turn.py` |
-| GraphState / GateStatus（active_target: AssistantTarget） | `app/runtime/state.py` |
-| 模型上下文组装（会话记忆 L1 + 上下文裁剪） | `app/runtime/context.py` |
-| 助手解析（用户显式选择，非 LLM 路由；服务 Runtime 单轮解析） | `app/runtime/resolver/assistant.py` |
-| 技能解析（SkillResolver 确定性策略链：显式→默认→唯一→首个） | `app/runtime/resolver/skill.py` |
-| 运行时动作词汇（Action = ToolCallRequest 别名） | `app/runtime/execution/action.py` |
-| 运行时观察词汇（Observation = ToolResult 别名） | `app/runtime/execution/observation.py` |
-| 工具执行器（ToolExecutor：Action→Tool/MCP→Observation 聚合 + 门禁 + 产物登记） | `app/runtime/execution/executor.py` |
-| AgentEvent 事件模型（含事件判别联合） | `app/runtime/events/events.py` |
+| Run/Phase/Budget/Progress/Termination 状态模型 + P0-2 接缝（PhaseExecutionRequest/Outcome/PhaseOutput） | `app/runtime/models.py` |
+| Agent 解析/技能装配/单阶段 ReAct 执行入口（AgentAssembler/run_agent_turn/build_agent_budget） | `app/runtime/agent_runner.py` |
+| 结构化决策模型与归一（三个保留控制工具 + parse_decision 五规则，P0-1） | `app/runtime/react/decision.py` |
+| Bounded ReAct 执行器节点逻辑（ReactGraphState/BoundedReActExecutor + Protocol 端口） | `app/runtime/react/executor.py` |
+| Action/Observation 指纹 + §12.4 六条件无进展判定 | `app/runtime/react/progress.py` |
+| PolicyDecision 模型（7 种结构化枚举） | `app/runtime/policy/models.py` |
+| 预算 Policy（软/硬边界判定） | `app/runtime/policy/budget.py` |
+| Action Policy（存在性/白名单/schema/重复无进展） | `app/runtime/policy/action.py` |
+| Observation Policy（空返回/重复/错误/降级） | `app/runtime/policy/observation.py` |
+| 组合 Policy（按严重度取最高） | `app/runtime/policy/composite.py` |
+| Contract 定义/结果模型（三类 + PASS/WARN/FAIL） | `app/runtime/contracts/models.py` |
+| ContractExecutor（structural/quality/evidence + ScriptGate 统一 Gate） | `app/runtime/contracts/executor.py` |
+| Contract 注册表 + 有界修复（decide_repair） | `app/runtime/contracts/registry.py` |
+| Bounded ReAct LangGraph 子图拓扑（§10 节点 + 条件边） | `app/runtime/graph.py` |
+| Tool Runtime 管线（preflight/副作用/幂等键/broker/normalize/产物） | `app/runtime/execution/pipeline.py` |
+| Run 生命周期事件集（RunEvent 18 类 + 终态契约） | `app/runtime/events/run_events.py` |
 | QueueEmitter（seq/打字机/心跳/有界队列背压） | `app/runtime/events/emitter.py` |
+| Checkpoint 协议（SnapshotStore/EventLog/RunLease） | `app/runtime/checkpoint/protocol.py` |
+| 内存 Checkpoint store（测试与无 DB 默认） | `app/runtime/checkpoint/memory.py` |
+| Run Service（create/resume/cancel/query + RunQueryResult） | `app/runtime/service.py` |
+| Workflow 定义模型（WorkflowDefinition/PhaseDefinition/PhaseExecutorType） | `app/runtime/workflow/definition.py` |
+| 阶段执行器注册表（ReactPhaseExecutor + PhaseExecutorRegistry） | `app/runtime/workflow/executors.py` |
+| Workflow 编排（WorkflowRunner 顺序阶段推进 + input_bindings 绑定） | `app/runtime/workflow/compiler.py` |
+| 生产适配器（LLMRunner/ToolRunner/SSEEventSink：抽象端口 → 真实运行组件） | `app/runtime/wiring.py` |
+| 进行中回合句柄注册表（ActiveTurn/ActiveTurnRegistry：stop 取消；同会话并发 409） | `app/runtime/turn.py` |
+| 助手解析（用户显式选择，非 LLM 路由） | `app/runtime/resolver/assistant.py` |
+| 技能解析（SkillResolver 确定性策略链：显式→默认→唯一→首个） | `app/runtime/resolver/skill.py` |
+| 对话回合执行（v2 Run 生命周期：Run 创建 / 专家与通用执行路径 / 终态事件） | `app/interfaces/http/chat_execution.py` |
+| Run 事件 → SSE 帧映射（终态契约/is_terminal） | `app/interfaces/http/run_stream.py` |
+
+### 回合事件聚合（领域层）
+
+| 职责 | 路径 |
+|------|------|
+| TurnRecorder（RunEvent 流 → TurnRecord 落库载荷；终态状态映射 + exit_reason 兜底） | `app/domain/conversation/recorder.py` |
 
 ## 能力层（capabilities）
 

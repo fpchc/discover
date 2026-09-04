@@ -22,7 +22,7 @@ import {
   TIMEOUT_ERROR,
 } from '@/lib/errors'
 import { mapMessageRecords } from '@/lib/history'
-import { consumeChatStream, readConversationId } from '@/lib/stream'
+import { consumeChatStream, readConversationId, resolveTurnEnd } from '@/lib/stream'
 import { useAssistantsStore } from '@/stores/assistants'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -208,7 +208,13 @@ export function useChatStream(): ChatStreamApi {
           onEnd: (metadata, conversationId) => {
             if (!current()) return
             if (conversationId !== '') registerConversation(conversationId)
-            chat().completeAssistant()
+            if (resolveTurnEnd(metadata) === 'abort') {
+              // 用户 stop → 服务端 RunCancelled 收尾：与本地 abort 兜底同语义
+              // （空内容移除 / 非空保留并标记完成，不留空气泡）
+              chat().abortTurn()
+            } else {
+              chat().completeAssistant()
+            }
             assistants().syncFromAssistant(metadata.assistant)
           },
           onError: (error: AppError) => {

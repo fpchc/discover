@@ -59,7 +59,6 @@ async def delete_conversation(
     history = _require_history(services)
     existed_db = await history.soft_delete_conversation(account_id, conversation_id)
     if existed_db:
-        await services.discard_runtime(conversation_id)
         return
     raise NotFoundError(f"未知会话：{conversation_id}")
 

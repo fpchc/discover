@@ -12,11 +12,11 @@ from collections.abc import Callable
 import anyio
 
 from app.config.settings import Settings
-from app.runtime.events.events import (
-    AgentEvent,
-    HeartbeatEvent,
-    TextDeltaEvent,
-    ThinkingDeltaEvent,
+from app.runtime.events.run_events import (
+    Heartbeat,
+    RunEvent,
+    TextDelta,
+    ThinkingDelta,
 )
 from app.shared.utils.graphemes import split_graphemes
 
@@ -33,12 +33,12 @@ class _BoundedEventQueue:
 
     def __init__(self, maxsize: int) -> None:
         self._maxsize = maxsize
-        self._items: deque[AgentEvent] = deque()
+        self._items: deque[RunEvent] = deque()
         self._lock = asyncio.Lock()
         self._can_get = asyncio.Condition(self._lock)
         self._can_put = asyncio.Condition(self._lock)
 
-    async def put(self, event: AgentEvent) -> None:
+    async def put(self, event: RunEvent) -> None:
         async with self._lock:
             while True:
                 if self._merge_tail(event):
@@ -47,11 +47,11 @@ class _BoundedEventQueue:
                     self._items.append(event)
                     self._can_get.notify()
                     return
-                if isinstance(event, HeartbeatEvent):
+                if isinstance(event, Heartbeat):
                     return
                 await self._can_put.wait()
 
-    async def get(self) -> AgentEvent:
+    async def get(self) -> RunEvent:
         async with self._lock:
             while not self._items:
                 await self._can_get.wait()
@@ -59,14 +59,14 @@ class _BoundedEventQueue:
             self._can_put.notify()
             return event
 
-    def _merge_tail(self, event: AgentEvent) -> bool:
+    def _merge_tail(self, event: RunEvent) -> bool:
         if not self._items:
             return False
         tail = self._items[-1]
-        if isinstance(event, TextDeltaEvent) and isinstance(tail, TextDeltaEvent):
+        if isinstance(event, TextDelta) and isinstance(tail, TextDelta):
             tail.text += event.text
             return True
-        if isinstance(event, ThinkingDeltaEvent) and isinstance(tail, ThinkingDeltaEvent):
+        if isinstance(event, ThinkingDelta) and isinstance(tail, ThinkingDelta):
             tail.text += event.text
             return True
         return False
@@ -82,7 +82,7 @@ class _TypewriterChannel:
         chars_per_frame: int,
         catchup_threshold: int,
         catchup_ratio: int,
-        delta_factory: Callable[[str], TextDeltaEvent | ThinkingDeltaEvent],
+        delta_factory: Callable[[str], TextDelta | ThinkingDelta],
     ) -> None:
         self._frame_interval = frame_interval
         self._chars_per_frame = chars_per_frame
@@ -121,7 +121,7 @@ class _TypewriterChannel:
             parts.append(self._buffer.popleft())
         return "".join(parts)
 
-    def next_event(self, *, force_all: bool) -> AgentEvent | None:
+    def next_event(self, *, force_all: bool) -> RunEvent | None:
         text = self.take(force_all=force_all)
         if not text:
             return None
@@ -140,14 +140,14 @@ class QueueEmitter:
             chars_per_frame=settings.typewriter_chars_per_frame,
             catchup_threshold=settings.typewriter_catchup_threshold,
             catchup_ratio=settings.typewriter_catchup_ratio,
-            delta_factory=lambda chunk: TextDeltaEvent(text=chunk),
+            delta_factory=lambda chunk: TextDelta(text=chunk),
         )
         self._thinking = _TypewriterChannel(
             frame_interval=settings.thinking_frame_interval_ms / 1000.0,
             chars_per_frame=settings.thinking_chars_per_frame,
             catchup_threshold=settings.typewriter_catchup_threshold,
             catchup_ratio=settings.typewriter_catchup_ratio,
-            delta_factory=lambda chunk: ThinkingDeltaEvent(text=chunk),
+            delta_factory=lambda chunk: ThinkingDelta(text=chunk),
         )
 
     def text_delta(self, text: str) -> None:
@@ -158,9 +158,9 @@ class QueueEmitter:
         """追加思考增量（同步入缓冲，独立节流参数推送）。"""
         self._thinking.append(text)
 
-    async def emit(self, event: AgentEvent) -> None:
+    async def emit(self, event: RunEvent) -> None:
         """发射非增量事件（路由/工具/产物/错误/完成等）。"""
-        if isinstance(event, (TextDeltaEvent, ThinkingDeltaEvent, HeartbeatEvent)):
+        if isinstance(event, (TextDelta, ThinkingDelta, Heartbeat)):
             raise TypeError("增量与心跳事件应走专用方法")
         await self._flush_pending_frames()
         await self._stamp_and_put(event)
@@ -171,7 +171,7 @@ class QueueEmitter:
         self._thinking.mark_speed_up()
         await self._flush_pending_frames()
 
-    async def get(self) -> AgentEvent:
+    async def get(self) -> RunEvent:
         """供 SSE 写循环消费下一个事件。"""
         return await self._queue.get()
 
@@ -200,7 +200,7 @@ class QueueEmitter:
                     await self._tick(self._thinking)
                     next_thinking += thinking_interval
                 if now >= next_heartbeat:
-                    await self._stamp_and_put(HeartbeatEvent())
+                    await self._stamp_and_put(Heartbeat())
                     next_heartbeat += heartbeat_interval
         finally:
             logger.info(
@@ -220,10 +220,10 @@ class QueueEmitter:
                     break
                 await self._stamp_and_put(event)
 
-    async def _stamp_and_put(self, event: AgentEvent) -> None:
+    async def _stamp_and_put(self, event: RunEvent) -> None:
         await self._queue.put(self._stamp(event))
 
-    def _stamp(self, event: AgentEvent) -> AgentEvent:
+    def _stamp(self, event: RunEvent) -> RunEvent:
         self._seq += 1
         return event.model_copy(update={"seq": self._seq})
 

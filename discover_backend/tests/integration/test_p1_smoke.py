@@ -17,44 +17,41 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from app.capabilities.llm.providers import ProviderRegistry
 from app.capabilities.llm.stream_parser import (
     FinishChunk,
-    PhaseSwitchChunk,
-    TextChunk,
+    SemanticChunk,
+    ToolCall,
+    ToolCallsChunk,
 )
 from app.capabilities.mcp.client import MCPCallResult, MCPToolInfo
 from app.capabilities.tools.script_executor import ScriptExecution
 from app.config.loader import (
-    LLMProvider,
-    load_llm_providers,
     load_mcp_servers,
 )
 from app.config.settings import Settings
 from app.domain.assistant.models import AssistantTarget, TargetType
-from app.domain.file.service import FileService
 from app.domain.skill.loader import _find_absolute_path_literals
 from app.domain.skill.registry import AgentRegistry
 from app.domain.workspace.service import WorkspaceManager
-from app.infrastructure.database.engine import Database
-from app.infrastructure.storage.local import LocalStorage
-from app.runtime.engine import Runtime
-from app.runtime.events.emitter import QueueEmitter
-from app.runtime.events.events import (
-    AgentEvent,
-    AgentSelectedEvent,
-    DoneEvent,
-    SkillSelectedEvent,
-    ToolsReadyEvent,
+from app.runtime.agent_runner import AgentAssembler, build_agent_budget, run_agent_turn
+from app.runtime.events.run_events import (
+    LLMCallStarted,
+    LLMUsageUpdated,
+    RunEvent,
 )
+from app.runtime.models import (
+    PhaseExecutionOutcomeType,
+    PhaseExecutionRequest,
+)
+from app.runtime.wiring import ToolRunner
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS_DIR = ROOT / "agents"
 MCP_REGISTRY_PATH = ROOT / "config" / "mcp-servers.yaml"
-LLM_PROVIDERS_PATH = ROOT / "config" / "llm-providers.yaml"
 SKILL_DIR = AGENTS_DIR / "discover" / "client-finder"
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 _SCORE_DIMS = (
@@ -80,8 +77,6 @@ def _settings(tmp_path: Path) -> Settings:
         hot_reload_enabled=False,
     )
 
-
-_DATABASE = Database(Settings(_env_file=None))
 
 # 图会话标识与归属账号（对话记录由 ConversationService 管理，Runtime 只做透传）
 _SESSION_ID = "00000000-0000-0000-0000-0000000000cc"
@@ -141,7 +136,7 @@ def test_discover_package_loads(tmp_path: Path) -> None:
         assert pkg.manifest.type == "expert"
         assert set(pkg.skills) == {"client-finder"}
         skill = pkg.skills["client-finder"]
-        # 门禁校验器注册为脚本工具（graph-runtime-spec §6）
+        # 门禁校验器注册为脚本工具（由 Contract 体系统一执行，见 架构文档 §14）
         assert any(g.validator is not None for g in skill.gates)
         plan = registry.assemble("discover", None)
         assert plan.required_mcp_servers == ["alibaba_search"]
@@ -286,13 +281,32 @@ def test_render_full_produces_html(tmp_path: Path) -> None:
 
 # ---- 端到端路由（假 LLM/MCP，无密钥） ----
 class _FakeLLM:
-    """脚本化 LLM：推理返回固定文本（助手由用户显式绑定，无 LLM 路由）。"""
+    """脚本化 LLM：按调用序号产出语义分片（LLMRunnerPort 适配）。"""
 
-    async def stream_chat(self, *, provider: LLMProvider, api_key: str, request: object) -> object:
-        del provider, api_key, request
-        yield PhaseSwitchChunk(to="text")
-        yield TextChunk(text="好的，我帮你找电子信息产业链的潜在客户。")
-        yield FinishChunk(reason="stop")
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def stream(self, *, request: object) -> AsyncIterator[SemanticChunk]:
+        del request
+        self.calls += 1
+
+        async def _generate() -> AsyncIterator[SemanticChunk]:
+            yield ToolCallsChunk(
+                tool_calls=[
+                    ToolCall(
+                        index=0,
+                        id="final-1",
+                        name="submit_final_answer",
+                        arguments=json.dumps(
+                            {"answer": "好的，我帮你找电子信息产业链的潜在客户。"},
+                            ensure_ascii=False,
+                        ),
+                    )
+                ]
+            )
+            yield FinishChunk(reason="tool_calls")
+
+        return _generate()
 
 
 class _FakeMCPClient:
@@ -332,49 +346,61 @@ class _FakeScriptExecutor:
         return ScriptExecution(exit_code=0, stdout="ok")
 
 
-async def test_route_discover_end_to_end(tmp_path: Path) -> None:
-    import anyio
+class _RecordingSink:
+    """EventSinkPort 适配：记录 RunEvent（供断言 v2 生命周期事件）。"""
 
+    def __init__(self) -> None:
+        self.events: list[RunEvent] = []
+
+    async def emit(self, event: RunEvent) -> None:
+        self.events.append(event)
+
+
+async def test_route_discover_end_to_end(tmp_path: Path) -> None:
+    """v2 端到端：真实 discover 注册表装配 → 单阶段 Bounded ReAct → 最终答案。"""
     settings = _settings(tmp_path)
     registry = await _discover_registry(tmp_path)
-    # 真实提供方注册表：含 opus/sonnet → qwen-max 别名（discover AGENT 模型偏好）
-    providers = ProviderRegistry(await load_llm_providers(LLM_PROVIDERS_PATH))
-    runtime = Runtime(
-        settings=settings,
-        workspaces=WorkspaceManager(settings),
-        files=FileService(settings, _DATABASE, LocalStorage(tmp_path / "storage")),
+    assembler = AgentAssembler(
         registry=registry,
-        llm=_FakeLLM(),  # type: ignore[arg-type]
-        providers=providers,
-        resolve_api_key=lambda _provider: "dummy",
+        workspaces=WorkspaceManager(settings),
         mcp_manager=_FakeMCPManager(),  # type: ignore[arg-type]
         script_executor=_FakeScriptExecutor(),  # type: ignore[arg-type]
-        db=_DATABASE,
+        settings=settings,
     )
-    emitter = QueueEmitter(Settings(_env_file=None))
-    final = await runtime.run_turn(
-        session_id=_SESSION_ID,
-        user_input="我卖高速背板连接器，帮我找客户",
-        emitter=emitter,
-        account_id=_ACCOUNT,
+    result = await assembler.resolve_and_assemble(
         assistant_target=AssistantTarget(type=TargetType.EXPERT, id="discover"),
+        account_id=_ACCOUNT,
+        session_id=_SESSION_ID,
     )
-    await emitter.finish()
-    events: list[AgentEvent] = []
-    while True:
-        try:
-            with anyio.fail_after(0.05):
-                events.append(await emitter.get())
-        except TimeoutError:
-            break
-    assert final.active_target == AssistantTarget(type=TargetType.EXPERT, id="discover")
-    assert final.active_skill == "client-finder"
-    assert any(isinstance(e, AgentSelectedEvent) for e in events)
-    assert any(isinstance(e, SkillSelectedEvent) for e in events)
-    assert any(isinstance(e, ToolsReadyEvent) for e in events)
-    assert any(isinstance(e, DoneEvent) for e in events)
-    assert any(m.role == "assistant" and "潜在客户" in (m.content or "") for m in final.messages)
-    await runtime.close()
+    assert result is not None
+    assert result.plan.skill_id == "client-finder"
+    broker = result.broker
+    try:
+        tools = ToolRunner(broker)
+        sink = _RecordingSink()
+        request = PhaseExecutionRequest(
+            run_id="smoke-run-1",
+            phase_instance_id=result.plan.skill_id,
+            phase_goal=result.plan.skill_id,
+            system_prompt=result.plan.system_prompt,
+            phase_input={"user_goal": "我卖高速背板连接器，帮我找客户"},
+            context_summary="",
+            allowed_tools=tools.catalog_tool_names(),
+            budget=build_agent_budget(settings),
+        )
+        outcome = await run_agent_turn(
+            llm=_FakeLLM(),
+            tools=tools,
+            events=sink,
+            request=request,
+        )
+        assert outcome is not None
+        assert outcome.outcome_type == PhaseExecutionOutcomeType.FINAL_PROPOSED
+        assert "潜在客户" in (outcome.answer or "")
+        assert any(isinstance(e, LLMCallStarted) for e in sink.events)
+        assert any(isinstance(e, LLMUsageUpdated) for e in sink.events)
+    finally:
+        await broker.close()
 
 
 # ---- 样例报告（模板 schema 为准，见 report-structure.md §四·五） ----

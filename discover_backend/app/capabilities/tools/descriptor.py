@@ -45,7 +45,12 @@ def split_qualified_name(name: str) -> tuple[str, str]:
 
 
 class ToolDescriptor(BaseModel):
-    """统一工具目录条目。装配期生成，运行时只读。"""
+    """统一工具目录条目。装配期生成，运行时只读。
+
+    扩展（react-runtime-v2-architecture §15.1）：
+    idempotent / retryable / max_attempts / fingerprint_ignore_fields / phase_tags，
+    供 Tool Runtime 管线做重复判定、有界重试与幂等策略；旧字段保留默认值兼容。
+    """
 
     qualified_name: str
     short_name: str
@@ -59,6 +64,12 @@ class ToolDescriptor(BaseModel):
     source_ref: str = ""
     script_decl: ScriptDeclaration | None = None
     host_script_path: str | None = None
+    # ---- §15.1 扩展 ----
+    idempotent: bool = False
+    retryable: bool = False
+    max_attempts: int = 1
+    fingerprint_ignore_fields: list[str] = Field(default_factory=list)
+    phase_tags: list[str] = Field(default_factory=list)
 
 
 def to_chat_tool_spec(descriptor: ToolDescriptor) -> ChatToolSpec:

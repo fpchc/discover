@@ -14,7 +14,7 @@ from app.capabilities.mcp.client import (
     MCPClient,
     MCPToolInfo,
 )
-from app.capabilities.tools.broker import ToolBroker, ToolCallRequest
+from app.capabilities.tools.broker import ToolBroker, ToolCallRequest, _coerce_nested_object_args
 from app.capabilities.tools.descriptor import (
     ToolDescriptor,
     ToolSource,
@@ -451,6 +451,29 @@ async def test_activate_three_tiers(tmp_path: Path) -> None:
     assert "alibaba_search.web_search" in exposed  # 核心工具 Tier1
     assert "alibaba_search.web_search_news" not in exposed  # Tier2 懒加载
 
+    catalog = broker.catalog_tool_names()
+    assert "alibaba_search.web_search_news" in catalog  # 目录全集含 Tier2，供阶段白名单
+
+
+async def test_catalog_tool_names_excludes_unactivated_server(tmp_path: Path) -> None:
+    """catalog_tool_names 只含已激活服务的工具；未激活服务器的目录项不得进入白名单。"""
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    # 必填失败 → 激活失败，不应残留已激活目录项
+    activation = await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is False
+    # 仅剩元工具（search_tools/describe_tool/read_reference），MCP 工具不在目录
+    catalog = set(broker.catalog_tool_names())
+    assert "alibaba_search.web_search" not in catalog
+    assert {"search_tools", "describe_tool", "read_reference"} <= catalog
+
 
 async def test_activate_required_failure_releases(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
@@ -702,6 +725,85 @@ async def test_search_tools_no_params(tmp_path: Path) -> None:
     assert any(hit.qualified_name == "alibaba_search.web_search_news" for hit in hits)
     dumped = hits[0].model_dump()
     assert "parameters" not in dumped  # 检索不返回参数约束
+
+
+def test_coerce_nested_object_args() -> None:
+    """schema 声明为 object 的参数被模型序列化成 JSON 字符串时应回转为对象。
+
+    回归防护：tyc_mcp.call_tool 的 arguments 字段声明为 object，但推理模型常把它
+    连同外层一起 JSON 序列化成字符串，远端报「arguments must be an object」，
+    导致正文采集全部失败、最终无正文输出。
+    """
+    descriptor = ToolDescriptor(
+        qualified_name="tyc_mcp.call_tool",
+        short_name="call_tool",
+        namespace="tyc_mcp",
+        description="分派工具",
+        parameters={
+            "type": "object",
+            "properties": {
+                "company_name": {"type": "string"},
+                "tool_name": {"type": "string"},
+                "arguments": {"type": "object"},
+            },
+        },
+        source=ToolSource.MCP,
+        tier=2,
+    )
+    args = {"company_name": "X", "tool_name": "get_annual_reports", "arguments": '{"page": 1}'}
+    coerced = _coerce_nested_object_args(descriptor, args)
+    assert coerced["arguments"] == {"page": 1}
+    # 字符串字段（company_name / tool_name）不得被误解析
+    assert coerced["company_name"] == "X"
+    assert coerced["tool_name"] == "get_annual_reports"
+
+
+def test_coerce_nested_object_args_batch_calls() -> None:
+    """call_tools_batch 的 calls 数组（含嵌套 arguments 字符串）应逐项回转为对象。"""
+    descriptor = ToolDescriptor(
+        qualified_name="tyc_mcp.call_tools_batch",
+        short_name="call_tools_batch",
+        namespace="tyc_mcp",
+        description="批量分派工具",
+        parameters={},  # 无 properties：靠字段名确定性回退，不依赖 schema 声明
+        source=ToolSource.MCP,
+        tier=2,
+    )
+    args = {
+        "company_name": "X",
+        "calls": '[{"tool_name": "get_annual_reports", "arguments": "{\\"page\\": 1}"}]',
+    }
+    coerced = _coerce_nested_object_args(descriptor, args)
+    calls = coerced["calls"]
+    assert isinstance(calls, list)
+    assert calls[0]["arguments"] == {"page": 1}
+
+
+def test_coerce_nested_object_args_keeps_non_string_and_non_object() -> None:
+    """非字符串值、schema 未声明为 object 的字段、非法 JSON 均原样保留。"""
+    descriptor = ToolDescriptor(
+        qualified_name="tyc_mcp.call_tool",
+        short_name="call_tool",
+        namespace="tyc_mcp",
+        description="分派工具",
+        parameters={
+            "type": "object",
+            "properties": {
+                "arguments": {"type": "object"},
+                "note": {"type": "string"},
+            },
+        },
+        source=ToolSource.MCP,
+        tier=2,
+    )
+    # 已是对象 → 不动
+    assert _coerce_nested_object_args(descriptor, {"arguments": {"a": 1}})["arguments"] == {"a": 1}
+    # schema 是 string 的字段 → 不解析（即使看起来像 JSON）
+    assert _coerce_nested_object_args(descriptor, {"note": '{"a":1}'})["note"] == '{"a":1}'
+    # 非法 JSON → 保留原字符串
+    assert (
+        _coerce_nested_object_args(descriptor, {"arguments": "not json"})["arguments"] == "not json"
+    )
 
 
 async def test_describe_tool_expands_exposed(tmp_path: Path) -> None:

@@ -1,14 +1,11 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-import anyio
 import httpx
 import pytest
 from app.bootstrap.application import create_app
 from app.config.settings import Settings
 from app.domain.auth.security import JwtService
-from app.runtime.events.events import DoneEvent
-from app.runtime.state import GraphState
 from sqlalchemy import text
 
 # 测试固定 JWT 密钥（≥32 字节，避免 pyjwt 弱密钥警告；与 _build_settings 对齐）
@@ -116,33 +113,6 @@ def _build_settings(tmp_path: Path) -> Settings:
     )
 
 
-class _FakeRuntime:
-    """测试用假运行时：模拟 LLM 流式增量到达，不触达真实 LLM。
-
-    分块推送正文（含间隔），由服务端 emitter 按 typewriter 节流分帧——
-    消费者按帧到达追加即可看到打字机效果。
-    """
-
-    async def run_turn(
-        self,
-        *,
-        session_id: str,
-        user_input: str,
-        emitter: object,
-        account_id: str,
-        assistant_target: object,
-    ) -> GraphState:
-        del session_id, user_input, account_id, assistant_target
-        for chunk in ("你好，", "我是平台智能体，", "正在流式输出。"):
-            emitter.text_delta(chunk)
-            await anyio.sleep(0.05)
-        await emitter.emit(DoneEvent(turns=1, duration_ms=0, usage={}))
-        return GraphState()
-
-    async def close(self) -> None:
-        """AppServices.shutdown 会逐一 close 会话运行时。"""
-
-
 class _FakeSessionStore:
     """内存会话存储（离线 HTTP 测试用）：访问会话恒有效，登出/刷新走内存 dict。
 
@@ -203,7 +173,6 @@ async def api_ctx(tmp_path: Path) -> AsyncIterator[tuple[object, httpx.AsyncClie
     否则 services.conversation_service 等只在 startup() 里创建，路由会断言失败。
     """
     app = create_app(_build_settings(tmp_path))
-    app.state.services.get_runtime = lambda _sid: _FakeRuntime()
     async with app.router.lifespan_context(app):
         # Redis 会话层为硬依赖；离线测试注入内存假存储（startup 已建 AuthService）
         app.state.services.auth._sessions = _FakeSessionStore()  # type: ignore[attr-defined]  # 测试注入假会话存储

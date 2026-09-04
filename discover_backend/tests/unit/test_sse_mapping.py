@@ -1,10 +1,11 @@
-"""单元测试：内部 AgentEvent → 对外 SSE 帧映射（chat._map_stream_event）。
+"""单元测试：RunEvent → 对外 SSE 帧映射（run_stream.map_run_event）。
 
-覆盖思考事件独立映射为 thinking_* 帧、正文/心跳/错误/完成映射，以及
-路由/工具等富事件在对外流中丢弃（返回 None）。纯函数测试，无网络无 DB。
+覆盖展示增量（思考/正文/心跳）与终态事件（message_end 携带 usage/assistant）、
+失败帧，以及工具/路由等高频事件在对外流中丢弃（返回 None）。
+纯函数测试，无网络无 DB。
 """
 
-from app.interfaces.http.chat import _map_stream_event
+from app.interfaces.http.run_stream import map_run_event
 from app.interfaces.schemas import (
     ErrorStreamEvent,
     MessageEndEvent,
@@ -14,35 +15,38 @@ from app.interfaces.schemas import (
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
-from app.runtime.events.events import (
-    AgentEvent,
-    DoneEvent,
-    ErrorEvent,
-    HeartbeatEvent,
-    TextDeltaEvent,
-    ThinkingDeltaEvent,
-    ThinkingEndedEvent,
-    ThinkingStartedEvent,
-    ToolCallStartedEvent,
+from app.runtime.events.run_events import (
+    Heartbeat,
+    RunCompleted,
+    RunFailed,
+    TextDelta,
+    ThinkingDelta,
+    ThinkingEnded,
+    ThinkingStarted,
+    ToolCallStarted,
 )
+from app.runtime.models import TerminationReason
 from app.shared.errors.base import ErrorCategory
 
 _MESSAGE_ID = "msg-1"
 _CONVERSATION_ID = "conv-1"
 _CREATED_AT = 1700000000
+_USAGE = {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+_ASSISTANT = {"type": "expert", "id": "finder"}
 
 
-def _map(event: AgentEvent) -> object | None:
-    return _map_stream_event(
-        event,
+def _map(event: object, **kwargs: object) -> object | None:
+    return map_run_event(
+        event,  # type: ignore[arg-type]  # RunEvent 联合由事件构造保证
         message_id=_MESSAGE_ID,
         conversation_id=_CONVERSATION_ID,
         created_at=_CREATED_AT,
+        **kwargs,
     )
 
 
 def test_thinking_started_maps_to_thinking_start_frame() -> None:
-    frame = _map(ThinkingStartedEvent())
+    frame = _map(ThinkingStarted(run_id="r1"))
     assert isinstance(frame, ThinkingStartFrame)
     assert frame.event == "thinking_started"
     assert frame.message_id == _MESSAGE_ID
@@ -51,7 +55,7 @@ def test_thinking_started_maps_to_thinking_start_frame() -> None:
 
 
 def test_thinking_delta_maps_to_thinking_delta_frame() -> None:
-    frame = _map(ThinkingDeltaEvent(text="先分析产业链，再圈定候选客户。"))
+    frame = _map(ThinkingDelta(run_id="r1", text="先分析产业链，再圈定候选客户。"))
     assert isinstance(frame, ThinkingDeltaFrame)
     assert frame.event == "thinking_delta"
     assert frame.content == "先分析产业链，再圈定候选客户。"
@@ -59,7 +63,7 @@ def test_thinking_delta_maps_to_thinking_delta_frame() -> None:
 
 
 def test_thinking_ended_maps_to_thinking_end_frame() -> None:
-    frame = _map(ThinkingEndedEvent(duration_ms=1234))
+    frame = _map(ThinkingEnded(run_id="r1", duration_ms=1234))
     assert isinstance(frame, ThinkingEndFrame)
     assert frame.event == "thinking_ended"
     assert frame.duration_ms == 1234
@@ -67,44 +71,40 @@ def test_thinking_ended_maps_to_thinking_end_frame() -> None:
 
 
 def test_text_delta_maps_to_message_frame() -> None:
-    frame = _map(TextDeltaEvent(text="报告正文"))
+    frame = _map(TextDelta(run_id="r1", text="报告正文"))
     assert isinstance(frame, MessageEvent)
     assert frame.event == "message"
     assert frame.answer == "报告正文"
 
 
-def test_done_maps_to_message_end_with_compat_usage() -> None:
+def test_run_completed_maps_to_message_end_with_usage_and_assistant() -> None:
     frame = _map(
-        DoneEvent(
-            turns=2,
-            duration_ms=500,
-            usage={"input": 10, "output": 20, "total": 30, "cached_read": 7, "cached_write": 3},
-        )
+        RunCompleted(
+            run_id="r1",
+            status="succeeded",
+            termination_reason=TerminationReason.COMPLETED,
+        ),
+        usage=_USAGE,
+        assistant=_ASSISTANT,
     )
     assert isinstance(frame, MessageEndEvent)
     assert frame.event == "message_end"
-    assert frame.metadata["usage"] == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
-        "total_tokens": 30,
-        "cached_read_tokens": 7,
-        "cached_write_tokens": 3,
-    }
+    assert frame.metadata["usage"] == _USAGE
+    assert frame.metadata["assistant"] == _ASSISTANT
 
 
 def test_heartbeat_maps_to_ping() -> None:
-    frame = _map(HeartbeatEvent())
+    frame = _map(Heartbeat())
     assert isinstance(frame, PingEvent)
     assert frame.event == "ping"
 
 
-def test_error_maps_to_error_frame_with_status() -> None:
+def test_run_failed_maps_to_error_frame_with_status() -> None:
     frame = _map(
-        ErrorEvent(
-            category=ErrorCategory.SERVER,
+        RunFailed(
+            run_id="r1",
+            error_category=ErrorCategory.SERVER,
             message="内部错误",
-            recoverable=False,
-            suggestion="请重试",
         )
     )
     assert isinstance(frame, ErrorStreamEvent)
@@ -115,5 +115,5 @@ def test_error_maps_to_error_frame_with_status() -> None:
 
 
 def test_rich_events_dropped_from_outward_stream() -> None:
-    # 路由/工具等富事件在对外流中丢弃，不产生帧
-    assert _map(ToolCallStartedEvent(call_id="c1", tool_name="search", args_summary="{}")) is None
+    # 工具/路由等高频事件在对外流中丢弃，不产生帧
+    assert _map(ToolCallStarted(run_id="r1", call_id="c1", tool_name="search")) is None
