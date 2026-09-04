@@ -25,6 +25,8 @@ scripts:
     description: 八维量化评分计算器（含 Score Trace）。仅候选池场景使用，评分必须经此脚本
     schema_path: schemas/score_input.json
 documents:
+  - path: references/card-format.md
+    when: 输出企业信息卡正文时（三段式结构、加粗要点、正反例，排版唯一权威）
   - path: references/evidence-rules.md
     when: 证据等级判定、缺项是否补搜时
   - path: references/scoring-rules.md
@@ -46,7 +48,7 @@ gates:
 ---
 # 客户调研工作流（一次调研版）
 
-交付物：单企为一张 200~450 字信息卡；多企输入时逐家各出一张、全部输出（重点分层：结论 → 事实 → 价值）；目标是一次调研完成，禁止多次往返、禁止长链条思考。
+交付物：单企为一张 200~450 字信息卡；多企输入时逐家各出一张、全部输出。排版强制三段式（定位句 → 加粗小标签逐条的事实段 → 切入价值段），大数字与风险必加粗、风险单列 `**注意**` 行，权威规范见 `references/card-format.md`，冲突时以该文件为准；禁止整段纯散文或 `|` / `—` 分隔的机械串行模版。目标是一次调研完成，禁止多次往返、禁止长链条思考。
 
 ## 1. 场景判定（一步）
 
