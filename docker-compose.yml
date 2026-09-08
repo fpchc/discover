@@ -1,5 +1,4 @@
 x-common-env: &common-env
-
   # ---------- 路径 ----------
   AGENTS_ROOT_DIR: ${AGENTS_ROOT_DIR:-agents}
   MCP_REGISTRY_PATH: ${MCP_REGISTRY_PATH:-config/mcp-servers.yaml}
@@ -12,12 +11,6 @@ x-common-env: &common-env
   DB_HOST: ${DB_HOST:-175.178.45.21}
   DB_PORT: ${DB_PORT:-5432}
   DB_DATABASE: ${DB_DATABASE:-agent_platform}
-
-  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
-  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
-  DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30.0}
-  DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
-  DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
 
   # ---------- 存储 ----------
   STORAGE_ROOT_DIR: ${STORAGE_ROOT_DIR:-storage}
@@ -34,50 +27,47 @@ x-common-env: &common-env
   # ---------- 思考模式 ----------
   THINKING_ENABLED: ${THINKING_ENABLED:-true}
 
-  # ---------- SSE ----------
+  # ---------- SSE 打字机（正文） ----------
   TYPEWRITER_FRAME_INTERVAL_MS: ${TYPEWRITER_FRAME_INTERVAL_MS:-30}
   TYPEWRITER_CHARS_PER_FRAME: ${TYPEWRITER_CHARS_PER_FRAME:-2}
   TYPEWRITER_CATCHUP_THRESHOLD: ${TYPEWRITER_CATCHUP_THRESHOLD:-200}
   TYPEWRITER_CATCHUP_RATIO: ${TYPEWRITER_CATCHUP_RATIO:-4}
 
+  # ---------- SSE 打字机（思考） ----------
   THINKING_FRAME_INTERVAL_MS: ${THINKING_FRAME_INTERVAL_MS:-20}
   THINKING_CHARS_PER_FRAME: ${THINKING_CHARS_PER_FRAME:-4}
 
+  # ---------- SSE 心跳 ----------
   SSE_HEARTBEAT_INTERVAL_SECONDS: ${SSE_HEARTBEAT_INTERVAL_SECONDS:-15}
   SSE_QUEUE_MAX_EVENTS: ${SSE_QUEUE_MAX_EVENTS:-128}
 
   ACTIVE_TURN_TTL_SECONDS: ${ACTIVE_TURN_TTL_SECONDS:-120}
 
-  # ---------- 控制台 ----------
+  # ---------- 控制台客户端 ----------
   CONSOLE_BASE_URL: ${CONSOLE_BASE_URL:-http://127.0.0.1:9101}
   CONSOLE_CHAR_DELAY_MS: ${CONSOLE_CHAR_DELAY_MS:-20}
   CONSOLE_REQUEST_TIMEOUT_SECONDS: ${CONSOLE_REQUEST_TIMEOUT_SECONDS:-300}
 
-  # ---------- 工具 ----------
+  # ---------- 工具与 MCP ----------
   TOOL_BATCH_CONCURRENCY: ${TOOL_BATCH_CONCURRENCY:-10}
   TOOL_DEFAULT_TIMEOUT_SECONDS: ${TOOL_DEFAULT_TIMEOUT_SECONDS:-30}
   TOOL_OUTPUT_TRUNCATE_CHARS: ${TOOL_OUTPUT_TRUNCATE_CHARS:-6000}
-
-  TOOL_LOG_ROOT_DIR: ${TOOL_LOG_ROOT_DIR:-logs/tools}
-  TOOL_LOG_RETENTION_DAYS: ${TOOL_LOG_RETENTION_DAYS:-7}
-  TOOL_LOG_MAX_FILES_PER_SESSION: ${TOOL_LOG_MAX_FILES_PER_SESSION:-200}
-
-  # ---------- MCP ----------
   MCP_ACQUIRE_RETRY_ATTEMPTS: ${MCP_ACQUIRE_RETRY_ATTEMPTS:-3}
   MCP_ACQUIRE_RETRY_BACKOFF_SECONDS: ${MCP_ACQUIRE_RETRY_BACKOFF_SECONDS:-1.5}
-
-  MCP_HIDDEN_TOOL_NAMES: ${MCP_HIDDEN_TOOL_NAMES:-["call_tool","call_tools_batch"]}
-
-  ALIBABA_SEARCH_TOKEN: ${ALIBABA_SEARCH_TOKEN:-}
+  MCP_HIDDEN_TOOL_NAMES: ${MCP_HIDDEN_TOOL_NAMES:-'["call_tool", "call_tools_batch"]'}
 
   TENCENT_MCP_TOKEN: ${TENCENT_MCP_TOKEN:-}
   WSA_API_KEY: ${WSA_API_KEY:-}
-
-  TENCENT_MCP_BASE_URL: ${TENCENT_MCP_BASE_URL:-http://tencent_mcp:10001/mcp}
+  TENCENT_MCP_HOST: ${TENCENT_MCP_HOST:-127.0.0.1}
+  TENCENT_MCP_PORT: ${TENCENT_MCP_PORT:-9111}
+  TENCENT_MCP_BASE_URL: ${TENCENT_MCP_BASE_URL:-http://tencent_mcp:9111/mcp}
 
   EASTMONEY_MCP_TOKEN: ${EASTMONEY_MCP_TOKEN:-}
-  EASTMONEY_MCP_BASE_URL: ${EASTMONEY_MCP_BASE_URL:-http://eastmoney_mcp:10002/mcp}
+  EASTMONEY_MCP_HOST: ${EASTMONEY_MCP_HOST:-127.0.0.1}
+  EASTMONEY_MCP_PORT: ${EASTMONEY_MCP_PORT:-9112}
+  EASTMONEY_MCP_BASE_URL: ${EASTMONEY_MCP_BASE_URL:-http://eastmoney_mcp:9112/mcp}
 
+  ALIBABA_SEARCH_TOKEN: ${ALIBABA_SEARCH_TOKEN:-}
   TYC_MCP_TOKEN: ${TYC_MCP_TOKEN:-}
   QCC_MCP_TOKEN: ${QCC_MCP_TOKEN:-}
   TUSHARE_MCP_TOKEN: ${TUSHARE_MCP_TOKEN:-}
@@ -88,10 +78,11 @@ x-common-env: &common-env
   # ---------- 推理与路由 ----------
   CONTEXT_BUDGET_TOKENS: ${CONTEXT_BUDGET_TOKENS:-96000}
   REASONING_MAX_TURNS: ${REASONING_MAX_TURNS:-40}
-  HISTORY_MAX_MESSAGES: ${HISTORY_MAX_MESSAGES:-50}
-  ROUTING_CONFIDENCE_THRESHOLD: ${ROUTING_CONFIDENCE_THRESHOLD:-0.6}
 
-  # ---------- Agent 装配 ----------
+  # ---------- 会话记忆 ----------
+  HISTORY_MAX_MESSAGES: ${HISTORY_MAX_MESSAGES:-50}
+
+  # ---------- 装配 ----------
   AGENT_BODY_MAX_CHARS: ${AGENT_BODY_MAX_CHARS:-2000}
   SKILL_BODY_MAX_CHARS: ${SKILL_BODY_MAX_CHARS:-8000}
 
@@ -104,15 +95,13 @@ x-common-env: &common-env
   AGENT_MAX_DURATION_SECONDS: ${AGENT_MAX_DURATION_SECONDS:-300}
   AGENT_MAX_REPAIR_ATTEMPTS: ${AGENT_MAX_REPAIR_ATTEMPTS:-2}
   AGENT_FINALIZATION_RESERVE_TOKENS: ${AGENT_FINALIZATION_RESERVE_TOKENS:-5000}
-
   AGENT_CONTEXT_SUMMARY_MAX_MESSAGES: ${AGENT_CONTEXT_SUMMARY_MAX_MESSAGES:-10}
   AGENT_CONTEXT_SUMMARY_MAX_CHARS: ${AGENT_CONTEXT_SUMMARY_MAX_CHARS:-4000}
 
-  # ---------- 热重载 ----------
+  # ---------- 功能与插件开关 ----------
   HOT_RELOAD_ENABLED: ${HOT_RELOAD_ENABLED:-false}
   HOT_RELOAD_INTERVAL_SECONDS: ${HOT_RELOAD_INTERVAL_SECONDS:-30}
 
-  # ---------- 插件 ----------
   LOGGING_ENABLED: ${LOGGING_ENABLED:-true}
   DB_ENABLED: ${DB_ENABLED:-true}
   STORAGE_ENABLED: ${STORAGE_ENABLED:-true}
@@ -124,14 +113,10 @@ x-common-env: &common-env
   LOG_TZ: ${LOG_TZ:-Asia/Shanghai}
   LOG_DIR: ${LOG_DIR:-logs}
   LOG_FILE: ${LOG_FILE:-app.log}
-
   LOG_ROTATION_WHEN: ${LOG_ROTATION_WHEN:-midnight}
   LOG_ROTATION_INTERVAL: ${LOG_ROTATION_INTERVAL:-1}
   LOG_FILE_BACKUP_COUNT: ${LOG_FILE_BACKUP_COUNT:-14}
   LOG_COMPRESS: ${LOG_COMPRESS:-true}
-
-  # LOG_MODULE_LEVELS: ${LOG_MODULE_LEVELS:-{}}
-
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
   # ---------- Redis ----------
@@ -139,30 +124,24 @@ x-common-env: &common-env
   REDIS_CACHE_DEFAULT_TTL_SECONDS: ${REDIS_CACHE_DEFAULT_TTL_SECONDS:-3600}
   REDIS_LOCK_DEFAULT_TIMEOUT_SECONDS: ${REDIS_LOCK_DEFAULT_TIMEOUT_SECONDS:-30}
 
-  # ---------- 中间件 ----------
+  # ---------- 中间件与服务 ----------
   REQUEST_LOGGING_ENABLED: ${REQUEST_LOGGING_ENABLED:-true}
-
-  # ---------- 服务 ----------
   HOST: ${HOST:-0.0.0.0}
   PORT: ${PORT:-9101}
 
-  # ---------- JWT ----------
+  # ---------- 统一认证平台（JWT） ----------
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
   JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
   JWT_ISSUER: ${JWT_ISSUER:-crm-auth}
   JWT_AUDIENCE: ${JWT_AUDIENCE:-crm-backend}
-
   AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-604800}
   AUTH_REFRESH_TOKEN_TTL_SECONDS: ${AUTH_REFRESH_TOKEN_TTL_SECONDS:-2592000}
-
-  # ---------- Argon2id ----------
   ARGON2_TIME_COST: ${ARGON2_TIME_COST:-3}
   ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-65536}
   ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-4}
 
   # ---------- 账号资料 ----------
   ACCOUNT_PASSWORD_MIN_LENGTH: ${ACCOUNT_PASSWORD_MIN_LENGTH:-8}
-
   AVATAR_MAX_SIZE_BYTES: ${AVATAR_MAX_SIZE_BYTES:-2097152}
   AVATAR_ALLOWED_EXTENSIONS: ${AVATAR_ALLOWED_EXTENSIONS:-png,jpg,jpeg,webp,gif}
   AVATAR_MAX_DIMENSION: ${AVATAR_MAX_DIMENSION:-512}
@@ -183,6 +162,7 @@ services:
       dockerfile: Dockerfile
     image: discover-backend:test
     restart: unless-stopped
+    container_name: discover_backend
     depends_on:
       - tencent_mcp
       - eastmoney_mcp
@@ -206,6 +186,7 @@ services:
         VITE_APP_ENV: test
         VITE_API_BASE_URL: /api/v1
     image: discover-frontend:test
+    container_name: discover_frontend
     restart: unless-stopped
     depends_on:
       - discover_backend
@@ -224,6 +205,7 @@ services:
       context: ./discover_backend
       dockerfile: Dockerfile
     image: discover-backend:test
+    container_name: tencent_mcp
     restart: unless-stopped
     command: ["uv", "run", "--no-dev", "python", "-m", "local_mcp.tencent_mcp.main"]
     ports:
@@ -242,6 +224,7 @@ services:
       context: ./discover_backend
       dockerfile: Dockerfile
     image: discover-backend:test
+    container_name: eastmoney_mcp
     restart: unless-stopped
     command: ["uv", "run", "--no-dev", "python", "-m", "local_mcp.eastmoney_mcp.main"]
     ports:
