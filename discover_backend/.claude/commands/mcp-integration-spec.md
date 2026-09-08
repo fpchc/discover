@@ -224,6 +224,11 @@ capability_dependencies:
 | 能力降级 | 能力全部候选不可用且声明 `fallback` | 降级到 fallback 能力（如企业数据 → web_search） |
 | 拒绝激活 | 必需能力全部候选不可用且无 fallback | 发错误事件并终止本轮 |
 
+**必需依赖获取有界重试**：必需 MCP / 必需能力候选在激活时做有界退避重试
+（`mcp_acquire_retry_attempts` × `mcp_acquire_retry_backoff_seconds`，配置驱动，退避间隔逐次
+累加），覆盖本地服务（如 tencent_mcp）启动慢、连接暂不可用的窗口；重试耗尽仍不可用才落入
+「拒绝激活」。服务恢复后下一轮装配自动重新连接（每轮重新装配，见 agent_runner）。
+
 **降级后的报告质量预期**：原专有数据源（企业工商 / 风险）支撑的维度会退化为
 「数据不充分·取中性分」或「基于公开信息推断」。这是接入约束下的必然权衡。
 

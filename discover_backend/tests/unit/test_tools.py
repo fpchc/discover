@@ -351,14 +351,29 @@ class _FakeClient:
 
 
 class _FakeMCPManager:
-    def __init__(self, tools: list[MCPToolInfo], *, fail: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        tools: list[MCPToolInfo],
+        *,
+        fail: set[str] | None = None,
+        fail_until: dict[str, int] | None = None,
+    ) -> None:
         self.tools = tools
         self.fail = fail or set()
+        # fail_until: server_id -> 前 N 次 acquire 失败、其后成功（模拟服务启动中的短暂不可用）
+        self.fail_until = fail_until or {}
         self.acquired: list[str] = []
         self.released: list[str] = []
+        self.attempt_counts: dict[str, int] = {}
 
     async def acquire(self, server_id: str) -> _FakeClient:
+        self.attempt_counts[server_id] = self.attempt_counts.get(server_id, 0) + 1
         if server_id in self.fail:
+            raise MCPAuthError("认证失败")
+        if (
+            server_id in self.fail_until
+            and self.attempt_counts[server_id] <= self.fail_until[server_id]
+        ):
             raise MCPAuthError("认证失败")
         self.acquired.append(server_id)
         return _FakeClient(self.tools, server_id)
@@ -415,7 +430,7 @@ def _setup(tmp_path: Path) -> tuple[Path, Path]:
 def _broker(
     tmp_path: Path, mcp_manager: _FakeMCPManager, script_executor: _FakeScriptExecutor
 ) -> ToolBroker:
-    settings = Settings(_env_file=None)
+    settings = Settings(_env_file=None, mcp_acquire_retry_backoff_seconds=0.0)
     return ToolBroker(settings=settings, mcp_manager=mcp_manager, script_executor=script_executor)
 
 
@@ -480,6 +495,30 @@ async def test_activate_hides_generic_mcp_dispatch_tools(tmp_path: Path) -> None
     assert "alibaba_search.search_companies" in catalog
 
 
+async def test_activate_keeps_generic_dispatch_tools_when_only_tools(tmp_path: Path) -> None:
+    """服务只暴露泛化分发工具（tyc_mcp 形态）时保留，否则该服务完全不可用。"""
+    skill_dir, workspace = _setup(tmp_path)
+    tools = [
+        MCPToolInfo(name="call_tool", description="泛化调用", input_schema={"type": "object"}),
+        MCPToolInfo(
+            name="call_tools_batch", description="批量调用", input_schema={"type": "object"}
+        ),
+    ]
+    plan = _plan().model_copy(update={"required_mcp_servers": ["tyc_mcp"]})
+    broker = _broker(tmp_path, _FakeMCPManager(tools), _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    catalog = broker.catalog_tool_names()
+    assert "tyc_mcp.call_tool" in catalog
+    assert "tyc_mcp.call_tools_batch" in catalog
+
+
 async def test_catalog_tool_names_excludes_unactivated_server(tmp_path: Path) -> None:
     """catalog_tool_names 只含已激活服务的工具；未激活服务器的目录项不得进入白名单。"""
     skill_dir, workspace = _setup(tmp_path)
@@ -514,6 +553,42 @@ async def test_activate_required_failure_releases(tmp_path: Path) -> None:
     assert activation.ok is False
     assert activation.failed_required == ["alibaba_search"]
     assert activation.reason == "必需 MCP 依赖不可用，拒绝激活"
+
+
+async def test_activate_required_acquire_retries_then_succeeds(tmp_path: Path) -> None:
+    """必需 MCP 短暂不可用（服务启动中）：首次失败后重试，恢复即激活成功。"""
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail_until={"alibaba_search": 1})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    assert activation.started_services == ["alibaba_search"]
+    assert activation.failed_required == []
+    assert manager.attempt_counts["alibaba_search"] == 2
+    assert manager.acquired == ["alibaba_search"]
+
+
+async def test_activate_required_acquire_retries_exhausted(tmp_path: Path) -> None:
+    """重试耗尽仍不可用 → 拒绝激活；acquire 恰好被调用 retry_attempts 次。"""
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=_plan(),
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is False
+    assert activation.failed_required == ["alibaba_search"]
+    assert manager.attempt_counts["alibaba_search"] == 3
 
 
 def _capability_plan(candidates: list[str], *, required: bool = True) -> AssemblyPlan:

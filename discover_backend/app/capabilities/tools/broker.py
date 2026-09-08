@@ -273,6 +273,33 @@ class ToolBroker:
             self._descriptors[name] = descriptor
             self._exposed.add(name)
 
+    async def _acquire_with_retry(self, server_id: str) -> MCPClient:
+        """获取 MCP 客户端：短暂不可用时按配置有界退避重试。
+
+        本地 MCP 服务（如 tencent_mcp）启动慢，单次 acquire 失败即拒绝激活会让服务
+        稍后启动时仍需整轮重试。此处最多重试 retry_attempts 次，退避间隔逐次累加；
+        重试耗尽仍失败则抛出最后一次异常，由 activate 归入 failed_required（仍拒绝激活，
+        规范 mcp-integration-spec §8）。
+        """
+        attempts = self._settings.mcp_acquire_retry_attempts
+        backoff = self._settings.mcp_acquire_retry_backoff_seconds
+        last_exc: PlatformError | None = None
+        for attempt in range(attempts):
+            try:
+                return await self._mcp_manager.acquire(server_id)
+            except PlatformError as exc:
+                last_exc = exc
+                if attempt + 1 < attempts:
+                    logger.warning(
+                        "MCP 依赖获取失败，将重试：server=%s 第 %d/%d 次",
+                        server_id,
+                        attempt + 1,
+                        attempts,
+                    )
+                    await anyio.sleep(backoff * (attempt + 1))
+        assert last_exc is not None
+        raise last_exc
+
     async def activate(
         self,
         *,
@@ -300,7 +327,7 @@ class ToolBroker:
         acquired: set[str] = set()
         for server_id in plan.required_mcp_servers:
             try:
-                client = await self._mcp_manager.acquire(server_id)
+                client = await self._acquire_with_retry(server_id)
             except PlatformError:
                 failed_required.append(server_id)
                 continue
@@ -320,7 +347,7 @@ class ToolBroker:
             )
         for server_id in plan.optional_mcp_servers:
             try:
-                client = await self._mcp_manager.acquire(server_id)
+                client = await self._acquire_with_retry(server_id)
             except PlatformError:
                 degraded.append(server_id)
                 degrade_notes.append(
@@ -345,7 +372,7 @@ class ToolBroker:
                         activated = True
                         continue
                     try:
-                        client = await self._mcp_manager.acquire(server_id)
+                        client = await self._acquire_with_retry(server_id)
                     except PlatformError:
                         cap_failures.append(server_id)
                         degraded.append(server_id)
@@ -364,7 +391,7 @@ class ToolBroker:
                     activated = True
                     break
                 try:
-                    client = await self._mcp_manager.acquire(server_id)
+                    client = await self._acquire_with_retry(server_id)
                 except PlatformError:
                     cap_failures.append(server_id)
                     degraded.append(server_id)
@@ -382,7 +409,7 @@ class ToolBroker:
                         activated = True
                         break
                     try:
-                        client = await self._mcp_manager.acquire(server_id)
+                        client = await self._acquire_with_retry(server_id)
                     except PlatformError:
                         cap_failures.append(server_id)
                         degraded.append(server_id)
@@ -457,8 +484,12 @@ class ToolBroker:
         tools = await client.list_tools()
         limit = self._mcp_manager.concurrency_limit(server_id)
         self._service_slots[server_id] = anyio.Semaphore(limit)
+        hidden = self._settings.mcp_hidden_tool_names
+        # 泛化分发工具（call_tool / call_tools_batch）仅在同服务存在具体工具可替代时剔除；
+        # 服务只暴露泛化工具（如 tyc_mcp 天眼查）时保留，否则该服务完全不可用。
+        keep_generic = not any(tool.name not in hidden for tool in tools)
         for tool in tools:
-            if tool.name in self._settings.mcp_hidden_tool_names:
+            if tool.name in hidden and not keep_generic:
                 logger.info(
                     "隐藏 MCP 泛化工具 %s（server=%s），不进入模型可见清单", tool.name, server_id
                 )

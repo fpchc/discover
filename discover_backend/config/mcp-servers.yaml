@@ -21,7 +21,7 @@
 servers:
   - id: tencent_mcp
     transport: streamable_http
-    base_url: "${TENCENT_MCP_BASE_URL:-http://127.0.0.1:10001/mcp}"
+    base_url: "${TENCENT_MCP_BASE_URL:-http://127.0.0.1:9111/mcp}"
     auth:
       type: bearer_token
       token_env: "TENCENT_MCP_TOKEN"
@@ -32,7 +32,7 @@ servers:
     enabled: true
   - id: eastmoney_mcp
     transport: streamable_http
-    base_url: "${EASTMONEY_MCP_BASE_URL:-http://127.0.0.1:10002/mcp}"
+    base_url: "${EASTMONEY_MCP_BASE_URL:-http://127.0.0.1:9112/mcp}"
     auth:
       type: bearer_token
       token_env: "EASTMONEY_MCP_TOKEN"

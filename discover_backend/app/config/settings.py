@@ -159,8 +159,13 @@ class Settings(BaseSettings):
     tool_batch_concurrency: int = 10
     tool_default_timeout_seconds: float = 30.0
     tool_output_truncate_chars: int = 6000
-    # MCP 服务暴露的泛化分发工具（call_tool / call_tools_batch），从模型可见清单剔除
+    # MCP 服务暴露的泛化分发工具（call_tool / call_tools_batch）：同服务存在具体工具可
+    # 替代时从模型可见清单剔除；服务唯一入口（只暴露泛化工具，如 tyc_mcp）时保留。
     mcp_hidden_tool_names: tuple[str, ...] = ("call_tool", "call_tools_batch")
+    # MCP 必需依赖获取重试：本地服务启动慢时短暂不可用不直接拒绝激活；
+    # 重试耗尽仍不可用才拒绝（mcp-integration-spec §8）。
+    mcp_acquire_retry_attempts: int = 3
+    mcp_acquire_retry_backoff_seconds: float = 1.5
 
     # ---- 脚本执行（本地直跑） ----
     # pragma: 简化 — 可信内部脚本，P1 一律宿主 subprocess 直跑，不做容器隔离；
