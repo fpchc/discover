@@ -1,16 +1,23 @@
 x-common-env: &common-env
+
   # ---------- 路径 ----------
   AGENTS_ROOT_DIR: ${AGENTS_ROOT_DIR:-agents}
   MCP_REGISTRY_PATH: ${MCP_REGISTRY_PATH:-config/mcp-servers.yaml}
   LLM_PROVIDERS_PATH: ${LLM_PROVIDERS_PATH:-config/llm-providers.yaml}
   AGENT_WORKSPACE_ROOT_DIR: ${AGENT_WORKSPACE_ROOT_DIR:-workspaces}
 
-  # ---------- 数据库 ----------
+  # ---------- 持久化（PostgreSQL） ----------
   DB_USERNAME: ${DB_USERNAME:-postgres}
   DB_PASSWORD: ${DB_PASSWORD:-v7Hf}
   DB_HOST: ${DB_HOST:-175.178.45.21}
   DB_PORT: ${DB_PORT:-5432}
   DB_DATABASE: ${DB_DATABASE:-agent_platform}
+
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+  DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30.0}
+  DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
+  DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
 
   # ---------- 存储 ----------
   STORAGE_ROOT_DIR: ${STORAGE_ROOT_DIR:-storage}
@@ -39,6 +46,8 @@ x-common-env: &common-env
   SSE_HEARTBEAT_INTERVAL_SECONDS: ${SSE_HEARTBEAT_INTERVAL_SECONDS:-15}
   SSE_QUEUE_MAX_EVENTS: ${SSE_QUEUE_MAX_EVENTS:-128}
 
+  ACTIVE_TURN_TTL_SECONDS: ${ACTIVE_TURN_TTL_SECONDS:-120}
+
   # ---------- 控制台 ----------
   CONSOLE_BASE_URL: ${CONSOLE_BASE_URL:-http://127.0.0.1:9101}
   CONSOLE_CHAR_DELAY_MS: ${CONSOLE_CHAR_DELAY_MS:-20}
@@ -48,34 +57,58 @@ x-common-env: &common-env
   TOOL_BATCH_CONCURRENCY: ${TOOL_BATCH_CONCURRENCY:-10}
   TOOL_DEFAULT_TIMEOUT_SECONDS: ${TOOL_DEFAULT_TIMEOUT_SECONDS:-30}
   TOOL_OUTPUT_TRUNCATE_CHARS: ${TOOL_OUTPUT_TRUNCATE_CHARS:-6000}
+
   TOOL_LOG_ROOT_DIR: ${TOOL_LOG_ROOT_DIR:-logs/tools}
   TOOL_LOG_RETENTION_DAYS: ${TOOL_LOG_RETENTION_DAYS:-7}
   TOOL_LOG_MAX_FILES_PER_SESSION: ${TOOL_LOG_MAX_FILES_PER_SESSION:-200}
 
   # ---------- MCP ----------
+  MCP_ACQUIRE_RETRY_ATTEMPTS: ${MCP_ACQUIRE_RETRY_ATTEMPTS:-3}
+  MCP_ACQUIRE_RETRY_BACKOFF_SECONDS: ${MCP_ACQUIRE_RETRY_BACKOFF_SECONDS:-1.5}
+
+  MCP_HIDDEN_TOOL_NAMES: ${MCP_HIDDEN_TOOL_NAMES:-["call_tool","call_tools_batch"]}
+
   ALIBABA_SEARCH_TOKEN: ${ALIBABA_SEARCH_TOKEN:-}
-  # 本地自建搜索 MCP 服务（tencent_mcp / eastmoney_mcp 容器，职责单一不混装）：
+
   TENCENT_MCP_TOKEN: ${TENCENT_MCP_TOKEN:-}
-  EASTMONEY_MCP_TOKEN: ${EASTMONEY_MCP_TOKEN:-}
   WSA_API_KEY: ${WSA_API_KEY:-}
-  # docker 内后端经网络 DNS 访问 MCP 容器；注册表 base_url 由此替换
+
   TENCENT_MCP_BASE_URL: ${TENCENT_MCP_BASE_URL:-http://tencent_mcp:10001/mcp}
+
+  EASTMONEY_MCP_TOKEN: ${EASTMONEY_MCP_TOKEN:-}
   EASTMONEY_MCP_BASE_URL: ${EASTMONEY_MCP_BASE_URL:-http://eastmoney_mcp:10002/mcp}
 
-  # ---------- 会话 ----------
+  TYC_MCP_TOKEN: ${TYC_MCP_TOKEN:-}
+  QCC_MCP_TOKEN: ${QCC_MCP_TOKEN:-}
+  TUSHARE_MCP_TOKEN: ${TUSHARE_MCP_TOKEN:-}
+
+  # ---------- 会话与产物 ----------
   ARTIFACT_MAX_SIZE_BYTES: ${ARTIFACT_MAX_SIZE_BYTES:-104857600}
 
-  # ---------- 推理 ----------
+  # ---------- 推理与路由 ----------
   CONTEXT_BUDGET_TOKENS: ${CONTEXT_BUDGET_TOKENS:-96000}
   REASONING_MAX_TURNS: ${REASONING_MAX_TURNS:-40}
   HISTORY_MAX_MESSAGES: ${HISTORY_MAX_MESSAGES:-50}
   ROUTING_CONFIDENCE_THRESHOLD: ${ROUTING_CONFIDENCE_THRESHOLD:-0.6}
 
-  # ---------- Agent装配 ----------
+  # ---------- Agent 装配 ----------
   AGENT_BODY_MAX_CHARS: ${AGENT_BODY_MAX_CHARS:-2000}
   SKILL_BODY_MAX_CHARS: ${SKILL_BODY_MAX_CHARS:-8000}
 
-  # ---------- 功能开关 ----------
+  # ---------- Agent Runtime ----------
+  AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-20}
+  AGENT_MAX_LLM_CALLS: ${AGENT_MAX_LLM_CALLS:-30}
+  AGENT_MAX_TOOL_CALLS: ${AGENT_MAX_TOOL_CALLS:-40}
+  AGENT_MAX_TOTAL_TOKENS: ${AGENT_MAX_TOTAL_TOKENS:-150000}
+  AGENT_MAX_INPUT_TOKENS: ${AGENT_MAX_INPUT_TOKENS:-120000}
+  AGENT_MAX_DURATION_SECONDS: ${AGENT_MAX_DURATION_SECONDS:-300}
+  AGENT_MAX_REPAIR_ATTEMPTS: ${AGENT_MAX_REPAIR_ATTEMPTS:-2}
+  AGENT_FINALIZATION_RESERVE_TOKENS: ${AGENT_FINALIZATION_RESERVE_TOKENS:-5000}
+
+  AGENT_CONTEXT_SUMMARY_MAX_MESSAGES: ${AGENT_CONTEXT_SUMMARY_MAX_MESSAGES:-10}
+  AGENT_CONTEXT_SUMMARY_MAX_CHARS: ${AGENT_CONTEXT_SUMMARY_MAX_CHARS:-4000}
+
+  # ---------- 热重载 ----------
   HOT_RELOAD_ENABLED: ${HOT_RELOAD_ENABLED:-false}
   HOT_RELOAD_INTERVAL_SECONDS: ${HOT_RELOAD_INTERVAL_SECONDS:-30}
 
@@ -91,9 +124,15 @@ x-common-env: &common-env
   LOG_TZ: ${LOG_TZ:-Asia/Shanghai}
   LOG_DIR: ${LOG_DIR:-logs}
   LOG_FILE: ${LOG_FILE:-app.log}
-  LOG_FILE_MAX_SIZE: ${LOG_FILE_MAX_SIZE:-10}
-  LOG_FILE_BACKUP_COUNT: ${LOG_FILE_BACKUP_COUNT:-5}
-  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  LOG_ROTATION_WHEN: ${LOG_ROTATION_WHEN:-midnight}
+  LOG_ROTATION_INTERVAL: ${LOG_ROTATION_INTERVAL:-1}
+  LOG_FILE_BACKUP_COUNT: ${LOG_FILE_BACKUP_COUNT:-14}
+  LOG_COMPRESS: ${LOG_COMPRESS:-true}
+
+  # LOG_MODULE_LEVELS: ${LOG_MODULE_LEVELS:-{}}
+
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
   # ---------- Redis ----------
   REDIS_URL: ${REDIS_URL:-redis://127.0.0.1:6379/0}
@@ -107,26 +146,30 @@ x-common-env: &common-env
   HOST: ${HOST:-0.0.0.0}
   PORT: ${PORT:-9101}
 
-  # ---------- 账号认证（JWT + Argon2id） ----------
+  # ---------- JWT ----------
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
   JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-  # 访问令牌有效期（秒）：JWT exp 与 Redis 访问会话 TTL 对齐（Redis 为准；默认 24 小时）
-  AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-86400}
-  # 刷新令牌有效期（秒）：Redis 刷新会话 TTL（权威；默认 7 天，到期/轮换/登出需重新登录）
-  AUTH_REFRESH_TOKEN_TTL_SECONDS: ${AUTH_REFRESH_TOKEN_TTL_SECONDS:-604800}
+  JWT_ISSUER: ${JWT_ISSUER:-crm-auth}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-crm-backend}
+
+  AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-604800}
+  AUTH_REFRESH_TOKEN_TTL_SECONDS: ${AUTH_REFRESH_TOKEN_TTL_SECONDS:-2592000}
+
+  # ---------- Argon2id ----------
   ARGON2_TIME_COST: ${ARGON2_TIME_COST:-3}
   ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-65536}
   ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-4}
 
-  # ---------- 账号资料（头像 / 密码） ----------
+  # ---------- 账号资料 ----------
   ACCOUNT_PASSWORD_MIN_LENGTH: ${ACCOUNT_PASSWORD_MIN_LENGTH:-8}
+
   AVATAR_MAX_SIZE_BYTES: ${AVATAR_MAX_SIZE_BYTES:-2097152}
   AVATAR_ALLOWED_EXTENSIONS: ${AVATAR_ALLOWED_EXTENSIONS:-png,jpg,jpeg,webp,gif}
   AVATAR_MAX_DIMENSION: ${AVATAR_MAX_DIMENSION:-512}
   AVATAR_MIN_DIMENSION: ${AVATAR_MIN_DIMENSION:-32}
 
-  # ---------- 公司统一登录（elecnest SSO） ----------
-  ELECNEST_SSO_ENABLED: ${ELECNEST_SSO_ENABLED:-false}
+  # ---------- 公司统一登录 ----------
+  ELECNEST_SSO_ENABLED: ${ELECNEST_SSO_ENABLED:-true}
   ELECNEST_GET_USER_INFO_URL: ${ELECNEST_GET_USER_INFO_URL:-https://id.elecnest.cn/api/login/getUserInfo}
   ELECNEST_SSO_TIMEOUT_SECONDS: ${ELECNEST_SSO_TIMEOUT_SECONDS:-10}
 
@@ -180,7 +223,7 @@ services:
     build:
       context: ./discover_backend
       dockerfile: Dockerfile
-    image: discover-tencent-mcp:test
+    image: discover-backend:test
     restart: unless-stopped
     command: ["uv", "run", "--no-dev", "python", "-m", "local_mcp.tencent_mcp.main"]
     ports:
@@ -198,7 +241,7 @@ services:
     build:
       context: ./discover_backend
       dockerfile: Dockerfile
-    image: discover-eastmoney-mcp:test
+    image: discover-backend:test
     restart: unless-stopped
     command: ["uv", "run", "--no-dev", "python", "-m", "local_mcp.eastmoney_mcp.main"]
     ports:

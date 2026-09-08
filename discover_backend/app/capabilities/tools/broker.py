@@ -295,6 +295,7 @@ class ToolBroker:
                         server_id,
                         attempt + 1,
                         attempts,
+                        exc_info=True,
                     )
                     await anyio.sleep(backoff * (attempt + 1))
         assert last_exc is not None
