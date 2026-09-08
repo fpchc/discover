@@ -1,23 +1,58 @@
-node_modules
-dist
-.nuxt
-.output
-.data
-coverage
-.git
-.gitignore
-.vscode
-.idea
-.claude
-.ai
-README.md
-.github
-# 仅构建无关的 dev 配置 / 杂项文件，不进镜像上下文
-vitest.config.ts
-biome.json
-components.json
-Snipaste_*.png
-*.pem
-*.key
+# ===== discover_frontend 构建上下文裁剪 =====
+# 原则：仅保留镜像构建 / 运行需要的内容（src/、public/、index.html、tsconfig/vite 配置、
+# nginx 模板、env 模板与构建清单），其余依赖、构建产物、测试、文档、CI、IDE、密钥与
+# 杂项一律不进构建上下文。
+#
+# 说明：dockerignore 无 "/" 的规则按文件名匹配任意层级；含 "/" 的规则相对上下文根匹配。
+# 因此 env/ 下的本地密钥用 env/.env.*.local 精确限定，避免误删 env 模板。
+
+# ---- 依赖 / 构建产物 / 缓存（任意层级）----
+node_modules/
+dist/
+dist-ssr/
+.nuxt/
+.output/
+.data/
+.vite/
+.vitest/
+coverage/
+*.tsbuildinfo
+.eslintcache
+
+# ---- 环境与密钥（保留无密钥模板 env/.env.{example,development,test,production}）----
+.env
+.env.local
+.env.*.local
 env/.env.local
 env/.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ---- VCS / CI / IDE / 架构记忆（任意层级）----
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.iml
+.claude/
+.ai/
+
+# ---- 上下文根元数据 / 文档（当前仅存在于根）----
+README.md
+AGENTS.md
+CLAUDE.md
+.editorconfig
+biome.json
+components.json
+vitest.config.ts
+Dockerfile
+
+# ---- 根级杂项（开发截图；public/ 内静态资源不受影响）----
+Snipaste_*.png
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini

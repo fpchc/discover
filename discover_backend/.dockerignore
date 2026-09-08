@@ -1,29 +1,79 @@
-# ---- Python ----
+# ===== discover_backend 构建上下文裁剪 =====
+# 原则：仅保留镜像构建 / 运行需要的内容（源码 app/、技能包 agents/、迁移 alembic/、
+# 运行时配置 config/*.yaml、本地 MCP local_mcp/、依赖清单），其余开发、测试、文档、
+# 缓存、密钥与运行时数据一律不进构建上下文。
+#
+# 说明：dockerignore 无 "/" 的规则按文件名匹配任意层级；含 "/" 的规则相对上下文根匹配。
+# 因此根级运行时 / 开发目录用 "name/*" 限定在根目录，避免误伤 app/ 内同名源码目录
+# （例如 app/infrastructure/storage/ 不能被 storage/ 排除）。
+
+# ---- Python 缓存 / 构建产物（任意层级）----
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 .venv/
 venv/
 .mypy_cache/
-.ruff_cache/
 .pytest_cache/
+.ruff_cache/
 .coverage
+htmlcov/
+.tox/
+.nox/
 
-# ---- 环境与密钥（仓库只允许提交 .env.example）----
+# ---- 环境与密钥（容器环境由 compose / 平台注入）----
 .env
 .env.*
-!.env.example
 *.pem
 *.key
+*.p12
+*.pfx
 
-# ---- 运行时数据（以卷挂载，不入镜像）----
-storage/
-logs/
-workspaces/
+# ---- 根级运行时数据（compose 以卷挂载，仅清空根目录内容）----
+storage/*
+logs/*
+workspaces/*
+sessions/*
 
-# ---- 开发 / 测试 / 历史参考 ----
-tests/
+# ---- 根级开发 / 文档 / 测试（限定根目录，防误伤子目录同名目录）----
+tests/*
+docs/*
+build/*
+dist/*
+
+# ---- IDE / 架构记忆 / VCS 元数据（任意层级）----
 .ai/
 .claude/
 .vscode/
-eitia-client-finder/
+.idea/
+*.iml
+.git/
+.gitignore
+.github/
+.gitlab/
+.docker/
+
+# ---- 上下文根元数据 / 文档（当前仅存在于根）----
+Dockerfile
+.editorconfig
+.pre-commit-config.yaml
+.coveragerc
+pytest.ini
+README.md
+AGENTS.md
+CLAUDE.md
+
+# ---- 配置示例 / 备份（仅保留 config/*.yaml）----
+config/*.example
+config/*.local.*
+config/*.bak
+
+# ---- 操作系统 / 编辑器杂项（任意层级）----
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+*.tmp
+*.log
