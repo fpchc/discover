@@ -1,19 +1,26 @@
 """账号认证集成测试——依赖本地 PostgreSQL。
 
-覆盖：AuthService 登录/账号/用量/资料（昵称、头像、密码）、dedup_clues 按账号
-隔离（组合键）、HTTP /auth/login 与 /users/me/* 端点。迁移须已应用
-（alembic upgrade head）。
+兼容模式（2026-09-07）后覆盖：
+- 原本地登录（login/refresh/logout/elecnest/change_password）恢复可用：服务级
+  行为 + HTTP 端点（手机号+密码登录签发本地令牌对，受保护接口兼容本地令牌）；
+- 统一认证路径：validate_platform_token、resolve_user find-or-create（平台
+  user_id 仅登录映射）；对外标识与数据隔离恒为**本地账号 uuid 文本**；
+- /users/me/* 资料与用量按本地账号 uuid 鉴权。
+
+迁移须已应用（alembic upgrade head，含 c7d8e9f0a1b2 统一认证列）。
 """
 
 from __future__ import annotations
 
 import tempfile
+import time as time_mod
 import uuid
 from datetime import date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
+import jwt
 import pytest
 import pytest_asyncio
 from app.capabilities.tools.history import DedupStore
@@ -27,7 +34,7 @@ from app.domain.file.service import FileService
 from app.infrastructure.database.engine import Database
 from app.infrastructure.database.models import Account, Message, UploadFileRecord
 from app.infrastructure.storage.local import LocalStorage
-from app.interfaces.schemas.auth import AvatarConfig, LoginResponse
+from app.interfaces.schemas.auth import AvatarConfig, LoginResponse, UserType
 from app.interfaces.schemas.conversations import TurnRecord, TurnUsage
 from app.shared.errors.base import BadRequestError, UnauthorizedError
 from sqlalchemy import select
@@ -87,9 +94,9 @@ def _mock_elecnest(data: dict[str, object] | None) -> ElecnestSSOClient:
     return ElecnestSSOClient(_settings(), http)
 
 
-def _token_for(account_id: str) -> dict[str, str]:
-    """为该账号构造 Authorization 头（HTTP 端点测试用）。"""
-    token = JwtService(_settings()).encode(account_id)
+def _token_for(user_id: str) -> dict[str, str]:
+    """为平台 user_id 构造 Authorization 头（统一认证令牌，sub=user_id）。"""
+    token = JwtService(_settings()).encode(user_id)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -163,8 +170,13 @@ async def _create_account(
     is_system: bool = False,
     status: str = "active",
     name: str | None = None,
+    auth_user_id: str | None = None,
 ) -> str:
-    """建真实账号（Argon2id 哈希入库），返回 account_id（uuid 文本）。"""
+    """建真实账号（Argon2id 哈希入库）；返回本地账号 uuid 文本（对外标识唯一口径）。
+
+    auth_user_id 传入时模拟统一认证账号（find-or-create 按此查重，user_type=unified），
+    否则为存量本地账号（auth_user_id 为 NULL）。
+    """
     hasher = PasswordHasher(_settings())
     account = Account(
         id=uuid.uuid4(),
@@ -174,6 +186,8 @@ async def _create_account(
         password_hash=hasher.hash(password),
         is_system=is_system,
         status=status,
+        user_type=UserType.UNIFIED.value if auth_user_id else UserType.PASSWORD.value,
+        auth_user_id=auth_user_id,
     )
     async with _DATABASE.session_factory() as session:
         session.add(account)
@@ -248,6 +262,68 @@ async def test_login_disabled_account_rejected() -> None:
     await _create_account(phone, "pw", status="disabled")
     with pytest.raises(UnauthorizedError):
         await _service().login(phone, "pw")
+
+
+# ---- 统一认证路径（本地验签 + find-or-create） ----
+
+
+async def test_validate_platform_token_returns_user_id() -> None:
+    svc = _service()
+    token = JwtService(_settings()).encode("uid-2")
+    assert svc.validate_platform_token(token) == "uid-2"
+
+
+async def test_validate_platform_token_rejects_foreign_signature() -> None:
+    """他方令牌（不同共享密钥签发）→ 401（验签失败）。"""
+    svc = _service()
+    foreign = JwtService(
+        Settings(_env_file=None, jwt_secret_key="foreign-secret-0123456789abcdef0123456789")
+    )
+    token = foreign.encode("uid-x")
+    with pytest.raises(UnauthorizedError):
+        svc.validate_platform_token(token)
+
+
+async def test_validate_platform_token_rejects_non_platform_claims() -> None:
+    """同密钥但缺 iss/aud claim 的旧式令牌 → 401（PyJWT audience/issuer 兜底）。"""
+    svc = _service()
+    now = int(time_mod.time())
+    legacy_token = jwt.encode(
+        {"sub": "uid-x", "iat": now, "exp": now + 3600},
+        _SECRET,
+        algorithm="HS256",
+    )
+    with pytest.raises(UnauthorizedError):
+        svc.validate_platform_token(legacy_token)
+
+
+async def test_resolve_user_creates_and_reuses() -> None:
+    """首次按平台 user_id find-or-create 本地账号（user_type=unified），二次复用。"""
+    svc = _service()
+    user_id = "uid-new-user"
+    first = await svc.resolve_user(user_id)
+    assert first is not None
+    assert first.name == f"用户{user_id}"
+    assert first.user_type == "unified"
+    async with _DATABASE.session_factory() as session:
+        row = await session.scalar(select(Account).where(Account.auth_user_id == user_id))
+        assert row is not None
+        # account_id 恒为本地账号 uuid（统一登录仅映射，不引入第二标识）
+        assert first.account_id == str(row.id)
+    # 二次解析复用同一账号（幂等）
+    second = await svc.resolve_user(user_id)
+    assert second is not None and second.account_id == first.account_id
+
+
+async def test_resolve_user_returns_existing_bound_account() -> None:
+    """存量本地账号绑定 auth_user_id 后，resolve_user 直接命中不重建。"""
+    phone = f"141{str(uuid.uuid4().int)[:8]}"
+    user_id = "uid-legacy-bind"
+    account_id = await _create_account(phone, "pw", auth_user_id=user_id, name="存量")
+    record = await _service().resolve_user(user_id)
+    assert record is not None
+    assert record.name == "存量"
+    assert record.account_id == account_id  # 恒为本地账号 uuid
 
 
 # ---- 会话层（Redis 权威：访问/刷新令牌 / validate_session / refresh / logout） ----
@@ -395,10 +471,12 @@ async def test_login_elecnest_disabled_rejected() -> None:
 
 async def test_get_account_record_excludes_password() -> None:
     phone = f"136{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw", name="张三")
+    user_id = "uid-acct"
+    account_id = await _create_account(phone, "pw", name="张三", auth_user_id=user_id)
     record = await _service().get_account(account_id)
     assert record is not None
-    assert record.account_id == account_id
+    assert record.account_id == account_id  # account_id 恒为本地账号 uuid
+    assert record.user_type == "unified"
     assert record.name == "张三"
     assert record.phone == phone
     assert not hasattr(record, "password_hash")  # 密码哈希永不外泄
@@ -410,7 +488,10 @@ async def test_get_account_unknown_returns_none() -> None:
 
 
 async def test_get_user_usage_aggregates_messages() -> None:
-    account_id = str(uuid.uuid4())
+    user_id = "uid-usage"
+    account_id = await _create_account(
+        f"140{str(uuid.uuid4().int)[:8]}", "pw", auth_user_id=user_id
+    )
     history = ConversationService(_DATABASE)
     for _ in range(3):
         await history.record_turn(
@@ -419,11 +500,12 @@ async def test_get_user_usage_aggregates_messages() -> None:
                 message_id=uuid.uuid4().hex,
                 query="q",
                 usage=TurnUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-                account_id=account_id,
+                account_id=account_id,  # created_by 恒为本地账号 uuid
             ),
         )
     usage = await _service().get_user_usage(account_id)
     assert usage is not None
+    assert usage.account_id == account_id
     assert usage.message_count == 3
     assert usage.total_tokens == 45
     assert usage.prompt_tokens == 30
@@ -458,29 +540,35 @@ async def test_avatar_config_matches_settings() -> None:
 
 async def test_update_account_name() -> None:
     phone = f"132{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw", name="旧名")
+    user_id = "uid-name"
+    account_id = await _create_account(phone, "pw", name="旧名", auth_user_id=user_id)
     record = await _service().update_account(account_id, name="  新昵称  ")
     assert record.name == "新昵称"
     async with _DATABASE.session_factory() as session:
-        row = await session.get(Account, uuid.UUID(account_id))
+        row = await session.scalar(select(Account).where(Account.auth_user_id == user_id))
         assert row is not None and row.name == "新昵称"
 
 
 async def test_update_account_blank_name_rejected() -> None:
     phone = f"131{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
+    user_id = "uid-name-blank"
+    account_id = await _create_account(phone, "pw", auth_user_id=user_id)
     with pytest.raises(BadRequestError):
         await _service().update_account(account_id, name="   ")
 
 
 async def test_update_account_unknown_raises() -> None:
+    """非 uuid 文本 / 不存在的 uuid 一律 401（对外标识唯一口径为本地账号 uuid）。"""
+    with pytest.raises(UnauthorizedError):
+        await _service().update_account("unknown-user-id", name="x")
     with pytest.raises(UnauthorizedError):
         await _service().update_account(str(uuid.uuid4()), name="x")
 
 
 async def test_change_avatar_sets_preview_path(tmp_path: Path) -> None:
     phone = f"130{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
+    user_id = "uid-avatar"
+    account_id = await _create_account(phone, "pw", auth_user_id=user_id)
     record = await _service(tmp_path).change_avatar(
         account_id, filename="avatar.png", content=_PNG_BYTES, mimetype="image/png"
     )
@@ -488,9 +576,9 @@ async def test_change_avatar_sets_preview_path(tmp_path: Path) -> None:
     assert record.avatar.endswith("/preview")
     file_id = record.avatar.removeprefix("/files/").removesuffix("/preview")
     async with _DATABASE.session_factory() as session:
-        row = await session.get(Account, uuid.UUID(account_id))
+        row = await session.scalar(select(Account).where(Account.auth_user_id == user_id))
         assert row is not None and row.avatar == record.avatar
-    # 文件元数据已落库（字节落盘由 FileService 保证）
+    # 文件元数据已落库（字节落盘由 FileService 保证；created_by = 本地账号 uuid）
     async with _DATABASE.session_factory() as session:
         file_row = await session.scalar(
             select(UploadFileRecord).where(UploadFileRecord.file_id == file_id)
@@ -500,7 +588,8 @@ async def test_change_avatar_sets_preview_path(tmp_path: Path) -> None:
 
 async def test_change_avatar_rejects_non_image_extension(tmp_path: Path) -> None:
     phone = f"129{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
+    user_id = "uid-avatar-ext"
+    account_id = await _create_account(phone, "pw", auth_user_id=user_id)
     with pytest.raises(BadRequestError):
         await _service(tmp_path).change_avatar(
             account_id, filename="evil.exe", content=b"MZ", mimetype="application/octet-stream"
@@ -509,7 +598,8 @@ async def test_change_avatar_rejects_non_image_extension(tmp_path: Path) -> None
 
 async def test_change_avatar_rejects_fake_image_content(tmp_path: Path) -> None:
     phone = f"128{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
+    user_id = "uid-avatar-fake"
+    account_id = await _create_account(phone, "pw", auth_user_id=user_id)
     with pytest.raises(BadRequestError):
         await _service(tmp_path).change_avatar(
             account_id, filename="fake.png", content=b"not really a png", mimetype="image/png"
@@ -518,7 +608,8 @@ async def test_change_avatar_rejects_fake_image_content(tmp_path: Path) -> None:
 
 async def test_change_avatar_rejects_oversize(tmp_path: Path) -> None:
     phone = f"127{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
+    user_id = "uid-avatar-size"
+    account_id = await _create_account(phone, "pw", auth_user_id=user_id)
     settings = Settings(_env_file=None, jwt_secret_key=_SECRET, avatar_max_size_bytes=4)
     files = FileService(settings, _DATABASE, LocalStorage(tmp_path))
     svc = AuthService(
@@ -598,157 +689,97 @@ async def test_dedup_store_per_account_isolation() -> None:
     assert rec_b == "B"  # 相互独立，未被覆盖
 
 
-# ---- HTTP /auth/login 端点 ----
+# ---- HTTP 原本地登录端点（兼容回退：恢复可用） ----
 
 
-async def test_http_login_endpoint(
+async def test_http_login_endpoint_works(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
+    """手机号+密码登录恢复：签发本地令牌对，令牌可访问 /users/me。"""
     _app, client = api_ctx
     phone = f"133{str(uuid.uuid4().int)[:8]}"
-    await _create_account(phone, "pw-456")
+    account_id = await _create_account(phone, "pw-456")
     ok = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "pw-456"})
     assert ok.status_code == 200
     body = LoginResponse.model_validate(ok.json())
-    assert body.token
-    assert body.refresh_token
-    assert body.expires_in > 0
-    assert body.account_id
-    bad = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "no"})
-    assert bad.status_code == 401
+    assert body.account_id == account_id  # account_id 恒为本地账号 uuid
+    assert body.token and body.refresh_token
+    # 本地令牌可访问受保护接口（deps 兼容解析：sub=本地 uuid 直查 + Redis 会话）
+    me = await client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {body.token}"})
+    assert me.status_code == 200
+    assert me.json()["account_id"] == account_id
 
 
-async def test_http_logout_endpoint_idempotent(
+async def test_http_login_wrong_password(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
-    """登出：有 Bearer 头即 204（DEL 幂等，内存假存储也成功）；无头 401。"""
+    """密码错误 → 401（防枚举统一文案）。"""
     _app, client = api_ctx
-    phone = f"117{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
+    phone = f"132{str(uuid.uuid4().int)[:8]}"
+    await _create_account(phone, "pw-456")
+    ok = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "wrong"})
+    assert ok.status_code == 401
+    assert ok.json()["detail"] == "手机号或密码错误"
+
+
+async def test_http_logout_endpoint_works(
+    api_ctx: tuple[object, httpx.AsyncClient],
+) -> None:
+    """登出恢复：Bearer + 刷新令牌 → 204；无 Bearer → 401。"""
+    _app, client = api_ctx
+    phone = f"131{str(uuid.uuid4().int)[:8]}"
+    await _create_account(phone, "pw")
+    login = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "pw"})
+    body = LoginResponse.model_validate(login.json())
     ok = await client.post(
-        "/api/v1/auth/logout", json={"refresh_token": "any"}, headers=_token_for(account_id)
+        "/api/v1/auth/logout",
+        json={"refresh_token": body.refresh_token},
+        headers={"Authorization": f"Bearer {body.token}"},
     )
     assert ok.status_code == 204
     missing = await client.post("/api/v1/auth/logout", json={"refresh_token": "any"})
     assert missing.status_code == 401
 
 
-async def test_http_refresh_requires_redis_session(
+async def test_http_refresh_endpoint_works(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
-    """conftest 注入内存假存储：未登录写入刷新会话，任何刷新令牌均 401。"""
+    """刷新恢复：登录 → refresh 换新令牌对（轮换制，旧刷新令牌作废）。"""
     _app, client = api_ctx
-    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": "anything"})
-    assert resp.status_code == 401
+    phone = f"130{str(uuid.uuid4().int)[:8]}"
+    await _create_account(phone, "pw")
+    login = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "pw"})
+    body = LoginResponse.model_validate(login.json())
+    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": body.refresh_token})
+    assert resp.status_code == 200
+    renewed = LoginResponse.model_validate(resp.json())
+    assert renewed.account_id == body.account_id
+    assert renewed.token != body.token
+    assert renewed.refresh_token != body.refresh_token
+    # 旧刷新令牌已轮换作废
+    again = await client.post("/api/v1/auth/refresh", json={"refresh_token": body.refresh_token})
+    assert again.status_code == 401
 
 
-async def test_http_elecnest_login_endpoint(
+async def test_http_elecnest_login_endpoint_works(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
+    """elecnest 登录恢复：token + uid → 本地注册/复用 → 签发令牌对。"""
     app, client = api_ctx
-    # 开启统一登录（共享 settings 对象，AuthService 读同一引用）+ 注入 mock 客户端
-    app.state.services.settings.elecnest_sso_enabled = True  # type: ignore[attr-defined]  # 测试直改运行时配置
     app.state.services.auth._elecnest = _mock_elecnest(  # type: ignore[attr-defined]  # 测试注入 mock 客户端
         {"uid": 99001, "username": "wangwu", "nickname": "王五", "phone": "13800000002"}
     )
     ok = await client.post("/api/v1/auth/login/elecnest", json={"token": "sso-token", "uid": 99001})
     assert ok.status_code == 200
     body = LoginResponse.model_validate(ok.json())
-    assert body.token
-    assert body.account_id
     assert body.name == "王五"
-    # 幂等：二次登录同 account_id
-    again = await client.post(
-        "/api/v1/auth/login/elecnest", json={"token": "sso-token", "uid": 99001}
-    )
-    assert again.status_code == 200
-    assert again.json()["account_id"] == body.account_id
 
 
-async def test_http_elecnest_login_disabled(
+async def test_http_change_password_works(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
-    app, client = api_ctx
-    # 显式关闭开关 → 400（未启用）；不依赖默认值（默认已改为开启）
-    app.state.services.settings.elecnest_sso_enabled = False  # type: ignore[attr-defined]  # 测试直改运行时配置
-    app.state.services.auth._elecnest = None  # type: ignore[attr-defined]  # 关闭时不构建 SSO 客户端
-    resp = await client.post("/api/v1/auth/login/elecnest", json={"token": "t", "uid": 1})
-    assert resp.status_code == 400
-
-
-async def test_http_avatar_config(
-    api_ctx: tuple[object, httpx.AsyncClient],
-) -> None:
+    """改密码恢复：本地令牌（sub=本地 uuid）→ 原密码校验通过 → 改密成功。"""
     _app, client = api_ctx
-    response = await client.get("/api/v1/users/me/avatar-config")
-    assert response.status_code == 200
-    config = AvatarConfig.model_validate(response.json())
-    assert config.max_size_bytes > 0
-    assert "png" in config.allowed_extensions
-
-
-async def test_http_patch_users_me_updates_name(
-    api_ctx: tuple[object, httpx.AsyncClient],
-) -> None:
-    _app, client = api_ctx
-    phone = f"123{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
-    headers = _token_for(account_id)
-    response = await client.patch("/api/v1/users/me", json={"name": "接口改名"}, headers=headers)
-    assert response.status_code == 200
-    body = response.json()
-    assert body["name"] == "接口改名"
-    assert body["account_id"] == account_id
-
-
-async def test_http_patch_users_me_requires_auth(
-    api_ctx: tuple[object, httpx.AsyncClient],
-) -> None:
-    _app, client = api_ctx
-    response = await client.patch("/api/v1/users/me", json={"name": "x"})
-    assert response.status_code == 401
-
-
-async def test_http_avatar_upload_sets_avatar(
-    api_ctx: tuple[object, httpx.AsyncClient],
-) -> None:
-    _app, client = api_ctx
-    phone = f"122{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
-    headers = _token_for(account_id)
-    response = await client.post(
-        "/api/v1/users/me/avatar",
-        headers=headers,
-        files={"file": ("avatar.png", _PNG_BYTES, "image/png")},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["avatar"] is not None and body["avatar"].startswith("/files/")
-    # 上传后头像预览可读
-    preview = await client.get(body["avatar"])
-    assert preview.status_code == 200
-    assert preview.content == _PNG_BYTES
-
-
-async def test_http_avatar_upload_rejects_fake_image(
-    api_ctx: tuple[object, httpx.AsyncClient],
-) -> None:
-    _app, client = api_ctx
-    phone = f"121{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
-    headers = _token_for(account_id)
-    response = await client.post(
-        "/api/v1/users/me/avatar",
-        headers=headers,
-        files={"file": ("fake.png", b"not an image", "image/png")},
-    )
-    assert response.status_code == 400
-
-
-async def test_http_change_password(
-    api_ctx: tuple[object, httpx.AsyncClient],
-) -> None:
-    app, client = api_ctx
     phone = f"120{str(uuid.uuid4().int)[:8]}"
     account_id = await _create_account(phone, "old-pass-123")
     headers = _token_for(account_id)
@@ -758,20 +789,22 @@ async def test_http_change_password(
         headers=headers,
     )
     assert response.status_code == 200
-    # 新密码可登录
-    assert (
-        await client.post("/api/v1/auth/login", json={"phone": phone, "password": "new-pass-456"})
-    ).status_code == 200
-    # 旧密码不可
-    assert (
-        await client.post("/api/v1/auth/login", json={"phone": phone, "password": "old-pass-123"})
-    ).status_code == 401
-    del app  # 仅防未使用告警（无 linter 门禁，保留可读性）
+    assert response.json()["account_id"] == account_id
+    # 旧密码登录失败、新密码登录成功
+    old_login = await client.post(
+        "/api/v1/auth/login", json={"phone": phone, "password": "old-pass-123"}
+    )
+    assert old_login.status_code == 401
+    new_login = await client.post(
+        "/api/v1/auth/login", json={"phone": phone, "password": "new-pass-456"}
+    )
+    assert new_login.status_code == 200
 
 
 async def test_http_change_password_wrong_old(
     api_ctx: tuple[object, httpx.AsyncClient],
 ) -> None:
+    """改密码原密码错误 → 401。"""
     _app, client = api_ctx
     phone = f"119{str(uuid.uuid4().int)[:8]}"
     account_id = await _create_account(phone, "real-pass")
@@ -792,7 +825,8 @@ async def test_http_daily_usage_endpoint(
 ) -> None:
     _app, client = api_ctx
     phone = f"118{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw", name="张三")
+    user_id = "uid-daily-http"
+    account_id = await _create_account(phone, "pw", name="张三", auth_user_id=user_id)
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     cid = uuid.uuid4().hex
     await _insert_message(
@@ -819,11 +853,11 @@ async def test_http_daily_usage_endpoint(
     response = await client.get(
         "/api/v1/users/me/usage/daily",
         params={"days": 7},
-        headers=_token_for(account_id),
+        headers=_token_for(user_id),
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["account_id"] == account_id
+    assert body["account_id"] == account_id  # account_id 恒为本地账号 uuid
     assert body["name"] == "张三"
     assert body["days"] == 7
     assert len(body["items"]) == 7  # 零填充、每天一条
@@ -849,8 +883,9 @@ async def test_http_daily_usage_defaults_and_bounds(
 ) -> None:
     _app, client = api_ctx
     phone = f"117{str(uuid.uuid4().int)[:8]}"
-    account_id = await _create_account(phone, "pw")
-    headers = _token_for(account_id)
+    user_id = "uid-daily-bounds"
+    await _create_account(phone, "pw", auth_user_id=user_id)
+    headers = _token_for(user_id)
     # 默认 days=30
     ok = await client.get("/api/v1/users/me/usage/daily", headers=headers)
     assert ok.status_code == 200

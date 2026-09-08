@@ -1,7 +1,11 @@
-"""账号认证接口（L4，controller）：登录 + 当前用户 + 用量。
+"""账号认证接口（L4，controller）：登录（兼容回退）+ 当前用户资料 + 用量。
 
-路由只做参数提取与转调（SRP）；认证逻辑在 AuthService，校验在 deps。
-`GET /users` 为超级用户专属（is_system=true），用于区分各账号 token 使用量。
+兼容模式（2026-09-07）：统一认证平台令牌为主；原本地登录（手机号+密码 /
+elecnest SSO / 刷新 / 登出 / 改密码）**恢复可用**作为回退兼容——本地登录签发
+令牌对并写 Redis 会话层，受保护接口同时接受平台令牌（sub=平台 user_id）与本地
+令牌（sub=本地账号 uuid），校验在 deps 统一区分。路由只做参数提取与转调（SRP）；
+认证逻辑在 AuthService。`GET /users` 为管理员专属（is_system=true，过渡期占位），
+用于区分各账号 token 使用量。
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ async def login(
     body: LoginRequest,
     services: AppServices = Depends(get_services),
 ) -> LoginResponse:
-    """手机号 + 密码登录：校验 Argon2id 哈希 → 签发 JWT。"""
+    """手机号 + 密码登录：校验 Argon2id 哈希 → 签发本地令牌对（兼容回退）。"""
     assert services.auth is not None
     return await services.auth.login(body.phone, body.password)
 
@@ -76,7 +80,7 @@ async def logout(
 
 @router.get("/users/me")
 async def current_account(account: AccountRecord = Depends(get_current_account)) -> AccountRecord:
-    """当前登录账号信息。"""
+    """当前用户信息（本地资料；account_id 恒为本地账号 uuid 文本）。"""
     return account
 
 
@@ -85,7 +89,7 @@ async def current_usage(
     account_id: str = Depends(get_current_account_id),
     services: AppServices = Depends(get_services),
 ) -> UserUsage:
-    """当前账号 token 用量（按 created_by 聚合 messages）。"""
+    """当前账号 token 用量（按 created_by = 本地账号 uuid 聚合 messages）。"""
     assert services.auth is not None
     usage = await services.auth.get_user_usage(account_id)
     if usage is None:

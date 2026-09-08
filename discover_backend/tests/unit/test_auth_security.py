@@ -6,18 +6,20 @@
 
 from __future__ import annotations
 
+import time
+
+import jwt
 import pytest
 from app.config.settings import Settings
 from app.domain.auth.security import JwtService, PasswordHasher
 from app.shared.errors.base import ConfigError, UnauthorizedError
 
 _ACCOUNT_ID = "00000000-0000-0000-0000-0000000000aa"
+_SECRET = "test-secret-0123456789abcdef0123456789abcdef"
 
 
 def _settings(**overrides: object) -> Settings:
-    return Settings(
-        _env_file=None, jwt_secret_key="test-secret-0123456789abcdef0123456789abcdef", **overrides
-    )
+    return Settings(_env_file=None, jwt_secret_key=_SECRET, **overrides)
 
 
 # ---- Argon2id 密码哈希 ----
@@ -58,6 +60,15 @@ def test_jwt_encode_decode_roundtrip() -> None:
     assert svc.decode(token) == _ACCOUNT_ID
 
 
+def test_jwt_encode_includes_platform_claims() -> None:
+    """encode 产出平台契约令牌（iss/aud/type=access），可通过平台验签。"""
+    svc = JwtService(_settings())
+    token = svc.encode(_ACCOUNT_ID)
+    claims = svc.decode_platform_token(token)
+    assert claims.user_id == _ACCOUNT_ID
+    assert claims.user_id != "someone-else"
+
+
 def test_jwt_tampered_token_rejected() -> None:
     svc = JwtService(_settings())
     token = svc.encode(_ACCOUNT_ID)
@@ -72,6 +83,24 @@ def test_jwt_expired_token_rejected() -> None:
     token = svc.encode(_ACCOUNT_ID)
     with pytest.raises(UnauthorizedError):
         svc.decode(token)
+
+
+def test_jwt_lifetime_synced_with_configured_ttl() -> None:
+    """本地令牌校验与 AUTH_ACCESS_TOKEN_TTL_SECONDS 同步：exp-iat 超出配置即拒绝。"""
+    svc = JwtService(_settings(auth_access_token_ttl_seconds=3600))
+    now = int(time.time())
+    claims: dict[str, object] = {
+        "sub": _ACCOUNT_ID,
+        "type": "access",
+        "iss": "crm-auth",
+        "aud": "crm-backend",
+        "iat": now,
+    }
+    too_long = jwt.encode({**claims, "exp": now + 7200}, _SECRET, algorithm="HS256")
+    with pytest.raises(UnauthorizedError):
+        svc.decode(too_long)
+    in_window = jwt.encode({**claims, "exp": now + 3600}, _SECRET, algorithm="HS256")
+    assert svc.decode(in_window) == _ACCOUNT_ID
 
 
 def test_jwt_missing_secret_rejected_at_construction() -> None:

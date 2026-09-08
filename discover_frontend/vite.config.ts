@@ -1,6 +1,6 @@
-import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 
 /**
@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
   // 优先级：进程内环境变量（docker compose 注入）> env/ 文件 > 默认。
   // loadEnv 只读 env/ 文件，故 compose 注入的 VITE_PROXY_TARGET 必须走 process.env 才生效。
   const apiProxyTarget =
-    process.env.VITE_PROXY_TARGET || env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000'
+    process.env.VITE_PROXY_TARGET || env.VITE_PROXY_TARGET || 'http://127.0.0.1:9101'
 
   return {
     envDir: './env',
@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [react(), tailwindcss()],
     server: {
-      port: 5173,
+      port: 9102,
       // 端口被占时不自动递增（容器 / IDE 调试依赖固定端口）
       strictPort: true,
       proxy: {

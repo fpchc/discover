@@ -24,11 +24,11 @@
 | 助手目录接口（GET /assistants，只读聚合） | `app/interfaces/http/assistants.py` |
 | 会话接口（/conversations 列表/消息/软删除；按账号隔离） | `app/interfaces/http/conversations.py` |
 | 文件接口（/files 上传/预览，预览全局公开） | `app/interfaces/http/files.py` |
-| 认证接口（/auth/login、/users/me 等） | `app/interfaces/http/auth.py` |
-| FastAPI 认证依赖（get_current_account_id / require_superuser） | `app/interfaces/http/deps.py` |
+| 认证接口（登录/elecnest/刷新/登出/改密码兼容回退 + /users/me 资料·用量·头像） | `app/interfaces/http/auth.py` |
+| FastAPI 认证依赖（get_current_account 兼容解析：平台令牌 find-or-create / 本地令牌直查+Redis 会话；require_superuser 过渡期占位） | `app/interfaces/http/deps.py` |
 | 会话历史 DTO（ConversationRecord/TurnRecord/UsageAggregate/ConversationSession） | `app/interfaces/schemas/conversations.py` |
 | 文件 DTO（ArtifactRecord/FileResponse/UploadConfig） | `app/interfaces/schemas/files.py` |
-| 认证 DTO（LoginRequest/ElecnestUserInfo/AccountRecord/UserUsage/AvatarConfig） | `app/interfaces/schemas/auth.py` |
+| 认证 DTO（PlatformTokenClaims/AccountRecord（account_id=本地账号 uuid）/UserUsage/AvatarConfig + 登录/刷新/登出/改密码请求体） | `app/interfaces/schemas/auth.py` |
 | 对话 SSE / 请求响应模型（chat-messages 契约） | `app/interfaces/schemas/chat.py` |
 | 全局异常中间件（领域异常 → 统一 JSON） | `app/interfaces/middleware/exceptions.py` |
 | 请求日志中间件（request_id / trace_id / 耗时） | `app/interfaces/middleware/request_logging.py` |
@@ -61,11 +61,11 @@
 | 对话历史落库/读取/删除 + 用量聚合（ConversationService，DB 降级内部消化） | `app/domain/conversation/service.py` |
 | 智能体工作区（创建/路径校验/防穿越，按 agent 键控） | `app/domain/workspace/service.py` |
 | 文件注册表服务（register/upload/upload_avatar/预览/使用标记） | `app/domain/file/service.py` |
-| 账号认证门面（AuthService：login/validate_session/refresh/logout/资料维护） | `app/domain/auth/service.py` |
-| 登录会话存储（SessionStore 协议 + RedisSessionStore fail-closed） | `app/domain/auth/session.py` |
-| 公司统一登录客户端（elecnest SSO） | `app/domain/auth/sso.py` |
-| Argon2id 密码哈希 + JWT 访问令牌（PasswordHasher / JwtService） | `app/domain/auth/security.py` |
-| 预置账号 CLI（python -m app.domain.auth.provision，无注册接口） | `app/domain/auth/provision.py` |
+| 账号认证门面（AuthService：统一认证验签 validate_platform_token / resolve_user find-or-create（平台 user_id 仅登录映射，标识恒为本地 uuid）/ 资料维护 / 用量；login/refresh/logout/change_password 停用保留） | `app/domain/auth/service.py` |
+| 统一认证令牌校验（JwtService.decode_platform_token：HS256+aud+iss+type=access；encode/decode 遗留签发与解签） | `app/domain/auth/security.py` |
+| 登录会话存储（SessionStore 协议 + RedisSessionStore fail-closed；**停用保留**，统一认证不写本地会话） | `app/domain/auth/session.py` |
+| 旧统一登录客户端（elecnest SSO；**停用保留**） | `app/domain/auth/sso.py` |
+| 本地账号管理 CLI（python -m app.domain.auth.provision，存量绑定 --auth-user-id / 管理员标注 --superuser） | `app/domain/auth/provision.py` |
 
 ## Agent 执行内核（runtime）
 
@@ -133,7 +133,7 @@
 | 职责 | 路径 |
 |------|------|
 | SQLAlchemy 声明式基类 + 命名约定 + UTC 时间 | `app/infrastructure/database/base.py` |
-| 异步引擎 + 会话工厂（NullPool 即开即关） | `app/infrastructure/database/engine.py` |
+| 异步引擎 + 会话工厂（连接池配置驱动：默认 QueuePool，db_pool_size<=0 回退 NullPool） | `app/infrastructure/database/engine.py` |
 | ORM 模型（accounts/conversations/messages/upload_files/dedup_clues） | `app/infrastructure/database/models.py` |
 | 数据库生命周期访问器（get_database） | `app/infrastructure/database/accessors.py` |
 | Redis 客户端 + Cache/Lock 封装 + 访问器（认证会话层硬依赖） | `app/infrastructure/redis/client.py` |
@@ -171,5 +171,5 @@
 | 单元测试（无网络 / 无 DB） | `tests/unit/` |
 | 集成测试（依赖本地 PostgreSQL） | `tests/integration/` |
 | HTTP 接入层测试（TestClient 进程内 ASGI） | `tests/http/` |
-| 端到端测试（需真服务 127.0.0.1:8000，未启动自动 skip） | `tests/e2e/` |
+| 端到端测试（需真服务 127.0.0.1:9101，未启动自动 skip） | `tests/e2e/` |
 | 测试共享 fixture（make_test_app / make_client + 四层 marker 自动打标） | `tests/conftest.py` |

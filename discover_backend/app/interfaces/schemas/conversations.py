@@ -26,12 +26,15 @@ class ConversationStatus(StrEnum):
 
 
 class MessageStatus(StrEnum):
-    """回合消息状态：normal 正常完成 / partial 预算受限部分完成 / error 失败 / interrupted 中断。
+    """回合消息状态：processing 用户已提问/回合进行中 / normal 正常完成 /
+    partial 预算受限部分完成 / error 失败 / interrupted 中断。
 
-    interrupted 用于流式回合被客户端断开/取消但已产生部分内容的情形——仍有
-    记录可查（query + partial answer），只是未完整走完。
+    processing 由用户提问时先落一条 query 记录（思考/回复随后补齐）；interrupted
+    用于流式回合被客户端断开/取消但已产生部分内容的情形——仍有记录可查
+    （query + partial answer），只是未完整走完。
     """
 
+    PROCESSING = "processing"
     NORMAL = "normal"
     ERROR = "error"
     INTERRUPTED = "interrupted"
@@ -46,6 +49,20 @@ class TurnUsage(BaseModel):
     total_tokens: int = 0
     cached_read_tokens: int = 0
     cached_write_tokens: int = 0
+
+
+class TurnStartRecord(BaseModel):
+    """回合开始落库载荷：用户提问即先落一条 processing 记录（仅 query）。
+
+    由路由在回合登记后、执行前调用 ConversationService.start_turn；回合结束
+    record_turn 再更新同 message_id 的 thinking/answer/status/usage。
+    """
+
+    message_id: str
+    query: str
+    account_id: str
+    agent_id: str | None = None
+    status: MessageStatus = MessageStatus.PROCESSING
 
 
 class TurnRecord(BaseModel):

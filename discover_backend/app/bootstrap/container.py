@@ -71,8 +71,9 @@ class AppServices:
             lease=MemoryRunLease(),
             owner_id="api",
         )
-        # 进行中回合句柄注册表（stop 接口据此取消回合；回合退出后注销）
-        self.active_turns = ActiveTurnRegistry()
+        # 进行中回合句柄注册表（stop 接口据此取消回合；回合退出后注销；
+        # 陈旧句柄按 TTL 自动回收，防客户端断连泄漏会话锁）
+        self.active_turns = ActiveTurnRegistry(ttl_seconds=settings.active_turn_ttl_seconds)
         self._resolve_api_key: Callable[[LLMProvider], str] | None = None
         self._reloader_scope: anyio.CancelScope | None = None
         self._reloader_task: asyncio.Task[None] | None = None
@@ -94,7 +95,8 @@ class AppServices:
         self.catalog = AssistantCatalog(self.registry)
         self.conversation_service = ConversationService(self.db, self.settings, self.catalog)
         self.elecnest = self._build_elecnest()
-        # Redis 会话层为认证硬依赖：恒用 RedisSessionStore（无开关降级）
+        # Redis 会话层：原本地登录（兼容回退）签发令牌对后写会话，受保护请求对本地令牌校验访问会话；
+        # 平台令牌路径不写本地会话（只验签）；login/refresh/logout 依赖此层
         self.auth = AuthService(
             self.settings,
             self.db,

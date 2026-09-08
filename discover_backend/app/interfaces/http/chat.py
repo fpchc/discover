@@ -8,8 +8,10 @@ message / message_end / thinking_* / ping / error，以 message_end 收尾，无
 
 回合执行统一走 v2 Run 生命周期（react-runtime-v2-architecture §16/§17）：
 RunService 创建 Run（快照 + 事件日志 + 租约），执行并发 RunEvent（展示增量 +
-生命周期事件），SSE 帧映射由 run_stream.map_run_event 归一；回合结束由
-TurnRecorder 聚合 RunEvent 流并经 conversation_service.record_turn 落库。
+生命周期事件），SSE 帧映射由 run_stream.map_run_event 归一；落库走两段式——
+用户提问先由路由 start_turn 落一条 processing 记录（仅 query），回合结束由
+TurnRecorder 聚合 RunEvent 流并经 conversation_service.record_turn 更新
+thinking/answer/status/usage。
 stop 接口持久化走 RunService.cancel（事件日志记录 RunCancelled），执行中断仍由
 路由层 task.cancel() 承担（与客户端断开同一取消原语；同会话并发二次发起 → 409，
 见 ActiveTurnRegistry）。
@@ -47,6 +49,7 @@ from app.interfaces.schemas import (
     ThinkingDeltaFrame,
     ThinkingEndFrame,
     ThinkingStartFrame,
+    TurnStartRecord,
 )
 from app.runtime.turn import ActiveTurn
 from app.shared.errors.base import ConflictError, ErrorCategory, PlatformError
@@ -93,6 +96,17 @@ async def chat_messages(
     turn = ActiveTurn(message_id=message_id)
     if not services.active_turns.register(conversation_id, turn):
         raise ConflictError("会话正在进行中的回合，请先停止或等待完成")
+    # 用户提问先落一条 processing 记录（仅 query，best-effort），历史即时可见；
+    # 思考/回复在回合结束由 record_turn 更新进同 message_id。
+    await services.conversation_service.start_turn(
+        conversation_id,
+        TurnStartRecord(
+            message_id=message_id,
+            query=body.query,
+            account_id=account_id,
+            agent_id=session.agent_id_label,
+        ),
+    )
     if body.response_mode == "streaming":
         return StreamingResponse(
             _stream_sse(services, body.query, session, message_id, created_at, turn),
@@ -140,7 +154,7 @@ async def _blocking(
     """blocking：聚合 RunEvent 流，返回 chat-messages JSON。
 
     turn.task 捕获当前请求任务供 stop 取消；预启动窗口的 stop（stop_requested）
-    在启动时立即中断。取消/异常路径先落库后注销（与 _stream_sse 一致的顺序）。
+    在启动时立即中断。取消/异常路径先注销回合句柄再兜底落库（与 _stream_sse 一致）。
     """
     recorder = TurnRecorder(message_id=message_id, query=user_input, session=session)
     exit_reason: ExitReason = "normal"
@@ -158,8 +172,16 @@ async def _blocking(
         exit_reason = "error"
         raise
     finally:
-        await _persist_turn(services, session, recorder, exit_reason=exit_reason)
+        # 先注销回合句柄（释放会话锁）再兜底落库：客户端收到 message_end 即可发起
+        # 下一回合，落库耗时不再占锁；落库失败不掩盖原始终止原因（异常/取消传播）。
         services.active_turns.unregister(session.conversation_id, turn)
+        try:
+            await _persist_turn(services, session, recorder, exit_reason=exit_reason)
+        except Exception:
+            logger.exception(
+                "回合落库异常（best-effort 忽略）",
+                extra={"conversation_id": session.conversation_id},
+            )
     if recorder.error is not None:
         raise PlatformError(
             recorder.error,
@@ -216,6 +238,10 @@ async def _stream_sse(
             raise asyncio.CancelledError
         async for event in _run_turn_events(services, session, user_input, turn=turn):
             recorder.absorb(event)
+            # 终态事件处理即释放会话锁：客户端收到 message_end 时锁已空闲，
+            # 可立即发起下一回合；收尾落库不占锁（并发落库由 record_turn 串行化）。
+            if is_terminal(event):
+                services.active_turns.unregister(session.conversation_id, turn)
             frame = map_run_event(
                 event,
                 message_id=message_id,
@@ -242,11 +268,17 @@ async def _stream_sse(
         )
         raise
     finally:
-        # 兜底落库：无论正常 / 中断 / 异常都记录一回合，保证前端中途中断的
-        # 对话也有 message。DB 降级由 record_turn 内部消化，落库失败不掩盖
-        # 原始终止原因（异常 / 取消继续向外传播）。落库完成后注销句柄。
-        await _persist_turn(services, session, recorder, exit_reason=exit_reason)
+        # 先注销回合句柄（释放会话锁）再兜底落库：客户端收到 message_end 即可发起
+        # 下一回合，落库耗时不再占锁。DB 降级由 record_turn 内部消化，落库失败
+        # 不掩盖原始终止原因（异常 / 取消继续向外传播）。
         services.active_turns.unregister(session.conversation_id, turn)
+        try:
+            await _persist_turn(services, session, recorder, exit_reason=exit_reason)
+        except Exception:
+            logger.exception(
+                "回合落库异常（best-effort 忽略）",
+                extra={"message_id": message_id, "conversation_id": session.conversation_id},
+            )
         text = recorder.answer
         thinking = recorder.thinking
         logger.info(
@@ -269,10 +301,11 @@ async def _persist_turn(
     *,
     exit_reason: ExitReason,
 ) -> None:
-    """回合结束落库一次；DB 降级由服务内部消化（路由无感知）。
+    """回合结束更新落库一次（start_turn 建的 processing 记录 → 终态）。
 
     状态由 recorder 按 Run 终态事件显式推导（RunCompleted → normal / RunFailed →
     error / RunCancelled → interrupted），缺失时按 exit_reason 兜底（§17.1）。
+    DB 降级由服务内部消化（路由无感知）。
     """
     if services.conversation_service is None:
         return

@@ -12,7 +12,7 @@ motion · Axios · react-markdown + highlight.js + DOMPurify · sonner · lucide
 
 - 环境：Node `>= 20.19`，pnpm `>= 9`（`corepack enable`）
 - 安装：`pnpm install`
-- 本地开发：`pnpm dev`（`/api` 代理到 `VITE_PROXY_TARGET`，默认 `http://127.0.0.1:8000`）
+- 本地开发：`pnpm dev`（`/api` 代理到 `VITE_PROXY_TARGET`，默认 `http://127.0.0.1:9101`）
 
 ## 三环境架构
 
@@ -25,7 +25,7 @@ motion · Axios · react-markdown + highlight.js + DOMPurify · sonner · lucide
 | **prod** | `pnpm build` && `pnpm preview` 或 `docker compose -f docker-compose.prod.yml up --build -d` | vite build 静态产物 + nginx 反代（8080） |
 
 > prod / test 的根级 compose 为全栈编排（postgres + 后端 + 前端）；`docker compose up frontend` 也会连带启动其依赖（后端）。dev 编排不内置 postgres。
-> 反代目标经 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://discover_backend:8000`，compose 服务名）。
+> 反代目标经 compose 环境变量 `BACKEND_PROXY_PASS` 注入（默认 `http://discover_backend:9101`，compose 服务名）。
 
 ## 质量门禁（提交前，见 CLAUDE.md 第 13 节）
 
@@ -55,7 +55,7 @@ docker-compose.test.yml     test 全栈（nginx 反代，9003）
 ```
 
 ```bash
-# dev（全栈热更新：前端 5173 / 后端 8000）
+# dev（全栈热更新：前端 9102 / 后端 9101）
 docker compose up --build
 # prod（8080）
 docker compose -f docker-compose.prod.yml up --build -d

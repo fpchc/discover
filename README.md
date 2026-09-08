@@ -28,7 +28,7 @@ test 与 dev 不内置——test 连远程库（默认 `175.178.45.21`，可用�
 dev 走热挂载 `discover_backend/.env` 配置的外部库。
 
 ```bash
-# dev：前端 3000（Nuxt dev 热更新）/ 后端 8000（--reload 热重载）
+# dev：前端 3000（Nuxt dev 热更新）/ 后端 9101 --reload 热重载）
 docker compose up --build
 
 # prod：前端 8080（nginx 静态服务 + /api 反代）
@@ -54,7 +54,7 @@ docker compose -f docker-compose.prod.yml down -v   # 连同卷一并清除
   `storage/` / `logs/` / `workspaces/` 在 dev 直接落在宿主机 `discover_backend/`，在 prod/test 以 bind mount
   落在仓库根目录（`./storage` 等，已加入 `.gitignore`），便于统一查看与备份。
 - **frontend**：
-  - dev：源码热挂载 + Nuxt dev server，`/api` 反代到 `http://discover_backend:8000`（免 CORS）；
+  - dev：源码热挂载 + Nuxt dev server，`/api` 反代到 `http://discover_backend:9101`（免 CORS）；
   - prod / test：多阶段构建产物由 nginx 托管，`/api` 反向代理到 backend 服务（SSE 关缓冲）。
 
 ### 配置注入
@@ -63,7 +63,7 @@ docker compose -f docker-compose.prod.yml down -v   # 连同卷一并清除
   compose 各自文件头部，`services.<svc>.environment` 用 `<<: *common-env` 展开，一处修改三处生效；
   真实密钥不入库：放服务器根目录 `.env`（模板根目录 `.env.example`），compose 自动读取并覆盖默认值。
 - `DB_*` 按环境各自声明：prod / test 指向 compose 内 postgres；dev 不内置 postgres，走热挂载 `discover_backend/.env`。
-- nginx 反代目标经 `BACKEND_PROXY_PASS` 注入（默认 `http://discover_backend:8000`）。
+- nginx 反代目标经 `BACKEND_PROXY_PASS` 注入（默认 `http://discover_backend:9101`）。
 
 ## 测试环境部署（test）
 
@@ -172,6 +172,6 @@ docker compose -f docker-compose.test.yml up --build -d
 
 - 后端：`cd discover_backend && uv sync && uv run uvicorn app.application:create_app --factory --reload`
   （依赖 PostgreSQL，连接配置见 `discover_backend/.env`）。
-- 前端：`cd discover_frontend && pnpm install && pnpm dev`（`/api` 默认代理到 `http://127.0.0.1:8000`）。
+- 前端：`cd discover_frontend && pnpm install && pnpm dev`（`/api` 默认代理到 `http://127.0.0.1:9101`）。
 
 > 各子项目详细文档：`discover_backend/README.md`、`discover_frontend/README.md`。

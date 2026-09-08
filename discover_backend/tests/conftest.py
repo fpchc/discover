@@ -10,12 +10,12 @@ from sqlalchemy import text
 
 # 测试固定 JWT 密钥（≥32 字节，避免 pyjwt 弱密钥警告；与 _build_settings 对齐）
 _TEST_JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef"
-# 测试令牌默认账号（虚构 uuid；JWT 解签不查库，隔离过滤按此字符串）
+# 测试令牌默认账号（虚构平台 user_id；离线 HTTP 测试经 resolve_user 替身直通，不查库）
 _TEST_ACCOUNT_ID = "00000000-0000-0000-0000-0000000000aa"
 
 
 def make_auth_token(account_id: str = _TEST_ACCOUNT_ID, *, secret: str = _TEST_JWT_SECRET) -> str:
-    """构造有效 JWT（认证依赖仅解签，不查库，任意 account_id 可过）。"""
+    """构造有效平台令牌（离线测试经 api_ctx 的 resolve_user 替身直通，不查库）。"""
     return JwtService(Settings(_env_file=None, jwt_secret_key=secret)).encode(account_id)
 
 
@@ -177,7 +177,7 @@ async def api_ctx(tmp_path: Path) -> AsyncIterator[tuple[object, httpx.AsyncClie
         app.state.services.auth._sessions = _FakeSessionStore()  # type: ignore[attr-defined]  # 测试注入假会话存储
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://127.0.0.1:8000/"
+            transport=transport, base_url="http://127.0.0.1:9101/"
         ) as client:
             yield app, client
 

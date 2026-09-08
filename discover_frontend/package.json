@@ -13,7 +13,7 @@
     "dev": "vite",
     "build": "pnpm typecheck && vite build",
     "build:test": "pnpm typecheck && vite build --mode test",
-    "preview": "vite preview --port 4173",
+    "preview": "vite preview --port 9102",
     "typecheck": "tsc --noEmit",
     "lint": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write --unsafe .",

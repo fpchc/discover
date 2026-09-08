@@ -28,6 +28,7 @@ from app.interfaces.schemas.conversations import (
     MessageRecord,
     MessageStatus,
     TurnRecord,
+    TurnStartRecord,
     TurnUsage,
     UsageAggregate,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "ThinkingEndFrame",
     "ThinkingStartFrame",
     "TurnRecord",
+    "TurnStartRecord",
     "TurnUsage",
     "UploadConfig",
     "UsageAggregate",

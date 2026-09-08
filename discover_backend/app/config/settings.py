@@ -97,14 +97,28 @@ class Settings(BaseSettings):
     db_host: str = "127.0.0.1"
     db_port: int = 5432
     db_database: str = "agent_platform"
+    # 连接池（配置驱动）：默认 QueuePool 复用连接，避免每次 DB 操作新建连接
+    # （远程库下每操作建连是消息保存/历史查询延迟主因，见 engine.py）；
+    # db_pool_size<=0 时退化为 NullPool（每操作即开即关，供跨事件循环的
+    # 测试/特殊环境回退）。
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout_seconds: float = 30.0
+    db_pool_pre_ping: bool = True
+    db_pool_recycle_seconds: int = 1800
 
     @property
     def database_url(self) -> str:
         """SQLAlchemy 异步连接串（asyncpg 驱动），由 DB_* 字段组装。"""
+        host = self.db_host
+        # pragma: 简化 — Windows+Docker 下 localhost 先解析 IPv6 ::1，回环转发
+        # 超时（~21s）；统一替换为 IPv4 字面量（语义等价）规避每次建连超时。
+        if host == "localhost":
+            host = "127.0.0.1"
         return (
             "postgresql+asyncpg://"
             f"{quote_plus(self.db_username)}:{quote_plus(self.db_password)}"
-            f"@{self.db_host}:{self.db_port}/{self.db_database}"
+            f"@{host}:{self.db_port}/{self.db_database}"
         )
 
     # ---- 存储（Blob Engine：字节流入存储层，元数据入库） ----
@@ -132,8 +146,12 @@ class Settings(BaseSettings):
     sse_heartbeat_interval_seconds: float = 15.0
     sse_queue_max_events: int = 128
 
+    # ---- 对话回合并发锁（ActiveTurnRegistry） ----
+    # 进行中回合句柄有效期：未启动且超时视为陈旧自动回收（客户端断连防泄漏锁）
+    active_turn_ttl_seconds: float = 120.0
+
     # ---- 控制台客户端 ----
-    console_base_url: str = "http://127.0.0.1:8000"
+    console_base_url: str = "http://127.0.0.1:9101"
     console_char_delay_ms: int = 20
     console_request_timeout_seconds: float = 300.0
 
@@ -237,16 +255,23 @@ class Settings(BaseSettings):
     # ---- 服务 ----
     log_level: str = "INFO"
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 9101
 
-    # ---- 账号认证（JWT + Argon2id + Redis 会话层） ----
-    # JWT 签名密钥：必须从环境注入，无默认有效值（缺失时 JwtService 构造抛 ConfigError）
+    # ---- 统一认证平台（JWT 验签；令牌由平台签发，本项目只验签不解发） ----
+    # JWT 签名密钥 = 平台共享密钥 APP_SECRET_KEY：必须从环境注入，无默认有效值
+    # （缺失时 JwtService 构造抛 ConfigError）。
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    # 访问令牌有效期（秒）：JWT exp 与 Redis 访问会话 TTL 对齐（Redis 为准，key 缺失即
-    # 登录失效）。短期令牌，到期后前端经 /auth/refresh 用刷新令牌续期。
+    # 签发者 iss（平台契约固定 crm-auth；校验平台令牌时 PyJWT issuer 参数比对）
+    jwt_issuer: str = "crm-auth"
+    # 受众 aud（本项目登记的受众，需在平台 AUTH_AUDIENCES 登记；校验时 PyJWT
+    # audience 参数比对，防跨受众误用）
+    jwt_audience: str = "crm-backend"
+    # 兼容回退配置（原本地登录/刷新可用；平台令牌验签不依赖这些值）：
+    # 访问令牌有效期（秒）：本地 JWT 签发（兼容回退）的 exp 基准；JWT 校验与此
+    # 同步（exp-iat 超出即拒绝，默认 7 天）。
     auth_access_token_ttl_seconds: int = 60 * 60 * 24 * 7
-    # 刷新令牌有效期（秒）：Redis 刷新会话 TTL（权威）。到期 / 被轮换 / 登出即需重新登录。
+    # 刷新令牌有效期（秒）：本地 Redis 刷新会话 TTL（登出/续期，默认 30 天）。
     auth_refresh_token_ttl_seconds: int = 60 * 60 * 24 * 30
     # Argon2id 参数（OWASP 推荐强度：64 MiB、3 次迭代、4 并行）
     argon2_time_cost: int = 3

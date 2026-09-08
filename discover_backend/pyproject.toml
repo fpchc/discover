@@ -93,7 +93,7 @@ markers = [
     "unit: 纯单元测试，无网络 / 无 DB",
     "integration: 集成测试，依赖本地 PostgreSQL",
     "http: HTTP 接入层测试（进程内 TestClient，无需真服务）",
-    "e2e: 端到端测试，需 127.0.0.1:8000 真服务在跑（未启动自动 skip）",
+    "e2e: 端到端测试，需 127.0.0.1:9101 真服务在跑（未启动自动 skip）",
 ]
 # 关闭输出捕获：tests/e2e/test_discover_live.py 用 print 做流式打字机输出，默认捕获会吞掉
 # 若想恢复安静测试输出，删掉这一行即可（logging 打印仍由下方 log_cli 控制）

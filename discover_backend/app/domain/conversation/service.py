@@ -4,7 +4,10 @@
 - resolve：空串创建 conversations 行（归属账号 + 首查标题 + 助手绑定）并返回
   ConversationSession；显式 conversation_id 校验归属（未知/跨账号/已删 → 404）
   并按 agent_id 更新绑定。创建为 best-effort（DB 降级内部消化，舱壁），读取严格。
-- record_turn：回合结束把 query/answer/thinking/usage 落库（行更新 + messages 插入）。
+- start_turn：用户提问先落一条 processing 记录（仅 query），供历史即时可见；
+  best-effort（DB 降级内部消化），回合结束由 record_turn 更新。
+- record_turn：回合结束把 thinking/answer/status/usage 更新进 start_turn 建的记录
+  （行缺失时兜底重建，兼容直接落库场景）。
 
 读取方法（list/get/delete/usage）不降级——读不到数据就该报错，经中间件走统一错误响应。
 """
@@ -36,6 +39,7 @@ from app.interfaces.schemas.conversations import (
     MessageRecord,
     MessageStatus,
     TurnRecord,
+    TurnStartRecord,
     UsageAggregate,
 )
 from app.shared.errors.base import NotFoundError
@@ -267,16 +271,56 @@ class ConversationService:
                 row.updated_at = local_now()
                 await session.commit()
 
-    async def record_turn(self, conversation_id: str, turn: TurnRecord) -> bool:
-        """落库一回合：conversation 行更新（计数/快照）+ message 插入。
+    async def start_turn(self, conversation_id: str, start: TurnStartRecord) -> None:
+        """用户提问先落一条 processing 记录（仅 query），供历史即时可见。
 
-        conversation 行由 resolve 建好；此处行缺失为兜底重建（best-effort 场景
-        下 resolve 未落库），name 取 turn.conversation_name 或 query 截断。
-        续聊保留原 name。DB 故障仅记日志返回 False（舱壁），不阻断主流程。
+        与 resolve 同款 best-effort（DB 降级内部消化，舱壁）：写失败仅记日志，
+        不阻断回合；回合结束 record_turn 仍会兜底重建。会话行缺失时补建
+        （name 取 query 截断），并刷新 updated_at 使会话浮到列表顶部。
         """
         try:
             async with self._db.session_factory() as session:
                 convo = await session.get(Conversation, conversation_id)
+                if convo is None:
+                    convo = Conversation(
+                        conversation_id=conversation_id,
+                        from_account_id=start.account_id,
+                        name=start.query[:64],
+                        status=ConversationStatus.ACTIVE.value,
+                        dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
+                        is_delete=False,  # 同上：显式初始化软删除标记
+                    )
+                    session.add(convo)
+                else:
+                    convo.updated_at = local_now()
+                if convo.agent_id is None and start.agent_id:
+                    convo.agent_id = start.agent_id
+                session.add(
+                    Message(
+                        message_id=start.message_id,
+                        conversation_id=conversation_id,
+                        created_by=start.account_id,
+                        agent_id=start.agent_id,
+                        query=start.query,
+                        status=start.status.value,
+                    )
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning("回合开始落库失败（best-effort 忽略）：%s：%r", conversation_id, exc)
+
+    async def record_turn(self, conversation_id: str, turn: TurnRecord) -> bool:
+        """回合结束落库：把 start_turn 建的 processing 记录更新为终态。
+
+        conversation 行由 resolve/start_turn 建好；此处行缺失为兜底重建（best-effort
+        场景下 start_turn 未落库），name 取 turn.conversation_name 或 query 截断。
+        conversation 读带 FOR UPDATE：回合锁在结束即释放（先注销后落库），同会话
+        新回合可能并发落库，串行化 dialogue_count 自增防丢。续聊保留原 name。
+        DB 故障仅记日志返回 False（舱壁），不阻断主流程。
+        """
+        try:
+            async with self._db.session_factory() as session:
+                convo = await session.get(Conversation, conversation_id, with_for_update=True)
                 if convo is None:
                     convo = Conversation(
                         conversation_id=conversation_id,
@@ -295,8 +339,9 @@ class ConversationService:
                     convo.model_provider = turn.provider
                 if convo.model_id is None and turn.model:
                     convo.model_id = turn.model
-                session.add(
-                    Message(
+                msg = await session.get(Message, turn.message_id)
+                if msg is None:
+                    msg = Message(
                         message_id=turn.message_id,
                         conversation_id=conversation_id,
                         created_by=turn.account_id,
@@ -315,7 +360,21 @@ class ConversationService:
                         cached_read_tokens=turn.usage.cached_read_tokens,
                         cached_write_tokens=turn.usage.cached_write_tokens,
                     )
-                )
+                    session.add(msg)
+                else:
+                    msg.answer = turn.answer
+                    msg.thinking = turn.thinking
+                    msg.status = turn.status.value
+                    msg.error = turn.error
+                    msg.latency_ms = turn.latency_ms
+                    msg.provider = turn.provider
+                    msg.model = turn.model
+                    msg.prompt_tokens = turn.usage.prompt_tokens
+                    msg.completion_tokens = turn.usage.completion_tokens
+                    msg.total_tokens = turn.usage.total_tokens
+                    msg.cached_read_tokens = turn.usage.cached_read_tokens
+                    msg.cached_write_tokens = turn.usage.cached_write_tokens
+                    msg.updated_at = local_now()
                 await session.commit()
             return True
         except Exception as exc:

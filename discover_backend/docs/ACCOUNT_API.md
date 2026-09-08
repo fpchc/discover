@@ -1,9 +1,17 @@
 # 账号认证与数据隔离 API 文档
 
-> 2026-08-28 新增，2026-08-29 补齐刷新/登出/资料维护/每日用量。平台引入账号体系
-> （手机号 + 密码登录，JWT 会话：访问令牌 + 刷新令牌轮换），并对既有数据接口做
-> **账号隔离**。此前所有接口无鉴权；本次起除特殊说明外**数据接口一律需请求头
-> `Authorization: Bearer <JWT>`**。所有接口前缀 `/api/v1`；请求/响应均为 JSON。
+> **⚠️ 统一认证接入（2026-09-05）+ 兼容模式（2026-09-07）**：统一认证平台令牌
+> 为主（本项目**只本地验签**：HS256 + 共享密钥 + `aud` + `iss` + `type=access`）；
+> **原本地登录恢复可用**作为兼容回退——`/auth/login`、`/auth/login/elecnest`、
+> `/auth/refresh`、`/auth/logout`、`/users/me/password` 均恢复生效，本地登录签发
+> 令牌对并写 Redis 会话层，受保护接口同时接受平台令牌与本地令牌。
+> **统一登录仅作登录映射**：平台 `user_id`（JWT `sub`）按 `accounts.auth_user_id`
+> find-or-create 本地账号；对外标识与数据隔离键**恒为本地账号 uuid 文本**
+> （`str(accounts.id)`），`AccountRecord.account_id` 亦然——不引入第二套用户标识。
+
+> 历史：2026-08-28 引入手机号+密码登录，2026-08-29 补齐刷新/登出/资料维护/每日用量。
+> 除特殊说明外**数据接口一律需请求头 `Authorization: Bearer <JWT>`**（平台签发的
+> access 令牌）。所有接口前缀 `/api/v1`；请求/响应均为 JSON。
 > 错误统一 `{detail: <message>}`（参数校验失败为 FastAPI 默认 422 形状）。
 
 ## 目录
@@ -32,14 +40,20 @@
 
 ## 0. 认证流程与通用约定
 
-1. 手机号 + 密码调 `POST /api/v1/auth/login`，成功返回**令牌对**：JWT 访问令牌
-   （HS256，`sub=account_id`）+ 不透明刷新令牌
-2. 后续所有受保护请求头带 `Authorization: Bearer <token>`
-3. 访问令牌默认 **1 天**（`AUTH_ACCESS_TOKEN_TTL_SECONDS`）；无效/过期/缺失 → `401`
-4. 刷新令牌默认 **7 天**（`AUTH_REFRESH_TOKEN_TTL_SECONDS`）；到期前用
-   `POST /api/v1/auth/refresh` 换新令牌对（**轮换制**，旧刷新令牌一次性作废）
-5. 登出调 `POST /api/v1/auth/logout`，服务端作废当前访问 + 刷新令牌（幂等）
-6. 登录失败统一 `401 手机号或密码错误`（防账号枚举）；非超级用户访问管理接口 → `403`
+1. 统一认证（主）：用户在统一认证平台登录，平台签发 `access` 令牌（JWT HS256，
+   `sub=平台 user_id`，`iss=crm-auth`，`aud=本项目受众`，`type=access`）；本项目
+   **不解发、不刷新、不登出**平台令牌
+2. 原本地登录（兼容回退）：`POST /auth/login`（手机号+密码）或
+   `POST /auth/login/elecnest`（公司统一登录）由本项目签发本地令牌对（访问 +
+   刷新令牌），访问会话写入 Redis
+3. 后续所有受保护请求头带 `Authorization: Bearer <token>`（平台令牌或本地令牌均可）
+4. 本项目**本地验签**：HS256 + 共享密钥 + `aud` + `iss` + `type=access`，全部通过才有效；
+   无效/过期/缺失/受众不符/签发者不符/非 access → `401`；本地令牌额外校验 Redis
+   访问会话（登出/过期即失效）
+5. 平台 `user_id`（JWT `sub`）仅作**登录映射键**：按 `accounts.auth_user_id`
+   find-or-create 本地账号；用户标识与数据隔离列（`from_account_id` /
+   `created_by`）恒为**本地账号 uuid 文本**
+6. 非超级用户访问管理接口 → `403`
 
 | 状态码 | 含义 |
 |---|---|
@@ -51,6 +65,9 @@
 ## 1. 认证接口
 
 ### 1.1 登录 `POST /auth/login`
+
+> **兼容回退（2026-09-07 恢复）**：原本地手机号+密码登录可用；签发本地令牌对
+> （访问 + 刷新令牌），访问会话写 Redis。平台令牌路径不受影响。
 
 | 参数 | 位置 | 类型 | 说明 |
 |---|---|---|---|
@@ -70,7 +87,7 @@
   "account_id": "3f2a9c8e-…-d1b4",
   "token": "eyJhbGciOiJIUzI1NiIs…",
   "refresh_token": "…（不透明随机串，仅 /auth/refresh 用）",
-  "expires_in": 86400,
+  "expires_in": 604800,
   "name": "张三"
 }
 ```
@@ -85,6 +102,8 @@
 **失败 401**：`{detail: "手机号或密码错误"}` / `{detail: "账号不可用"}`
 
 ### 1.2 统一登录 `POST /auth/login/elecnest`
+
+> **兼容回退（2026-09-07 恢复）**：原公司统一登录（elecnest SSO）可用。
 
 公司统一登录（elecnest SSO）。开关 `ELECNEST_SSO_ENABLED=false` 时返回
 `400`（未启用）。前端从公司统一登录体系拿 `token + uid` 后调本接口：后端用
@@ -111,6 +130,8 @@
 
 ### 1.3 刷新令牌 `POST /auth/refresh`
 
+> **兼容回退（2026-09-07 恢复）**：原本地刷新令牌续期可用（仅限本地登录签发的刷新令牌）。
+
 **无需 Bearer**（凭刷新令牌本身）。换新令牌对：旧刷新令牌**原子消费作废**（Redis
 GETDEL，并发重复提交也只会成功一次），返回全新访问 + 刷新令牌，两令牌 TTL 重新计满。
 
@@ -129,9 +150,12 @@ GETDEL，并发重复提交也只会成功一次），返回全新访问 + 刷�
 **失败 401**：刷新令牌无效 / 过期 / 已被消费 → `{detail: "登录状态已失效，请重新登录"}`
 
 > 前端策略：访问令牌剩余不足（`expires_in`）时用刷新令牌预刷新，无需用户重新登录；
-> 刷新令牌本身 7 天有效期内可持续续期。
+> 刷新令牌本身 30 天有效期内可持续续期。
 
 ### 1.4 登出 `POST /auth/logout`
+
+> **兼容回退（2026-09-07 恢复）**：原本地服务端登出可用（作废本地访问 + 刷新会话；
+> 平台令牌登出仍由平台侧负责）。
 
 需 Bearer 认证（当前访问令牌）+ body 携带刷新令牌，一并服务端作废。
 
@@ -159,13 +183,13 @@ GETDEL，并发重复提交也只会成功一次），返回全新访问 + 刷�
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `account_id` | string | 账号 ID（uuid 文本） |
-| `name` | string | 显示名 |
-| `phone` | string | 手机号 |
+| `account_id` | string | 用户标识：统一认证用户为平台 `user_id`（JWT `sub`）；存量本地账号为 uuid 文本 |
+| `name` | string | 本地显示名（自动建档默认「用户{user_id}」，可 `PATCH /users/me` 修改） |
+| `phone` | string | 手机号（本地资料，可为空串） |
 | `avatar` | string? | 头像（预览相对路径 `/files/{file_id}/preview`，未设置为 null） |
 | `status` | "active" \| "disabled" | 账号状态 |
-| `is_system` | bool | 是否超级用户 |
-| `user_type` | "password" \| "elecnest" | 登录来源（统一登录为 elecnest） |
+| `is_system` | bool | 是否超级用户（管理员经 CLI 绑定标注；过渡期占位） |
+| `user_type` | "password" \| "elecnest" \| "unified" | 登录来源（统一认证自动建档为 unified） |
 | `created_at` | string | ISO 8601 |
 | `last_login_at` | string? | 最近登录时间 |
 
@@ -283,6 +307,8 @@ GETDEL，并发重复提交也只会成功一次），返回全新访问 + 刷�
 
 ### 1.11 修改密码 `POST /users/me/password`
 
+> **兼容回退（2026-09-07 恢复）**：原本地修改密码可用（校验原密码后回写 Argon2id 哈希）。
+
 需认证。
 
 | 参数 | 位置 | 类型 | 说明 |
@@ -305,6 +331,7 @@ GETDEL，并发重复提交也只会成功一次），返回全新访问 + 刷�
 ### 1.12 全量账号用量 `GET /users`（超级用户）
 
 需认证，且当前账号 `is_system=true`；否则 `403`。返回全部账号及其用量。
+（权限码体系接入后，此处的 `is_system` 判定将替换为平台权限码；过渡期保留。）
 
 **响应 200**：`UserUsage[]`（每账号一条，无消息的账号计 0）
 
@@ -372,31 +399,38 @@ GETDEL，并发重复提交也只会成功一次），返回全新访问 + 刷�
 
 要点：
 
-- 关联列存 `varchar(36)` 的 uuid 文本（`str(uuid.UUID)` 虚线形式），无外键（平台惯例）
+- 关联列存 `varchar(64)` 的**本地账号 uuid 文本**（`str(uuid.UUID)` 虚线形式），
+  无外键（平台惯例）；统一登录只映射，不改变存值
 - **跨账号不可见**：会话列表只出本人；读/删他人会话、续聊他人会话均 `404`
 - **upload_files 预览保持全局**：凭 `file_id` 即可访问，不做归属过滤（用户决策）
 - **dedup 按账号隔离**：`(created_by, clue_id)` 组合主键，两账号同日同产品不互相覆盖
 
 ---
 
-## 5. 账号预置
+## 5. 账号预置与存量绑定
 
-无注册接口（用户决策）。用户由管理侧经 CLI 预置：
+**无注册接口**（用户决策）；统一登录用户首次访问按平台 `user_id` 自动建档
+（find-or-create 本地账号）。管理侧 CLI 用于：**存量本地账号与平台 `user_id`
+绑定**（登录映射，命中既有本地账号与历史数据）、**标注管理员**、**预置手机号+密码
+账号**（兼容回退本地登录）：
 
 ```bash
-uv run python -m app.domain.auth.provision --phone 13800138001 --name 张三 --password '***' --superuser
+# 新建 + 绑定平台 user_id + 标注管理员（--password 可选，兼容回退本地登录可用）
+uv run python -m app.domain.auth.provision --phone 13800138001 --name 张三 \
+  --auth-user-id 2 --superuser
+
+# 手机号已存在 → 仅绑定 auth_user_id（存量账号接入统一登录）
+uv run python -m app.domain.auth.provision --phone 13800138001 --auth-user-id 2 --superuser
 ```
 
 | 参数 | 说明 |
 |---|---|
-| `--phone` | 登录手机号（唯一） |
-| `--name` | 显示名 |
-| `--password` | 明文密码（Argon2id 哈希入库，明文不落盘） |
+| `--phone` | 手机号（存在则绑定，不存在则建档） |
+| `--name` | 显示名（仅建档时用） |
+| `--auth-user-id` | 平台 `user_id`（JWT `sub`），绑定后平台登录命中该本地账号（仅登录映射键） |
 | `--username` | 可选；唯一用户名，缺省取手机号 |
 | `--superuser` | 标注超级账号（可访问 `GET /users`） |
-
-密码存储：Argon2id PHC 自含编码（`time_cost=3 / memory_cost=65536 / parallelism=4`），
-存 `accounts.password_hash`，无单独盐列。
+| `--password` | 可选；明文密码（Argon2id 哈希入库）。兼容回退本地登录可用时设置 |
 
 ---
 
@@ -406,8 +440,8 @@ uv run python -m app.domain.auth.provision --phone 13800138001 --name 张三 --p
 |---|---|---|
 | `200` | 查询/登录/刷新/更新成功 | |
 | `204` | 删除/登出成功 | 空体 |
-| `400` | 参数业务校验失败（头像超限/格式、昵称空白、新密码过短、统一登录未启用、elecnest 账号未设密码） | `ErrorCategory.BAD_REQUEST` |
-| `401` | 未登录 / 令牌无效过期 / 刷新令牌失效 / 登录凭据错误 / 原密码错误 / 账号不存在 | `ErrorCategory.AUTH` |
+| `400` | 参数业务校验失败（头像超限/格式、昵称空白） | `ErrorCategory.BAD_REQUEST` |
+| `401` | 未登录 / 令牌无效过期 / aud·iss·type 不符 / 账号不存在 | `ErrorCategory.AUTH` |
 | `403` | 非超级用户访问管理接口 | `ErrorCategory.DENIED` |
 | `404` | 资源不存在 / 跨账号访问（不泄露存在性） | `ErrorCategory.NOT_FOUND` |
 | `422` | 请求体参数校验失败 | FastAPI 默认形状 |
@@ -415,7 +449,8 @@ uv run python -m app.domain.auth.provision --phone 13800138001 --name 张三 --p
 ---
 
 > 环境变量补充：`JWT_SECRET_KEY`（必填，≥32 字符）、`JWT_ALGORITHM`（默认 HS256）、
-> `AUTH_ACCESS_TOKEN_TTL_SECONDS`（默认 86400；JWT exp 与 Redis 访问会话 TTL 对齐，Redis 为准）、
-> `AUTH_REFRESH_TOKEN_TTL_SECONDS`（默认 604800）、`ACCOUNT_PASSWORD_MIN_LENGTH`（默认 8）、
+> `AUTH_ACCESS_TOKEN_TTL_SECONDS`（默认 604800 = 7 天；JWT exp 与 Redis 访问会话 TTL 对齐，Redis 为准；
+> 本地令牌校验与它同步，exp-iat 超出即拒绝）、
+> `AUTH_REFRESH_TOKEN_TTL_SECONDS`（默认 2592000 = 30 天）、`ACCOUNT_PASSWORD_MIN_LENGTH`（默认 8）、
 > `ARGON2_TIME_COST` / `ARGON2_MEMORY_COST` / `ARGON2_PARALLELISM`。
 > 认证恒启用，无开关。

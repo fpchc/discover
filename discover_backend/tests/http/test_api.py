@@ -8,6 +8,7 @@ SSE 帧与 blocking 响应均为跨边界 DTO（CLAUDE.md §3）：一律经 pyd
 校验后类型化访问。判别联合在 test 内本地定义，复用项目既有 DTO。
 """
 
+from datetime import datetime
 from typing import Annotated
 
 import httpx
@@ -22,9 +23,10 @@ from app.interfaces.schemas import (
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
+from app.interfaces.schemas.auth import AccountRecord, UserType
 from pydantic import Field, TypeAdapter
 
-_LOCAL_BASE_URL = "http://127.0.0.1:8000"
+_LOCAL_BASE_URL = "http://127.0.0.1:9101"
 
 # 项目 SSE 帧判别联合（跨边界 DTO，event 字段判别）
 type StreamFrame = Annotated[
@@ -38,6 +40,38 @@ type StreamFrame = Annotated[
     Field(discriminator="event"),
 ]
 STREAM_ADAPTER = TypeAdapter(StreamFrame)
+
+
+@pytest.fixture(autouse=True)
+async def _offline_auth_resolution(api_ctx: tuple[object, httpx.AsyncClient]) -> None:
+    """离线 HTTP 测试替身：任意 user_id 直通为同名本地账号（不查库）。
+
+    生产 AuthService.resolve_current_account 先按本地账号 uuid 直查（原本地登录
+    令牌），未命中再按平台 user_id find-or-create（统一认证映射）；离线测试无 DB，
+    替身把 get_account 短路为 None + resolve_user 映射为同名本地账号，保持
+    「有效令牌 → account_id=sub」原语义（CLAUDE.md §12：外部 I/O 一律注入 mock，
+    禁真实 DB）。
+    """
+    app, _client = api_ctx
+    auth = app.state.services.auth
+    assert auth is not None
+
+    async def _get_account_offline(user_id: str) -> AccountRecord | None:
+        del user_id
+        return None
+
+    async def _resolve_offline(user_id: str) -> AccountRecord | None:
+        return AccountRecord(
+            account_id=user_id,
+            name="测试用户",
+            phone="",
+            user_type=UserType.UNIFIED,
+            created_at=datetime.now(),
+        )
+
+    auth.get_account = _get_account_offline  # type: ignore[method-assign]  # 测试替身
+    auth.resolve_user = _resolve_offline  # type: ignore[method-assign]  # 测试替身
+    yield
 
 
 def _parse_sse_line(line: str) -> StreamFrame | None:

@@ -22,10 +22,28 @@ class AccountStatus(StrEnum):
 
 
 class UserType(StrEnum):
-    """账号登录来源（accounts.user_type，DDL 默认 password）。"""
+    """账号来源（accounts.user_type，DDL 默认 password）。
+
+    password=手机号+密码（兼容回退可用）；elecnest=原统一登录（兼容回退可用）；
+    unified=统一认证平台登录映射建档（user_type 仅标记登录来源，不引入第二标识）。
+    """
 
     PASSWORD = "password"
     ELECNEST = "elecnest"
+    UNIFIED = "unified"
+
+
+class PlatformTokenClaims(BaseModel):
+    """统一认证平台 JWT 校验后的载荷（仅验签所需字段，跨边界 DTO）。
+
+    校验（签名/exp/aud/iss/type）由 JwtService.decode_platform_token 完成，
+    此处只承载校验结果；user_id 即 JWT `sub`（平台用户标识，仅作登录映射键，
+    不作为对外账号标识）。
+    """
+
+    user_id: str
+    sid: str | None = None
+    jti: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -92,7 +110,11 @@ class LogoutRequest(BaseModel):
 
 
 class AccountRecord(BaseModel):
-    """账号记录（读取接口返回；password_hash 永不外泄）。"""
+    """账号记录（读取接口返回；password_hash 永不外泄）。
+
+    `account_id` 恒为本地账号 uuid 文本（str(accounts.id)）——统一登录仅作
+    登录映射（auth_user_id），不引入第二套用户标识。
+    """
 
     account_id: str
     name: str

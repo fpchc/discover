@@ -21,7 +21,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 
 # 阶段三 dev：热更新开发服务（docker compose 默认目标）
 FROM deps AS dev
-EXPOSE 5173
+EXPOSE 9102
 CMD ["pnpm", "dev", "--host", "0.0.0.0"]
 
 # 阶段四 build：构建静态产物（node_modules 继承自 deps 镜像层，源码变更不重装依赖）

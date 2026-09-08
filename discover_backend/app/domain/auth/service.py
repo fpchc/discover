@@ -1,11 +1,16 @@
-"""账号认证服务（AuthService）：登录 / 令牌对签发 / 会话校验 / 刷新 / 登出 / 账号与用量。
+"""账号认证服务（AuthService）：统一认证平台验签 / 本地账号解析 / 登录签发 / 账号与用量。
 
 依赖注入：Database、ConversationService、SessionStore 由组装层注入（DIP，CLAUDE.md §6）。
-密码哈希为 CPU 密集，登录校验经 anyio 线程池；DB 非关键路径（登录时间记录）
-best-effort 忽略（与 record_turn 舱壁哲学一致）。认证本身是硬依赖，不降级。
 
-会话模型：登录签发「访问令牌（JWT，短期）+ 刷新令牌（不透明随机串，长期）」并写入
-Redis 会话层（SessionStore）；校验/续期/登出以 Redis 为权威——key 缺失即登录失效。
+兼容模式（2026-09-07）：统一认证平台令牌为主，原本地登录**恢复可用**作为兼容回退。
+- 统一认证：平台令牌本地验签（HS256 + aud + iss + type=access，无 Redis / 无网络），
+  平台 user_id（JWT sub）仅按 accounts.auth_user_id **find-or-create** 本地账号（登录映射）；
+- 原本地登录（兼容回退）：手机号+密码 / elecnest SSO 签发本地令牌对并写入 Redis
+  会话层（SessionStore）；受保护接口对本地令牌（sub=本地账号 uuid）校验 Redis
+  访问会话（deps 经 resolve_current_account 区分，登出/过期即 401）。
+
+对外标识与数据隔离键**恒为本地账号 uuid 文本**（str(account.id)），两种登录方式
+都不引入第二套用户标识。
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from typing import cast
 
 import anyio
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.config.settings import Settings
 from app.domain.auth.security import JwtService, PasswordHasher
@@ -88,12 +94,73 @@ class AuthService:
 
     # ---- 令牌 ----
     def encode_token(self, account_id: str) -> str:
-        """签发 JWT 访问令牌（登录用；测试经此构造令牌）。"""
+        """签发 JWT 访问令牌（兼容回退：原本地登录签发，sub=本地账号 uuid）。"""
         return self._jwt.encode(account_id)
 
     def decode_token(self, token: str) -> str:
-        """校验 JWT 返回 account_id；无效/过期抛 UnauthorizedError。"""
+        """兼容回退校验 JWT 返回 account_id（不校验 aud/iss/type；仅本地会话用）。"""
         return self._jwt.decode(token)
+
+    def validate_platform_token(self, token: str) -> str:
+        """统一认证平台令牌校验（本地验签，无 Redis / 无网络）：返回平台 user_id。
+
+        校验矩阵（验签 + exp + aud + iss + type=access）见 JwtService；
+        任一失败抛 UnauthorizedError（HTTP 401）。
+        """
+        return self._jwt.decode_platform_token(token).user_id
+
+    # ---- 用户解析（find-or-create，统一认证自动建档） ----
+    async def resolve_user(self, user_id: str) -> AccountRecord | None:
+        """按平台 user_id 解析本地账号：无则自动建档（user_type=unified），有则复用。
+
+        统一登录映射：平台 user_id（JWT sub）经 auth_user_id 找到/建档本地账号，
+        返回的 account_id 恒为本地 uuid 文本。建档幂等：并发首访撞唯一索引时
+        回滚后二次查询兜底（一个平台用户对应一个本地账号）。默认名「用户{user_id}」，
+        昵称可后续 PATCH /users/me 修改。建档失败返回 None（调用方转 401）。
+        """
+        async with self._db.session_factory() as session:
+            row = await session.scalar(
+                select(Account).where(Account.auth_user_id == user_id).limit(1)
+            )
+            if row is None:
+                # pragma: 简化 — username 唯一索引仅信息用途（无业务读取），按
+                # user_id 派生唯一名，超长截断兜底列宽 64（截断冲突概率极低）
+                row = Account(
+                    id=uuid.uuid4(),
+                    name=f"用户{user_id}",
+                    phone="",
+                    username=f"unified_{user_id}"[:64],
+                    auth_user_id=user_id,
+                    user_type=UserType.UNIFIED.value,
+                    status=AccountStatus.ACTIVE.value,
+                )
+                session.add(row)
+                try:
+                    await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+                    row = await session.scalar(
+                        select(Account).where(Account.auth_user_id == user_id).limit(1)
+                    )
+                    if row is None:
+                        return None
+            return _to_record(row)
+
+    async def resolve_current_account(self, token: str) -> AccountRecord | None:
+        """兼容解析当前账号：平台令牌 find-or-create / 原本地登录令牌直查。
+
+        1. 本地验签（HS256 + aud + iss + type=access）解出 sub；
+        2. sub 若为本地账号 uuid（原本地登录令牌，sub=accounts.id）→ 按 id 直查
+           并校验 Redis 访问会话存在（登出/过期即 401，原登录语义）；
+        3. 否则视为平台 user_id（统一认证令牌）→ resolve_user find-or-create
+           （按 auth_user_id 登录映射，建档失败返回 None）。
+        """
+        user_id = self.validate_platform_token(token)
+        local = await self.get_account(user_id)
+        if local is not None:
+            await self.validate_session(token)
+            return local
+        return await self.resolve_user(user_id)
 
     # ---- 会话（Redis 权威：key 缺失即登录失效） ----
     async def validate_session(self, token: str) -> str:
@@ -238,7 +305,10 @@ class AuthService:
         )
 
     async def update_account(self, account_id: str, *, name: str | None) -> AccountRecord:
-        """更新当前账号昵称；name 为空则保持原值（白名单字段，防越权改 phone 等）。"""
+        """更新当前账号昵称；name 为空则保持原值（白名单字段，防越权改 phone 等）。
+
+        按本地账号 uuid 定位（对外标识唯一口径）。
+        """
         if name is not None and not name.strip():
             raise BadRequestError("昵称不能为空")
         try:
@@ -263,7 +333,10 @@ class AuthService:
         content: bytes,
         mimetype: str,
     ) -> AccountRecord:
-        """更换头像：FileService 校验落盘，回写 Account.avatar 为预览相对路径。"""
+        """更换头像：FileService 校验落盘，回写 Account.avatar 为预览相对路径。
+
+        created_by 与账号定位统一用本地账号 uuid。
+        """
         file = await self._files.upload_avatar(
             created_by=account_id,
             filename=filename,
@@ -317,7 +390,7 @@ class AuthService:
 
     # ---- 账号与用量 ----
     async def get_account(self, account_id: str) -> AccountRecord | None:
-        """按 account_id 查账号（uuid 文本；非法/不存在返回 None）。"""
+        """按本地账号 uuid 查账号（纯查询，不建档）；无则返回 None。"""
         try:
             uid = uuid.UUID(account_id)
         except ValueError:
@@ -329,7 +402,7 @@ class AuthService:
         return _to_record(row)
 
     async def get_user_usage(self, account_id: str) -> UserUsage | None:
-        """当前账号 token 用量（按 created_by 聚合 messages）。"""
+        """当前账号 token 用量（按 created_by = 本地账号 uuid 聚合 messages）。"""
         account = await self.get_account(account_id)
         if account is None:
             return None
@@ -345,7 +418,10 @@ class AuthService:
         return DailyUsage(account_id=account_id, name=account.name, days=days, items=items)
 
     async def list_users_with_usage(self) -> list[UserUsage]:
-        """全部账号用量（超级用户接口）：accounts x messages.created_by 聚合。"""
+        """全部账号用量（超级用户接口）：accounts x messages.created_by 聚合。
+
+        账号标识恒为本地 uuid 文本，与 messages.created_by 存值一致（无第二标识）。
+        """
         async with self._db.session_factory() as session:
             rows = (await session.scalars(select(Account).order_by(Account.created_at))).all()
         aggregates = await self._history.usage_by_account()

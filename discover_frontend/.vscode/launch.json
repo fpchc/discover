@@ -6,7 +6,7 @@
       "type": "chrome",
       "request": "launch",
       "name": "Debug in Chrome (Vite)",
-      "url": "http://localhost:5173",
+      "url": "http://localhost:9102",
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "dev: Vite dev server"
     },
@@ -15,7 +15,7 @@
       "type": "msedge",
       "request": "launch",
       "name": "Debug in Edge (Vite)",
-      "url": "http://localhost:5173",
+      "url": "http://localhost:9102",
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "dev: Vite dev server"
     },

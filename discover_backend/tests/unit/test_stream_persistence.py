@@ -43,6 +43,26 @@ class _FakeHistory:
         return True
 
 
+class _SlowRecordHistory(_FakeHistory):
+    """慢速落库：模拟 message_end 已发、落库未完成的窗口。
+
+    old_turn 由测试注入；落库时断言旧回合句柄已释放（新回合可能已登记，不算）。
+    """
+
+    def __init__(self, registry: ActiveTurnRegistry, delay: float = 0.2) -> None:
+        super().__init__()
+        self._registry = registry
+        self._delay = delay
+        self.old_turn: ActiveTurn | None = None
+        self.old_lock_held_during_persist: bool | None = None
+
+    async def record_turn(self, conversation_id: str, turn: TurnRecord) -> bool:
+        self.old_lock_held_during_persist = self._registry.get(conversation_id) is self.old_turn
+        await anyio.sleep(self._delay)
+        self.turns.append(turn)
+        return True
+
+
 def _make_services() -> SimpleNamespace:
     """最小 services 桩：conversation_service 供落库 + active_turns 供注销句柄。"""
     return SimpleNamespace(
@@ -128,6 +148,33 @@ async def test_stream_persists_normal_on_complete(monkeypatch: pytest.MonkeyPatc
     assert turn.thinking == "思考B"
     assert turn.message_id == _MESSAGE_ID
     assert turn.account_id == "acct-1"
+
+
+async def test_stream_releases_lock_before_persist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """409 竞态修复：message_end 已发出即释放会话锁，落库窗口内可立即发起新回合。"""
+    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
+    registry = ActiveTurnRegistry()
+    history = _SlowRecordHistory(registry)
+    services = SimpleNamespace(conversation_service=history, active_turns=registry)
+    turn = ActiveTurn(message_id=_MESSAGE_ID)
+    assert registry.register(_CONVERSATION_ID, turn) is True
+    history.old_turn = turn
+    frames: list[str] = []
+    second_ok: bool | None = None
+    async for frame in _stream_sse(
+        services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, turn
+    ):
+        frames.append(frame)
+        # 客户端收到 message_end 立即发起下一回合（此时旧回合落库可能仍在进行）
+        if '"message_end"' in frame and second_ok is None:
+            second_ok = registry.register(_CONVERSATION_ID, ActiveTurn(message_id="m2"))
+    assert second_ok is True, "message_end 后应能立即发起新回合（锁已释放）"
+    assert history.old_lock_held_during_persist is False, "旧回合锁在落库前已释放"
+    # 旧回合 finally 的身份比对注销不会误删新句柄
+    kept = registry.get(_CONVERSATION_ID)
+    assert kept is not None and kept.message_id == "m2"
 
 
 async def test_stream_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyPatch) -> None:

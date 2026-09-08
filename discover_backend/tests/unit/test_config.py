@@ -252,3 +252,34 @@ async def test_mcp_registry_env_substitution(
     monkeypatch.setenv("TENCENT_MCP_BASE_URL", "http://tencent_mcp:10001/mcp")
     registry = await load_mcp_servers(path)
     assert registry.servers[0].base_url == "http://tencent_mcp:10001/mcp"
+
+
+# ---- 数据库连接池配置与 URL 组装（远程库保存延迟修复） ----
+
+
+def test_settings_db_pool_defaults() -> None:
+    """连接池默认启用 QueuePool（配置驱动）；size<=0 时由 engine 退化为 NullPool。"""
+    settings = Settings(_env_file=None)
+    assert settings.db_pool_size == 5
+    assert settings.db_max_overflow == 10
+    assert settings.db_pool_timeout_seconds == 30.0
+    assert settings.db_pool_pre_ping is True
+    assert settings.db_pool_recycle_seconds == 1800
+
+
+def test_settings_db_pool_disabled_via_zero() -> None:
+    settings = Settings(_env_file=None, db_pool_size=0)
+    assert settings.db_pool_size == 0
+
+
+def test_database_url_forces_ipv4_for_localhost() -> None:
+    """localhost → 127.0.0.1（Windows+Docker IPv6 ::1 回环超时 ~21s 防御）。"""
+    settings = Settings(_env_file=None, db_host="localhost")
+    assert settings.database_url.startswith("postgresql+asyncpg://")
+    assert "@127.0.0.1:5432/" in settings.database_url
+    assert "localhost" not in settings.database_url
+
+
+def test_database_url_keeps_explicit_host() -> None:
+    settings = Settings(_env_file=None, db_host="175.178.45.21")
+    assert "@175.178.45.21:5432/" in settings.database_url

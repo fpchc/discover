@@ -6,6 +6,7 @@
 
 import asyncio
 import contextlib
+import time
 
 import anyio
 from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
@@ -93,3 +94,51 @@ async def _spin_forever() -> None:
 
 async def _noop() -> None:
     return None
+
+
+async def test_register_reclaims_finished_task_async() -> None:
+    """任务结束后再登记 → 覆盖陈旧句柄（防泄漏锁自愈）。"""
+    reg = ActiveTurnRegistry()
+    old = _turn("old")
+    assert reg.register("conv-1", old) is True
+    task = asyncio.create_task(_noop())
+    await task
+    assert task.done()
+    old.task = task
+    assert reg.register("conv-1", _turn("new")) is True
+    kept = reg.get("conv-1")
+    assert kept is not None and kept.message_id == "new"
+
+
+def test_register_reclaims_unstarted_after_ttl() -> None:
+    """未启动且超过 TTL（生成器从未被消费的泄漏）→ 陈旧覆盖。"""
+    reg = ActiveTurnRegistry(ttl_seconds=1.0)
+    old = _turn("old")
+    assert reg.register("conv-1", old) is True
+    assert old.task is None
+    old.created_at = time.monotonic() - 10.0
+    assert reg.register("conv-1", _turn("new")) is True
+    kept = reg.get("conv-1")
+    assert kept is not None and kept.message_id == "new"
+
+
+def test_register_refuses_pending_unstarted_within_ttl() -> None:
+    """未启动且在 TTL 内（预启动 stop 窗口）→ 仍视为进行中，拒绝。"""
+    reg = ActiveTurnRegistry(ttl_seconds=60.0)
+    assert reg.register("conv-1", _turn("a")) is True
+    assert reg.register("conv-1", _turn("b")) is False
+    kept = reg.get("conv-1")
+    assert kept is not None and kept.message_id == "a"
+
+
+async def test_register_refuses_running_task() -> None:
+    """任务运行中 → 永不视为陈旧，拒绝并发回合。"""
+    reg = ActiveTurnRegistry()
+    turn = _turn("a")
+    assert reg.register("conv-1", turn) is True
+    spin = asyncio.create_task(_spin_forever())
+    turn.task = spin
+    assert reg.register("conv-1", _turn("b")) is False
+    spin.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await spin

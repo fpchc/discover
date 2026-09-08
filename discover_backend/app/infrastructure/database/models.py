@@ -5,10 +5,11 @@
 conversations（会话头）+ messages（回合明细）。ORM 与 pydantic DTO
 分离（CLAUDE.md §3），跨边界传递用 DTO，持久化用 ORM。
 
-账号体系（2026-08-28）：accounts 表按用户 DDL（uuid PK + gen_random_uuid
-默认值、username 唯一索引、is_system 标注超级用户）；既有表以 from_account_id /
-created_by（varchar(36) 存 uuid 文本）关联账号。账号 ID 在领域层一律用
-str(uuid.UUID) 虚线形式（36 字符）。
+账号体系（统一认证接管 2026-09-05）：统一登录**仅作登录映射**——accounts 新增
+auth_user_id（平台 user_id，JWT sub，唯一索引，存量本地账号为 NULL）作平台侧
+查找键（find-or-create / provision 绑定）；对外账号标识与数据隔离键**恒为本地
+账号 uuid 文本**（str(accounts.id)），既有表 from_account_id / created_by
+（varchar(64)，兼容历史行）统一存该 uuid 文本，无第二套用户标识。
 """
 
 from __future__ import annotations
@@ -53,12 +54,16 @@ class Account(Base):
     user_type: Mapped[str] = mapped_column(String(16), default="password")
     # 公司统一登录体系的主键 id（对方 uid，Long 的数字串），幂等登录唯一键
     elecnest_uid: Mapped[str | None] = mapped_column(String(64))
+    # 统一认证平台 user_id（JWT sub），仅作登录映射键 + find-or-create 唯一键；
+    # 存量本地账号为 NULL（唯一索引允许多个 NULL，PG 语义）；不作为对外标识/数据隔离键
+    auth_user_id: Mapped[str | None] = mapped_column(String(64))
 
     # 索引名与用户 DDL 对齐（迁移已按此手写建表）
     __table_args__ = (
         Index("account_phone_idx", "phone"),
         Index("accounts_username_index", "username", unique=True),
         Index("accounts_elecnest_uid_index", "elecnest_uid", unique=True),
+        Index("accounts_auth_user_id_index", "auth_user_id", unique=True),
     )
 
 
@@ -71,6 +76,10 @@ class Conversation(Base):
     """
 
     __tablename__ = "conversations"
+    # 历史列表高频查询（按账号 + 未删除 + updated_at 倒序）：复合索引避免逐次排序回表
+    __table_args__ = (
+        Index("ix_conversations_account_updated", "from_account_id", "is_delete", "updated_at"),
+    )
 
     conversation_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid4 hex
     # 归属账号（accounts.id 的 uuid 文本）；会话隔离与 token 审计按此过滤
@@ -97,11 +106,15 @@ class Message(Base):
     """
 
     __tablename__ = "messages"
+    # 消息历史查询（按 conversation_id 过滤 + created_at 排序）：复合索引避免逐次排序回表
+    __table_args__ = (
+        Index("ix_messages_conversation_created_at", "conversation_id", "created_at"),
+    )
 
     message_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid4 hex
     conversation_id: Mapped[str] = mapped_column(String(32), index=True)
-    # 归属账号（免 join 直接按账号聚合 token 用量）
-    created_by: Mapped[str] = mapped_column(String(36), index=True)
+    # 归属账号（本地账号 uuid 文本；免 join 直接按账号聚合 token 用量）
+    created_by: Mapped[str] = mapped_column(String(64), index=True)
     agent_id: Mapped[str | None] = mapped_column(String(64), index=True)
     provider: Mapped[str | None] = mapped_column(String(64))
     model: Mapped[str | None] = mapped_column(String(64))
@@ -137,8 +150,9 @@ class UploadFileRecord(Base):
     media_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     hash: Mapped[str | None] = mapped_column(String(128))
-    # 归属账号（会话产物由会话账号自然携带）；created_by_role 仍区分 agent/user 消费方
-    created_by: Mapped[str] = mapped_column(String(36), index=True)
+    # 归属账号（本地账号 uuid 文本；会话产物由会话账号自然携带）；
+    # created_by_role 仍区分 agent/user 消费方
+    created_by: Mapped[str] = mapped_column(String(64), index=True)
     created_by_role: Mapped[str] = mapped_column(String(32))
     used: Mapped[bool] = mapped_column(default=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -154,8 +168,8 @@ class DedupClue(Base):
 
     __tablename__ = "dedup_clues"
 
-    # 先声明 created_by，主键列序即 (created_by, clue_id)
-    created_by: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    # 先声明 created_by，主键列序即 (created_by, clue_id)；存本地账号 uuid 文本
+    created_by: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
     clue_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     product_keywords: Mapped[list[str]] = mapped_column(JSONB)
     target_industry: Mapped[str] = mapped_column(Text, default="")

@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 # 端到端测试依赖本地开发服务器在跑（uvicorn app.bootstrap.application:create_app --factory）
-LOCAL_BASE_URL = "http://127.0.0.1:8000"
+LOCAL_BASE_URL = "http://127.0.0.1:9101"
 
 
 @pytest.fixture()
