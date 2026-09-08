@@ -1,4 +1,4 @@
-# MCP 服务注册表（字段定义见 .claude/commands/mcp-integration-spec.md §3）
+# MCP 服务注册表（字段定义见 .claude/specs/mcp-integration-spec.md §3）
 # 认证令牌只存环境变量名，值从环境读取；代码中不出现端点 URL 字面量。
 #
 # enabled 显式开关（装配层过滤，见 loader.MCPServer.enabled）：

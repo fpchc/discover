@@ -4,7 +4,7 @@
 流式输出、审批、产物管理。任何具体智能体的业务逻辑（含数据源知识、报告模板）
 都属于 agents/ 下的智能体包，平台代码不得出现智能体名 / 技能名 / 工具名。
 
-设计约束见 CLAUDE.md 与 .claude/commands/*.md。
+设计约束见 CLAUDE.md 与 .claude/specs/*.md。
 """
 
 __version__ = "0.1.0"
