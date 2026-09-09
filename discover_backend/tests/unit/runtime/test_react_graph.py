@@ -13,6 +13,7 @@ import pytest
 from app.capabilities.llm.models import ChatToolSpec, ToolFunction
 from app.capabilities.llm.stream_parser import (
     SemanticChunk,
+    TextChunk,
     ThinkingChunk,
     ToolCall,
     ToolCallsChunk,
@@ -156,6 +157,34 @@ async def _run(executor: BoundedReActExecutor, request: PhaseExecutionRequest) -
 
 
 # ---- §24 场景 1：工具调用后正常完成 ----
+async def test_expert_react_does_not_display_intermediate_text() -> None:
+    def respond(_call_index: int) -> list[SemanticChunk]:
+        return [ThinkingChunk(text="思考中"), TextChunk(text="中间叙述")]
+
+    displayed_text: list[str] = []
+    displayed_thinking: list[str] = []
+    request = _request()
+    state = ReactGraphState(request=request, budget=request.budget)
+    tools = _FakeTools(
+        lambda _call, _index: ToolResult(
+            call_id=_call.call_id, tool_name=_call.tool_name, ok=True, content="数据"
+        )
+    )
+    executor = BoundedReActExecutor(
+        llm=_FakeLLM(respond),
+        tools=tools,
+        events=_FakeEvents(),
+        display_text=displayed_text.append,
+        display_thinking=displayed_thinking.append,
+    )
+
+    result = await executor.call_llm(state)
+
+    assert result["text_parts"] == "中间叙述"
+    assert displayed_text == []
+    assert displayed_thinking == ["思考中"]
+
+
 async def test_graph_normal_completion_after_tool_call() -> None:
     def respond(call_index: int) -> list[SemanticChunk]:
         if call_index == 0:

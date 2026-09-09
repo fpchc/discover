@@ -236,9 +236,10 @@ class BoundedReActExecutor:
             with anyio.fail_after(max(remaining_seconds, 1.0)):
                 async for chunk in self._llm.stream(request=request):
                     if isinstance(chunk, TextChunk):
+                        # 专家 ReAct 路径：中间 TextChunk 只作为 assistant 消息与
+                        # parse_decision 的草稿，不推送到可见正文；最终 answer 由
+                        # chat_execution._execute_turn 在拿到 outcome.answer 后统一推送。
                         text_parts.append(chunk.text)
-                        if self._display_text is not None:
-                            self._display_text(chunk.text)
                     elif isinstance(chunk, ThinkingChunk):
                         if self._display_thinking is not None:
                             self._display_thinking(chunk.text)
