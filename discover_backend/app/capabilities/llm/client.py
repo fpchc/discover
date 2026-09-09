@@ -107,8 +107,10 @@ class LLMClient:
         }
         if request.tools:
             payload["tools"] = [tool.model_dump(exclude_none=True) for tool in request.tools]
-        if request.thinking and provider.supports_thinking:
-            payload["enable_thinking"] = True
+        if provider.supports_thinking:
+            payload["enable_thinking"] = request.thinking
+            if request.thinking and request.thinking_budget:
+                payload["thinking_budget"] = request.thinking_budget
         if request.temperature is not None:
             payload["temperature"] = request.temperature
         return payload

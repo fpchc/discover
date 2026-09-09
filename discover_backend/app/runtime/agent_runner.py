@@ -37,23 +37,34 @@ from app.runtime.resolver.skill import SkillResolutionContext, SkillResolver
 from app.shared.errors.base import ConfigError
 
 
-def build_agent_budget(settings: Settings) -> BudgetState:
+def build_agent_budget(settings: Settings, plan: AssemblyPlan | None = None) -> BudgetState:
     """从平台配置构建单阶段 ReAct 预算（CLAUDE.md §5 阈值一律进配置）。
 
     预算层级：平台硬上限 ≥ Agent 默认 ≥ Skill 默认 ≥ Phase 实际，下层只能收紧。
+    智能体清单（AGENT.md）可声明 max_iterations / max_llm_calls / max_tool_calls /
+    max_duration_seconds 收紧预算；未声明维度回落平台默认。
     """
-    return BudgetState(
-        limits=BudgetLimits(
-            max_iterations=settings.agent_max_iterations,
-            max_llm_calls=settings.agent_max_llm_calls,
-            max_tool_calls=settings.agent_max_tool_calls,
-            max_total_tokens=settings.agent_max_total_tokens,
-            max_input_tokens=settings.agent_max_input_tokens,
-            max_duration_seconds=settings.agent_max_duration_seconds,
-            max_repair_attempts=settings.agent_max_repair_attempts,
-            finalization_reserve_tokens=settings.agent_finalization_reserve_tokens,
-        )
+    limits = BudgetLimits(
+        max_iterations=settings.agent_max_iterations,
+        max_llm_calls=settings.agent_max_llm_calls,
+        max_tool_calls=settings.agent_max_tool_calls,
+        max_total_tokens=settings.agent_max_total_tokens,
+        max_input_tokens=settings.agent_max_input_tokens,
+        max_duration_seconds=settings.agent_max_duration_seconds,
+        max_repair_attempts=settings.agent_max_repair_attempts,
+        finalization_reserve_tokens=settings.agent_finalization_reserve_tokens,
     )
+    if plan is not None:
+        overrides = {
+            "max_iterations": plan.max_iterations,
+            "max_llm_calls": plan.max_llm_calls,
+            "max_tool_calls": plan.max_tool_calls,
+            "max_duration_seconds": plan.max_duration_seconds,
+        }
+        limits = limits.model_copy(
+            update={key: value for key, value in overrides.items() if value is not None}
+        )
+    return BudgetState(limits=limits)
 
 
 class AssemblyResult:

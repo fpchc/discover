@@ -26,6 +26,7 @@ from app.config.settings import Settings
 from app.interfaces.http.chat_execution import (
     _history_summary,
     _outcome_answer,
+    _resolve_thinking_budget,
 )
 from app.runtime.agent_runner import build_agent_budget
 from app.runtime.events.run_events import RunEvent
@@ -206,6 +207,20 @@ def test_build_agent_budget_maps_settings() -> None:
     assert budget.limits.max_duration_seconds == 120.0
     assert budget.limits.max_repair_attempts == 1
     assert budget.limits.finalization_reserve_tokens == 2000
+
+
+# ---- thinking_budget 映射：thinking_preference → token 上限 ----
+def test_resolve_thinking_budget_off_and_none() -> None:
+    settings = _settings()
+    assert _resolve_thinking_budget(None, settings) is None
+    assert _resolve_thinking_budget("off", settings) is None
+
+
+def test_resolve_thinking_budget_low_medium_high() -> None:
+    settings = _settings()
+    assert _resolve_thinking_budget("low", settings) == 600
+    assert _resolve_thinking_budget("medium", settings) == 1200
+    assert _resolve_thinking_budget("high", settings) is None  # 0 表示不限制
 
 
 # ---- _outcome_answer 映射 ----

@@ -467,6 +467,53 @@ async def test_activate_three_tiers(tmp_path: Path) -> None:
     assert "alibaba_search.web_search_news" in catalog  # 目录全集含 Tier2，供阶段白名单
 
 
+async def test_activate_capability_core_tools_exposed(tmp_path: Path) -> None:
+    """capability_dependencies 的 core_tools 让 MCP 工具进入 Tier1 暴露集合。
+
+    单企调研场景下 enterprise_business 能力声明 search_companies /
+    get_company_basic_profile 为核心工具；thinking off 的模型必须直接看到这些工具，
+    否则会陷入 search_tools/describe_tool 懒加载而无法完成采集（回归防护）。
+    """
+    skill_dir, workspace = _setup(tmp_path)
+    tools = [
+        MCPToolInfo(name="search_companies", description="查公司", input_schema={"type": "object"}),
+        MCPToolInfo(
+            name="get_company_basic_profile",
+            description="基础画像",
+            input_schema={"type": "object"},
+        ),
+        MCPToolInfo(name="get_company_people", description="人员", input_schema={"type": "object"}),
+    ]
+    plan = _plan().model_copy(
+        update={
+            "required_mcp_servers": [],
+            "core_tool_names": [],
+            "capabilities": [
+                CapabilityPlan(
+                    capability="enterprise_business",
+                    strategy="failover",
+                    candidate_servers=["alibaba_search"],
+                    core_tools=["search_companies", "get_company_basic_profile"],
+                    required=False,
+                )
+            ],
+        }
+    )
+    broker = _broker(tmp_path, _FakeMCPManager(tools), _FakeScriptExecutor())
+    activation = await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert activation.ok is True
+    exposed = {spec.function.name for spec in broker.exposed_tools()}
+    assert "alibaba_search.search_companies" in exposed
+    assert "alibaba_search.get_company_basic_profile" in exposed
+    assert "alibaba_search.get_company_people" not in exposed  # 非核心 Tier2 懒加载
+
+
 async def test_activate_hides_generic_mcp_dispatch_tools(tmp_path: Path) -> None:
     """泛化分发工具（call_tool / call_tools_batch）不进入模型可见清单与目录。"""
     skill_dir, workspace = _setup(tmp_path)

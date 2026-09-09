@@ -168,7 +168,7 @@ class StreamParser:
             finish = choice.get("finish_reason")
             if isinstance(finish, str) and finish:
                 chunks.append(FinishChunk(reason=finish))
-                if finish == "tool_calls":
+                if finish == "tool_calls" or self._tool_calls:
                     chunks.append(ToolCallsChunk(tool_calls=self._assembled_tool_calls()))
         return chunks
 

@@ -300,6 +300,8 @@ class PhaseExecutionRequest(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     # 是否向模型开启思考（thinking）通道：由全局开关与装配层 thinking_preference 共同决定
     thinking_enabled: bool = True
+    # 思考模式 token 上限（None 表示不限制）：限制思维链长度，前端思考过程可展示但不至于过长
+    thinking_budget: int | None = None
     # role="tool" 消息回传正文的截断上限（字符），防工具大结果撑爆上下文
     tool_message_max_chars: int = 2000
     budget: BudgetState

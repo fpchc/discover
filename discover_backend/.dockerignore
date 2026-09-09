@@ -60,7 +60,7 @@ Dockerfile
 .pre-commit-config.yaml
 .coveragerc
 pytest.ini
-README.md
+# README.md 必须保留：pyproject.toml 声明 readme="README.md"，末段 uv sync 会构建并安装 agent-platform，hatchling 校验 readme 元数据需要该文件
 AGENTS.md
 CLAUDE.md
 

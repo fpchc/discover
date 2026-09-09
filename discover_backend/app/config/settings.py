@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     # ---- LLM ----
     default_provider_id: str = "qwen3.7-max"
     thinking_enabled: bool = True
+    # 思考模式 token 预算（thinking_preference 非 off 时生效）：限制思维链输出长度，
+    # 避免 qwen3 未设置 thinking_budget 时默认 131072 的思考上限导致单轮思考过长，
+    # 前端长时间无内容可看。0 表示不限制（回落模型默认）。
+    llm_thinking_budget_low: int = 600
+    llm_thinking_budget_medium: int = 1200
+    llm_thinking_budget_high: int = 0
     llm_connect_timeout_seconds: float = 10.0
     llm_read_timeout_seconds: float = 60.0
     llm_total_timeout_seconds: float = 300.0
@@ -145,6 +151,11 @@ class Settings(BaseSettings):
     # ---- SSE ----
     sse_heartbeat_interval_seconds: float = 15.0
     sse_queue_max_events: int = 128
+
+    # ---- 服务关闭 ----
+    # uvicorn 优雅退出超时（秒）：超过后强制取消进行中连接/任务。uvicorn 默认 None=
+    # 永久等待——卡死的 SSE 流（如模型死循环回合）会让 Ctrl+C 无法退出，故必须有界。
+    server_graceful_shutdown_seconds: float = 5.0
 
     # ---- 对话回合并发锁（ActiveTurnRegistry） ----
     # 进行中回合句柄有效期：未启动且超时视为陈旧自动回收（客户端断连防泄漏锁）

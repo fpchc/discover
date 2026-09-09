@@ -13,7 +13,9 @@
         "--port",
         "9101",
         "--log-level",
-        "debug"
+        "debug",
+        "--timeout-graceful-shutdown",
+        "5"
       ],
       "jinja": true,
       "justMyCode": false,

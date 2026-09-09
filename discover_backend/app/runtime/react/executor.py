@@ -15,6 +15,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from typing import Protocol
 
+import anyio
 from pydantic import BaseModel, Field
 
 from app.capabilities.llm.models import (
@@ -65,6 +66,7 @@ from app.runtime.react.progress import (
     evaluate_progress,
     observation_fingerprint,
 )
+from app.shared.errors.base import ErrorCategory, PlatformError
 from app.shared.utils.sanitize import truncate
 
 
@@ -139,6 +141,19 @@ def _to_stream_call(call: ToolCallRequest) -> ToolCall:
     )
 
 
+class AgentDurationExceeded(PlatformError):
+    """回合总时长硬预算超限：单次 LLM 调用突破剩余时长预算即中断回合。
+
+    预算 duration_seconds 只累计**已完成**的调用；进行中的慢/挂死调用若不受限，
+    整个回合会无界运行（check_budget 只在迭代间隙检查，无法中断进行中的调用）。
+    call_llm 用「剩余时长」包裹流式调用，超限即终止（已展示的部分内容仍经 SSE
+    到达前端，落库由 record_turn 兜底）。
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category=ErrorCategory.TIMEOUT, retryable=False)
+
+
 class BoundedReActExecutor:
     """单 Phase 有界 ReAct 执行器：图节点方法实现（§10 拓扑）。"""
 
@@ -180,7 +195,9 @@ class BoundedReActExecutor:
         if request.context_summary:
             lines.append(f"上下文摘要：{request.context_summary}")
         lines.append(
-            "完成后调用 complete_phase / submit_final_answer；信息不足调用 request_clarification。"
+            "完成后调用 submit_final_answer 提交最终答案；"
+            "多阶段流程的中间候选输出调用 complete_phase；"
+            "信息不足调用 request_clarification。"
         )
         return "\n".join(lines)
 
@@ -204,22 +221,35 @@ class BoundedReActExecutor:
             messages=state.messages,
             tools=self._all_tool_specs(),
             thinking=state.request.thinking_enabled,
+            thinking_budget=state.request.thinking_budget,
         )
         text_parts: list[str] = []
         tool_calls_accum: list[ToolCall] = []
         usage = {"input": 0, "output": 0, "total": 0, "cached_read": 0, "cached_write": 0}
-        async for chunk in self._llm.stream(request=request):
-            if isinstance(chunk, TextChunk):
-                text_parts.append(chunk.text)
-                if self._display_text is not None:
-                    self._display_text(chunk.text)
-            elif isinstance(chunk, ThinkingChunk):
-                if self._display_thinking is not None:
-                    self._display_thinking(chunk.text)
-            elif isinstance(chunk, ToolCallsChunk):
-                tool_calls_accum = chunk.tool_calls
-            elif isinstance(chunk, UsageChunk):
-                usage = self._add_usage(usage, chunk)
+        # 用「剩余时长预算」包裹本次调用：duration_seconds 只累计已完成调用，
+        # 不包裹的话单次慢/挂死调用会让整个回合无界运行（check_budget 只在迭代
+        # 间隙检查，无法中断进行中的调用）。超限即终止回合（AgentDurationExceeded）。
+        remaining_seconds = (
+            state.budget.limits.max_duration_seconds - state.budget.usage.duration_seconds
+        )
+        try:
+            with anyio.fail_after(max(remaining_seconds, 1.0)):
+                async for chunk in self._llm.stream(request=request):
+                    if isinstance(chunk, TextChunk):
+                        text_parts.append(chunk.text)
+                        if self._display_text is not None:
+                            self._display_text(chunk.text)
+                    elif isinstance(chunk, ThinkingChunk):
+                        if self._display_thinking is not None:
+                            self._display_thinking(chunk.text)
+                    elif isinstance(chunk, ToolCallsChunk):
+                        tool_calls_accum = chunk.tool_calls
+                    elif isinstance(chunk, UsageChunk):
+                        usage = self._add_usage(usage, chunk)
+        except TimeoutError as exc:
+            raise AgentDurationExceeded(
+                "回合总时长超限，已中断执行（LLM 调用超过剩余时长预算）"
+            ) from exc
         duration = int((time.perf_counter() - start) * 1000)
         await self._events.emit(
             LLMUsageUpdated(
@@ -497,9 +527,13 @@ class BoundedReActExecutor:
                 reason_code="input_required",
             )
             return {"outcome": outcome}
+        # 只有真正的预算软/硬超限才归类 PARTIAL_BUDGET；格式修复耗尽 / 无决策
+        # 属于「模型未能产出有效工具决策」的无进展，归类 PARTIAL_NO_PROGRESS，
+        # 避免误导前端显示成 token_budget（预算其实远未用尽）。
+        _no_progress_marks = ("no_progress", "repair_exhausted", "no_decision")
         partial = (
             PhaseExecutionOutcomeType.PARTIAL_NO_PROGRESS
-            if "no_progress" in state.terminate_reason
+            if any(mark in state.terminate_reason for mark in _no_progress_marks)
             else PhaseExecutionOutcomeType.PARTIAL_BUDGET
         )
         outcome = PhaseExecutionOutcome(

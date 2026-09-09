@@ -16,5 +16,9 @@ app = create_app(settings)
 
 if __name__ == "__main__":
     uvicorn.run(
-        "app.main:app", host=settings.host, port=settings.port, log_level=settings.log_level.lower()
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        log_level=settings.log_level.lower(),
+        timeout_graceful_shutdown=settings.server_graceful_shutdown_seconds,
     )

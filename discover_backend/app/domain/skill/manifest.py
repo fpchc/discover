@@ -100,6 +100,10 @@ class AgentManifest(BaseModel):
     default_skill: str | None = None
     model_preference: str | None = None
     thinking_preference: ThinkingPreference | None = None
+    max_iterations: int | None = None
+    max_llm_calls: int | None = None
+    max_tool_calls: int | None = None
+    max_duration_seconds: float | None = None
     env_whitelist: list[str] = Field(default_factory=list)
     skills: list[str]
     body: str = ""

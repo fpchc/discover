@@ -19,6 +19,7 @@ from app.capabilities.llm.models import ChatMessage, ChatRequest
 from app.capabilities.llm.stream_parser import TextChunk, ThinkingChunk, UsageChunk
 from app.config.settings import Settings
 from app.domain.assistant.models import TargetType
+from app.domain.skill.manifest import ThinkingPreference
 from app.interfaces.schemas import ConversationSession
 from app.runtime.agent_runner import AgentAssembler, build_agent_budget, run_agent_turn
 from app.runtime.events.emitter import QueueEmitter
@@ -335,6 +336,25 @@ def _history_summary(history: list[ChatMessage], settings: Settings) -> str:
     return summary[: settings.agent_context_summary_max_chars]
 
 
+def _resolve_thinking_budget(
+    preference: ThinkingPreference | None, settings: Settings
+) -> int | None:
+    """thinking_preference → thinking_budget（思维链 token 上限）。
+
+    off → 不限制（思考已关闭）；low/medium 映射到配置的 token 上限，避免 qwen3
+    默认 131072 的思考上限导致单轮思考过长、前端长时间无过程可看；high → 不限制，
+    保留深度思考能力（如账期评估）。
+    """
+    if preference is None or preference == "off":
+        return None
+    budget = {
+        "low": settings.llm_thinking_budget_low,
+        "medium": settings.llm_thinking_budget_medium,
+        "high": settings.llm_thinking_budget_high,
+    }.get(preference, settings.llm_thinking_budget_low)
+    return budget if budget > 0 else None
+
+
 def _outcome_answer(outcome: PhaseExecutionOutcome | None) -> str:
     """PhaseExecutionOutcome → 最终正文（FINAL_PROPOSED 取 answer；CANDIDATE 序列化）。"""
     if outcome is None:
@@ -404,8 +424,11 @@ async def _run_agent_react(
             thinking_enabled=(
                 services.settings.thinking_enabled and result.plan.thinking_preference != "off"
             ),
+            thinking_budget=_resolve_thinking_budget(
+                result.plan.thinking_preference, services.settings
+            ),
             tool_message_max_chars=services.settings.agent_tool_message_max_chars,
-            budget=build_agent_budget(services.settings),
+            budget=build_agent_budget(services.settings, result.plan),
         )
         return await run_agent_turn(
             llm=llm,

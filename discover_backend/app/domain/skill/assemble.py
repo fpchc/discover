@@ -61,6 +61,10 @@ class AssemblyPlan(BaseModel):
     env_whitelist: list[str] = Field(default_factory=list)
     model_preference: str | None = None
     thinking_preference: ThinkingPreference | None = None
+    max_iterations: int | None = None
+    max_llm_calls: int | None = None
+    max_tool_calls: int | None = None
+    max_duration_seconds: float | None = None
 
 
 def _gate_validator_scripts(skill: SkillManifest) -> list[ScriptDeclaration]:
@@ -155,6 +159,10 @@ class SkillAssembler:
             env_whitelist=package.manifest.env_whitelist,
             model_preference=package.manifest.model_preference,
             thinking_preference=package.manifest.thinking_preference,
+            max_iterations=package.manifest.max_iterations,
+            max_llm_calls=package.manifest.max_llm_calls,
+            max_tool_calls=package.manifest.max_tool_calls,
+            max_duration_seconds=package.manifest.max_duration_seconds,
         )
 
     def _resolve_capabilities(self, skill: SkillManifest) -> list[CapabilityPlan]:

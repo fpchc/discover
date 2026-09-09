@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 
+import anyio
+import pytest
 from app.capabilities.llm.models import ChatToolSpec, ToolFunction
 from app.capabilities.llm.stream_parser import (
     SemanticChunk,
+    ThinkingChunk,
     ToolCall,
     ToolCallsChunk,
 )
@@ -25,6 +28,7 @@ from app.runtime.models import (
     PhaseExecutionRequest,
 )
 from app.runtime.react.executor import (
+    AgentDurationExceeded,
     BoundedReActExecutor,
     LLMRunnerPort,
     ReactGraphState,
@@ -206,6 +210,22 @@ async def test_graph_alternating_tools_terminates_by_budget() -> None:
     }
 
 
+# ---- §24 场景 3b：格式修复耗尽 → 归类 no_progress 而非 token_budget ----
+async def test_graph_repair_exhausted_is_no_progress() -> None:
+    """模型连续产出空决策（无工具调用）耗尽格式修复，不应误报为 token_budget。"""
+
+    def respond(_call_index: int) -> list[SemanticChunk]:
+        return [ToolCallsChunk(tool_calls=[])]
+
+    def tool_result(_call: ToolCallRequest, _index: int) -> ToolResult:
+        return ToolResult(call_id=_call.call_id, tool_name=_call.tool_name, ok=True, content="数据")
+
+    state = await _run(_executor(_FakeLLM(respond), _FakeTools(tool_result)), _request())
+    assert state.outcome is not None
+    assert state.outcome.outcome_type == PhaseExecutionOutcomeType.PARTIAL_NO_PROGRESS
+    assert "repair_exhausted" in state.outcome.reason_code
+
+
 # ---- §24 场景 4：重复 Action 但每次有新进展 → 允许继续并完成 ----
 async def test_graph_repeated_action_with_new_progress_completes() -> None:
     def respond(call_index: int) -> list[SemanticChunk]:
@@ -280,3 +300,38 @@ async def test_graph_truncates_tool_message_content() -> None:
     content = tool_messages[0].content or ""
     assert len(content) == 105  # 100 + "…(截断)"(5 字符)
     assert content.endswith("…(截断)")
+
+
+class _SleepingLLM(LLMRunnerPort):
+    """模拟慢/挂死 LLM：先睡 sleep_seconds 再产出一个 thinking 分片（无网络）。"""
+
+    def __init__(self, sleep_seconds: float) -> None:
+        self._sleep_seconds = sleep_seconds
+
+    def stream(self, *, request: object) -> AsyncIterator[SemanticChunk]:
+        return self._generate()
+
+    async def _generate(self) -> AsyncIterator[SemanticChunk]:
+        await anyio.sleep(self._sleep_seconds)
+        yield ThinkingChunk(text="仍在思考")
+
+
+# ---- §24 场景 8：进行中的 LLM 调用受「剩余时长预算」约束（单次挂死调用不得无界运行） ----
+async def test_graph_inflight_llm_bounded_by_duration_budget() -> None:
+    """单次慢/挂死 LLM 调用突破剩余时长预算即中断回合（AgentDurationExceeded）。
+
+    根因回归：duration_seconds 只累计已完成调用，check_budget 只在迭代间隙检查；
+    若 call_llm 不用剩余预算包裹流式调用，一次挂死调用会让整个回合无界运行。
+    """
+    request = _request()
+    request.budget.limits.max_duration_seconds = 0.05
+
+    def tool_result(_call: ToolCallRequest, _index: int) -> ToolResult:
+        return ToolResult(call_id=_call.call_id, tool_name=_call.tool_name, ok=True, content="")
+
+    graph: CompiledStateGraph[ReactGraphState] = build_react_subgraph(
+        _executor(_SleepingLLM(sleep_seconds=1.0), _FakeTools(tool_result))
+    )
+    initial = ReactGraphState(request=request, budget=request.budget)
+    with pytest.raises(AgentDurationExceeded):
+        await graph.ainvoke(initial)

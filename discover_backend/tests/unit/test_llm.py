@@ -101,6 +101,24 @@ def test_parser_does_not_complete_tool_call_early() -> None:
     assert calls[0].tool_calls[0].arguments == '{}{"a":1}'
 
 
+def test_parser_emits_tool_calls_when_finish_stop_with_deltas() -> None:
+    parser = StreamParser(thinking_field="reasoning_content")
+    chunks: list[SemanticChunk] = []
+    chunks += parser.feed(
+        '{"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "t1",'
+        ' "function": {"name": "search", "arguments": "{\\"q\\":"}}]}}]}'
+    )
+    chunks += parser.feed(
+        '{"choices": [{"delta": {"tool_calls": [{"index": 0,'
+        ' "function": {"arguments": "\\"x\\"}"}}]}}]}'
+    )
+    chunks += parser.feed('{"choices": [{"delta": {}, "finish_reason": "stop"}]}')
+    calls = [chunk for chunk in chunks if isinstance(chunk, ToolCallsChunk)]
+    assert len(calls) == 1
+    assert calls[0].tool_calls[0].name == "search"
+    assert calls[0].tool_calls[0].arguments == '{"q":"x"}'
+
+
 def test_parser_usage_chunk() -> None:
     parser = StreamParser(thinking_field="reasoning_content")
     chunks = parser.feed(
@@ -243,6 +261,68 @@ async def test_client_sends_enable_thinking() -> None:
     assert isinstance(body, dict)
     assert body.get("enable_thinking") is True
     assert body.get("model") == "qwen-max"
+
+
+async def test_client_sends_disable_thinking_when_false() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, text="data: [DONE]\n\n")
+
+    settings = Settings(_env_file=None)
+    client = _mock_client(settings, httpx.MockTransport(handler))
+    request = ChatRequest(messages=[ChatMessage(role="user", content="hi")], thinking=False)
+    async for _ in client.stream_chat(provider=_provider(), api_key="k", request=request):
+        pass
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body.get("enable_thinking") is False
+    assert body.get("model") == "qwen-max"
+
+
+async def test_client_sends_thinking_budget_when_thinking_on() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, text="data: [DONE]\n\n")
+
+    settings = Settings(_env_file=None)
+    client = _mock_client(settings, httpx.MockTransport(handler))
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="hi")],
+        thinking=True,
+        thinking_budget=600,
+    )
+    async for _ in client.stream_chat(provider=_provider(), api_key="k", request=request):
+        pass
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body.get("enable_thinking") is True
+    assert body.get("thinking_budget") == 600
+
+
+async def test_client_omits_thinking_budget_when_thinking_off() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, text="data: [DONE]\n\n")
+
+    settings = Settings(_env_file=None)
+    client = _mock_client(settings, httpx.MockTransport(handler))
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="hi")],
+        thinking=False,
+        thinking_budget=600,
+    )
+    async for _ in client.stream_chat(provider=_provider(), api_key="k", request=request):
+        pass
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body.get("enable_thinking") is False
+    assert "thinking_budget" not in body
 
 
 async def test_client_auth_error_classified() -> None:

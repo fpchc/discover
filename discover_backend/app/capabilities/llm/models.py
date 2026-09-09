@@ -50,4 +50,6 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     tools: list[ChatToolSpec] = Field(default_factory=list)
     thinking: bool = False
+    # 思考模式 token 上限（0/None 表示不限制）；仅 thinking=True 时由提供方解析。
+    thinking_budget: int | None = None
     temperature: float | None = None

@@ -37,4 +37,4 @@ RUN mkdir -p storage workspaces
 EXPOSE 9101
 
 # 生产启动命令
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9101"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9101", "--timeout-graceful-shutdown", "5"]
