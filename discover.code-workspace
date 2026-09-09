@@ -9,11 +9,11 @@
       "path": "."
     },
     {
-      "name": "backend (Python / FastAPI)",
+      "name": "backend",
       "path": "discover_backend"
     },
     {
-      "name": "frontend (React / vite)",
+      "name": "frontend",
       "path": "discover_frontend"
     }
   ]

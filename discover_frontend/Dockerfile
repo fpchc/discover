@@ -3,8 +3,11 @@
 # 构建上下文为当前目录（discover_frontend/），根级 compose 指定 context: ./discover_frontend。
 # 需 BuildKit（Docker ≥ 23 默认开启）：--mount=type=cache 将 pnpm 全局 store 与 corepack
 # 缓存持久化到构建缓存，lockfile 未变的重复构建不重新联网下载依赖，install 提速到秒级。
+# 基础镜像统一走国内镜像源（默认 DaoCloud；海外构建可 --build-arg IMAGE_REGISTRY= 切回 Docker Hub 官方源）。
+# 值需以 / 结尾（仓库命名空间前缀），如 registry.cn-hangzhou.aliyuncs.com/library/
+ARG IMAGE_REGISTRY=docker.m.daocloud.io/library/
 # 阶段一 base：运行时 + 包管理器
-FROM node:22-alpine AS base
+FROM ${IMAGE_REGISTRY}node:22-alpine AS base
 RUN corepack enable
 WORKDIR /app
 
@@ -39,7 +42,7 @@ ENV VITE_APP_ENV=$VITE_APP_ENV \
 RUN pnpm build
 
 # 阶段五 runtime：nginx 静态服务 + 后端反代（SSE 优化）
-FROM nginx:1.27-alpine AS runtime
+FROM ${IMAGE_REGISTRY}nginx:1.27-alpine AS runtime
 # 官方 nginx 镜像启动时对 /etc/nginx/templates/*.template 执行 envsubst，
 # 将 ${BACKEND_PROXY_PASS} 替换为后端地址
 COPY nginx.conf /etc/nginx/templates/default.conf.template
