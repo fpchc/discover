@@ -24,6 +24,7 @@ from app.shared.errors.base import (
     MCPAuthError,
     MCPConnectionError,
     MCPInvalidArgumentError,
+    MCPPaymentRequiredError,
     MCPRateLimitError,
     MCPServiceError,
     MCPTimeoutError,
@@ -290,6 +291,8 @@ class MCPClient:
             return
         if response.status_code in (401, 403):
             raise MCPAuthError(f"MCP 认证失败（HTTP {response.status_code}）")
+        if response.status_code == 402:
+            raise MCPPaymentRequiredError("MCP 计费/额度不可用（HTTP 402）")
         if response.status_code == 429:
             raise MCPRateLimitError("MCP 上游限流（HTTP 429）")
         if response.status_code == 400:

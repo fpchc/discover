@@ -35,6 +35,7 @@ from app.shared.errors.base import (
     ErrorCategory,
     MCPAuthError,
     MCPInvalidArgumentError,
+    MCPPaymentRequiredError,
     MCPRateLimitError,
     MCPTimeoutError,
 )
@@ -218,6 +219,18 @@ async def test_mcp_rate_limit_error() -> None:
             await client.list_tools()
 
 
+async def test_mcp_payment_required_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"], "result": {}})
+        return httpx.Response(402, json={"error": {"message": "payment required"}})
+
+    async with _mcp_client(httpx.MockTransport(handler)) as client:
+        with pytest.raises(MCPPaymentRequiredError):
+            await client.list_tools()
+
+
 async def test_mcp_invalid_params_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -347,6 +360,8 @@ class _FakeClient:
         self.calls.append((name, arguments))
         if name == "boom":
             raise MCPTimeoutError("调用超时")
+        if name == "paid":
+            raise MCPPaymentRequiredError("计费/额度不可用")
         return MCPCallResult(content=f"mcp:{name}")
 
 
@@ -1041,6 +1056,34 @@ async def test_error_classification_with_suggestion(tmp_path: Path) -> None:
     assert results[0].ok is False
     assert results[0].error_category == ErrorCategory.TIMEOUT
     assert results[0].suggestion == "缩小输入或分批"
+
+
+async def test_broker_degrades_mcp_server_on_payment_required(tmp_path: Path) -> None:
+    """计费类不可恢复错误（HTTP 402）应触发会话级降级，工具退出模型可见清单。"""
+    skill_dir, workspace = _setup(tmp_path)
+    manager = _FakeMCPManager(
+        [MCPToolInfo(name="paid", description="付费工具", input_schema={})],
+    )
+    broker = _broker(tmp_path, manager, _FakeScriptExecutor())
+    plan = _plan().model_copy(
+        update={"required_mcp_servers": ["alibaba_search"], "core_tool_names": ["paid"]}
+    )
+    await broker.activate(
+        plan=plan,
+        skill_dir=skill_dir,
+        workspace=workspace,
+        session_id="s1",
+        account_id="00000000-0000-0000-0000-0000000000aa",
+    )
+    assert "alibaba_search.paid" in broker.catalog_tool_names()
+
+    results = await broker.execute(
+        [ToolCallRequest(call_id="c1", tool_name="alibaba_search.paid", arguments={})],
+    )
+    assert results[0].ok is False
+    assert results[0].error_category == ErrorCategory.BILLING
+    assert "alibaba_search.paid" not in broker.catalog_tool_names()
+    assert "alibaba_search.paid" not in {spec.function.name for spec in broker.exposed_tools()}
 
 
 async def test_script_produced_files_surfaced(tmp_path: Path) -> None:

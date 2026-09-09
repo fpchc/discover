@@ -16,6 +16,7 @@ class ErrorCategory(StrEnum):
     RATE_LIMIT = "rate_limit"
     SERVER = "server"
     AUTH = "auth"
+    BILLING = "billing"
     BAD_REQUEST = "bad_request"
     CONTENT_FILTER = "content_filter"
     STREAM_INTERRUPTED = "stream_interrupted"
@@ -209,6 +210,13 @@ class MCPAuthError(MCPError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, category=ErrorCategory.AUTH, retryable=False)
+
+
+class MCPPaymentRequiredError(MCPError):
+    """MCP 计费/额度不可用（HTTP 402）。不可重试，应触发数据源降级。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category=ErrorCategory.BILLING, retryable=False)
 
 
 class MCPTimeoutError(MCPError):

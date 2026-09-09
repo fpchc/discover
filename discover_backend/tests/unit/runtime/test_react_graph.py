@@ -255,6 +255,34 @@ async def test_graph_repair_exhausted_is_no_progress() -> None:
     assert "repair_exhausted" in state.outcome.reason_code
 
 
+# ---- §24 场景 3c：text-only 触发定向修复，PARTIAL 时带回草稿正文 ----
+async def test_graph_text_only_injects_submit_hint_and_partial_answer() -> None:
+    """模型只输出文本/思考而不调用 submit_final_answer 时：
+
+    应注入定向修复指令，并在最终 PARTIAL_NO_PROGRESS 时把已产出的草稿文本
+    作为 answer 兜底，避免「有思考、无正文」。
+    """
+
+    def respond(call_index: int) -> list[SemanticChunk]:
+        if call_index == 0:
+            return [ThinkingChunk(text="想"), TextChunk(text="信息卡草稿")]
+        return [ToolCallsChunk(tool_calls=[])]
+
+    def tool_result(_call: ToolCallRequest, _index: int) -> ToolResult:
+        return ToolResult(call_id=_call.call_id, tool_name=_call.tool_name, ok=True, content="数据")
+
+    state = await _run(_executor(_FakeLLM(respond), _FakeTools(tool_result)), _request())
+    assert state.outcome is not None
+    assert state.outcome.outcome_type == PhaseExecutionOutcomeType.PARTIAL_NO_PROGRESS
+    assert state.outcome.answer == "信息卡草稿"
+    hints = [
+        m.content
+        for m in state.messages
+        if m.role == "system" and "submit_final_answer" in (m.content or "")
+    ]
+    assert hints
+
+
 # ---- §24 场景 4：重复 Action 但每次有新进展 → 允许继续并完成 ----
 async def test_graph_repeated_action_with_new_progress_completes() -> None:
     def respond(call_index: int) -> list[SemanticChunk]:

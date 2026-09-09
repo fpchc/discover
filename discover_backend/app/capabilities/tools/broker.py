@@ -46,6 +46,10 @@ _DEFAULT_SCRIPT_SCHEMA: dict[str, object] = {
 }
 _META_QUERY_LIMIT = 20
 _LOG_ARGS_SUMMARY_CHARS = 300
+# 触发「会话级数据源降级」的错误分类：计费/鉴权类不可恢复，重试无意义。
+_MCP_DEGRADE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
+    {ErrorCategory.BILLING, ErrorCategory.AUTH}
+)
 
 
 class MCPManagerPort(Protocol):
@@ -237,6 +241,7 @@ class ToolBroker:
         self._account_id: str = ""
         self._env_whitelist: list[str] = []
         self._loaded_docs: set[str] = set()
+        self._degraded_servers: set[str] = set()
         self._activated = False
         self._install_meta_tools()
 
@@ -320,6 +325,7 @@ class ToolBroker:
         self._env_whitelist = plan.env_whitelist
         self._service_slots = {}
         self._clients = {}
+        self._degraded_servers = set()
         await self._add_script_tools(plan, skill_dir)
         started: list[str] = []
         degraded: list[str] = []
@@ -521,7 +527,18 @@ class ToolBroker:
         for server_id in self._clients:
             self._mcp_manager.release(server_id)
         self._clients = {}
+        self._degraded_servers = set()
         self._activated = False
+
+    def _mark_server_degraded(self, server_id: str) -> None:
+        """把 MCP 服务标记为会话级降级：其工具退出模型可见清单，后续调用直接失败。
+
+        计费/鉴权类不可恢复错误触发；区别于连接超时等可重试错误（后者不降级）。
+        """
+        if server_id in self._degraded_servers:
+            return
+        self._degraded_servers.add(server_id)
+        logger.warning("MCP 服务 %s 已降级，其工具将从模型可见清单移除", server_id)
 
     # ---- 对外查询 ----
     def get_descriptor(self, qualified_name: str) -> ToolDescriptor | None:
@@ -530,7 +547,12 @@ class ToolBroker:
 
     def exposed_tools(self) -> list[ChatToolSpec]:
         """当前暴露集合的工具描述（Tier 0 + Tier 1 + 已 describe 的 Tier 2）。"""
-        names = sorted(n for n in self._exposed if n in self._descriptors)
+        names = sorted(
+            n
+            for n in self._exposed
+            if n in self._descriptors
+            and self._descriptors[n].namespace not in self._degraded_servers
+        )
         return [to_chat_tool_spec(self._descriptors[n]) for n in names]
 
     def catalog_tool_names(self) -> list[str]:
@@ -539,7 +561,11 @@ class ToolBroker:
         阶段白名单应取此全集而非 exposed_tools()：describe_tool 只是按需展开参数约束，
         不构成调用授权（tool-broker-spec §2「允许调用目录中任何已激活服务的工具」）。
         """
-        return sorted(self._descriptors)
+        return sorted(
+            n
+            for n in self._descriptors
+            if self._descriptors[n].namespace not in self._degraded_servers
+        )
 
     def search_tools(self, query: str, limit: int = 10) -> list[ToolHit]:
         """关键词匹配检索；只返回名称与简要说明，不含参数约束。"""
@@ -684,6 +710,13 @@ class ToolBroker:
 
     # ---- MCP 分发 ----
     async def _dispatch_mcp(self, descriptor: ToolDescriptor, call: ToolCallRequest) -> ToolResult:
+        if descriptor.namespace in self._degraded_servers:
+            return self._failure(
+                call,
+                category=ErrorCategory.BILLING,
+                message="该数据源当前不可用，已降级",
+                suggestion="改用其他工具（如联网搜索）兜底，并把缺失字段标注为「未检索到」",
+            )
         client = self._clients.get(descriptor.namespace)
         if client is None:
             logger.error(
@@ -924,6 +957,8 @@ class ToolBroker:
             call.call_id,
             exc,
         )
+        if descriptor.source == ToolSource.MCP and exc.category in _MCP_DEGRADE_CATEGORIES:
+            self._mark_server_degraded(descriptor.namespace)
         return self._failure(
             call,
             category=exc.category,
@@ -966,6 +1001,7 @@ class ToolBroker:
             ErrorCategory.TIMEOUT: "缩小输入或分批",
             ErrorCategory.RATE_LIMIT: "上游限流，稍后重试",
             ErrorCategory.AUTH: f"检查 {namespace or '服务'} 的令牌环境变量",
+            ErrorCategory.BILLING: "数据源额度/套餐不可用，改用其他工具兜底并标注未检索到",
             ErrorCategory.CONNECTION: "服务连接失败，稍后重试",
             ErrorCategory.SERVER: "服务暂时不可用，走降级通道",
             ErrorCategory.INVALID_ARGUMENT: "按参数约束调整参数后重试",

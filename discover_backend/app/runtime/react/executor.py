@@ -141,6 +141,38 @@ def _to_stream_call(call: ToolCallRequest) -> ToolCall:
     )
 
 
+def _repair_hint(reason: str) -> str:
+    """INVALID 决策 → 面向模型的定向修复指令（§10.1 格式修复）。"""
+    if "text_only" in reason or "empty_decision" in reason:
+        return (
+            "请调用 submit_final_answer 提交最终答案，answer 字段放完整信息卡正文；"
+            "不要只输出文本或只思考。"
+        )
+    if "control_tool" in reason:
+        return "submit_final_answer 参数必须为合法 JSON，且 answer 必须包含完整信息卡正文。"
+    return "上一轮工具决策格式非法，请重新输出符合要求的工具调用。"
+
+
+def _repair_messages(state: ReactGraphState, reason: str) -> list[ChatMessage]:
+    """格式修复反馈：注入定向指令，并补齐上一轮未执行的工具调用回复。
+
+    上一轮 assistant 若携带 tool_calls 却被判 INVALID，OpenAI 兼容协议要求
+    每个 tool_call_id 都要有对应 role="tool" 回复，否则下一轮请求 400；
+    这里补齐并把失败原因回写，同时给出修复指令。
+    """
+    messages: list[ChatMessage] = [ChatMessage(role="system", content=_repair_hint(reason))]
+    if state.messages and state.messages[-1].role == "assistant":
+        for call in state.messages[-1].tool_calls or []:
+            messages.append(
+                ChatMessage(
+                    role="tool",
+                    tool_call_id=call.id,
+                    content=f"该工具调用未被执行（{reason}），请重新输出。",
+                )
+            )
+    return messages
+
+
 class AgentDurationExceeded(PlatformError):
     """回合总时长硬预算超限：单次 LLM 调用突破剩余时长预算即中断回合。
 
@@ -289,7 +321,7 @@ class BoundedReActExecutor:
         return {
             "messages": [*state.messages, assistant],
             "pending_calls": pending,
-            "text_parts": "".join(text_parts),
+            "text_parts": state.text_parts + "".join(text_parts),
             "budget": budget,
             "iteration": state.iteration + 1,
         }
@@ -324,6 +356,10 @@ class BoundedReActExecutor:
                 return {
                     "repair_attempts": state.repair_attempts + 1,
                     "terminate_reason": "format_repair",
+                    "messages": [
+                        *state.messages,
+                        *_repair_messages(state, decision.invalid_reason),
+                    ],
                 }
             return {"terminate_reason": f"repair_exhausted:{decision.invalid_reason}"}
         return {}
@@ -539,6 +575,7 @@ class BoundedReActExecutor:
         )
         outcome = PhaseExecutionOutcome(
             outcome_type=partial,
+            answer=state.text_parts or "",
             usage_snapshot=state.budget.usage,
             budget_snapshot=state.budget,
             observation_ids=[record.observation_id for record in state.observation_records],
