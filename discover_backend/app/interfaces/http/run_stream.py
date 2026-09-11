@@ -11,16 +11,7 @@ RunCancelled 单独表达取消。断连与取消分离（§17.3）：本层不�
 
 from __future__ import annotations
 
-from app.interfaces.schemas.chat import (
-    ErrorStreamEvent,
-    MessageEndEvent,
-    MessageEvent,
-    PingEvent,
-    ThinkingDeltaFrame,
-    ThinkingEndFrame,
-    ThinkingStartFrame,
-)
-from app.runtime.events.run_events import (
+from app.harness.events.run_events import (
     Heartbeat,
     PhaseStarted,
     RunCancelled,
@@ -33,6 +24,15 @@ from app.runtime.events.run_events import (
     ThinkingDelta,
     ThinkingEnded,
     ThinkingStarted,
+)
+from app.interfaces.schemas.chat import (
+    ErrorStreamEvent,
+    MessageEndEvent,
+    MessageEvent,
+    PingEvent,
+    ThinkingDeltaFrame,
+    ThinkingEndFrame,
+    ThinkingStartFrame,
 )
 
 # 对外 SSE 帧判别联合（与 schemas.chat._StreamFrame 同构；独立定义避免反向依赖）

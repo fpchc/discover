@@ -20,10 +20,15 @@ from app.capabilities.llm.stream_parser import TextChunk, ThinkingChunk, UsageCh
 from app.config.settings import Settings
 from app.domain.assistant.models import TargetType
 from app.domain.skill.manifest import ThinkingPreference
-from app.interfaces.schemas import ConversationSession
-from app.runtime.agent_runner import AgentAssembler, build_agent_budget, run_agent_turn
-from app.runtime.events.emitter import QueueEmitter
-from app.runtime.events.run_events import (
+from app.harness.agent_runner import (
+    AgentAssembler,
+    build_agent_budget,
+    build_workflow_definition,
+    run_agent_turn,
+    run_skill_workflow,
+)
+from app.harness.events.emitter import QueueEmitter
+from app.harness.events.run_events import (
     LLMUsageUpdated,
     RunCompleted,
     RunEvent,
@@ -31,14 +36,15 @@ from app.runtime.events.run_events import (
     ThinkingEnded,
     ThinkingStarted,
 )
-from app.runtime.models import (
+from app.harness.models import (
     PhaseExecutionOutcome,
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
     TerminationReason,
 )
-from app.runtime.turn import ActiveTurn
-from app.runtime.wiring import LLMRunner, ToolRunner
+from app.harness.turn import ActiveTurn
+from app.harness.wiring import LLMRunner, ToolRunner
+from app.interfaces.schemas import ConversationSession
 from app.shared.errors.base import ErrorCategory, PlatformError
 from app.shared.utils.sanitize import sanitize_error_message
 
@@ -430,6 +436,17 @@ async def _run_agent_react(
             tool_message_max_chars=services.settings.agent_tool_message_max_chars,
             budget=build_agent_budget(services.settings, result.plan),
         )
+        workflow = build_workflow_definition(result.plan)
+        if workflow is not None:
+            return await run_skill_workflow(
+                llm=llm,
+                tools=tools,
+                events=emitter,
+                request=request,
+                definition=workflow,
+                display_text=emitter.text_delta,
+                display_thinking=emitter.thinking_delta,
+            )
         return await run_agent_turn(
             llm=llm,
             tools=tools,

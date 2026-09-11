@@ -68,7 +68,9 @@ def _skill_md(**overrides: object) -> str:
     }
     header.update(overrides)
     front = yaml.safe_dump(header, allow_unicode=True, sort_keys=False)
-    return f"---\n{front}---\n完整工作流：先收集信源，再撰写报告。\n"
+    return (
+        f"---\n{front}---\n完整工作流：先收集信源，再撰写报告。完成后调用 submit_final_answer。\n"
+    )
 
 
 def _write_agent(

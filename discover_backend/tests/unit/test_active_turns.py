@@ -9,7 +9,7 @@ import contextlib
 import time
 
 import anyio
-from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
+from app.harness.turn import ActiveTurn, ActiveTurnRegistry
 
 
 def _turn(message_id: str = "msg-1") -> ActiveTurn:

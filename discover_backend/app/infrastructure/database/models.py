@@ -102,7 +102,7 @@ class Message(Base):
     """回合消息（历史明细：query + answer + thinking 一行，usage 聚合到回合）。
 
     技术债：单行拍平耦合「一问一答」范式，工具调用明细不落库——演进方向
-    见 .ai/ARCHITECTURE.md（role-based 消息流 / 事件溯源）。
+    见 docs/ARCHITECTURE.md（role-based 消息流 / 事件溯源）。
     """
 
     __tablename__ = "messages"

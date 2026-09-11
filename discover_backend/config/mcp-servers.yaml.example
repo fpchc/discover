@@ -1,5 +1,5 @@
 # MCP 服务注册表样例（复制为 config/mcp-servers.yaml 后使用）
-# 字段定义见 .claude/specs/mcp-integration-spec.md §3
+# 字段定义见 specs/mcp-integration-spec.md §3
 # 认证令牌只存环境变量名，值从环境读取；代码中不出现端点 URL 字面量。
 #
 # enabled 显式开关：false → 装配时剔除，系统不尝试连接该服务；缺省视为 true。

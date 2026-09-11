@@ -64,6 +64,8 @@ class DocumentDeclaration(BaseModel):
     path: str
     when: str
     preload: bool = False
+    # preload=True 时由 loader 读取并注入装配上下文，render 阶段可直接引用。
+    content: str = ""
 
 
 class GateDeclaration(BaseModel):
@@ -81,6 +83,30 @@ class TemplateDeclaration(BaseModel):
 
     path: str
     purpose: str
+
+
+class SkillWorkflowPhase(BaseModel):
+    """技能工作流阶段（机器可读，替代自然语言流程控制）。
+
+    阶段推进由 Runtime/Harness 确定性决定；模型只在阶段内建议工具与产出文本。
+    """
+
+    phase_id: str
+    executor: Literal["react", "render"] = "react"
+    goal: str = ""
+    # True 表示继承运行时传入的全量工具目录；False 使用 allowed_tools 精确白名单。
+    inherit_tools: bool = False
+    allowed_tools: list[str] = Field(default_factory=list)
+    input_bindings: dict[str, str] = Field(default_factory=dict)
+    output_schema: dict[str, object] = Field(default_factory=dict)
+    fallback_phase: str | None = None
+
+
+class SkillWorkflowDefinition(BaseModel):
+    """技能工作流定义：阶段清单 + 输出契约。"""
+
+    workflow_id: str = "default"
+    phases: list[SkillWorkflowPhase] = Field(default_factory=list)
 
 
 class AgentManifest(BaseModel):
@@ -123,4 +149,5 @@ class SkillManifest(BaseModel):
     documents: list[DocumentDeclaration] = Field(default_factory=list)
     gates: list[GateDeclaration] = Field(default_factory=list)
     templates: list[TemplateDeclaration] = Field(default_factory=list)
+    workflow: SkillWorkflowDefinition | None = None
     body: str = ""

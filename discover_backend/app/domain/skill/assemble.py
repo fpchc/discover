@@ -16,6 +16,7 @@ from app.domain.skill.manifest import (
     AgentManifest,
     ScriptDeclaration,
     SkillManifest,
+    SkillWorkflowDefinition,
     ThinkingPreference,
 )
 from app.shared.errors.base import RegistryValidationError
@@ -65,6 +66,7 @@ class AssemblyPlan(BaseModel):
     max_llm_calls: int | None = None
     max_tool_calls: int | None = None
     max_duration_seconds: float | None = None
+    workflow: SkillWorkflowDefinition | None = None
 
 
 def _gate_validator_scripts(skill: SkillManifest) -> list[ScriptDeclaration]:
@@ -100,6 +102,12 @@ def _build_system_prompt(agent: AgentManifest, skill: SkillManifest) -> str:
     if skill.documents:
         doc_lines = "\n".join(f"- {doc.path}：{doc.when}" for doc in skill.documents)
         sections.append(f"# 参考文档（按需读取）\n{doc_lines}")
+        preloaded = [doc for doc in skill.documents if doc.preload and doc.content]
+        if preloaded:
+            sections.append(
+                "# 预加载参考文档（render 阶段必须遵守）\n"
+                + "\n\n".join(doc.content for doc in preloaded)
+            )
     if skill.templates:
         tmpl_lines = "\n".join(
             f"- {template.path}：{template.purpose}" for template in skill.templates
@@ -163,6 +171,7 @@ class SkillAssembler:
             max_llm_calls=package.manifest.max_llm_calls,
             max_tool_calls=package.manifest.max_tool_calls,
             max_duration_seconds=package.manifest.max_duration_seconds,
+            workflow=skill.workflow,
         )
 
     def _resolve_capabilities(self, skill: SkillManifest) -> list[CapabilityPlan]:

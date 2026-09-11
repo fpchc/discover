@@ -43,7 +43,7 @@ build/*
 dist/*
 
 # ---- IDE / 架构记忆 / VCS 元数据（任意层级）----
-.ai/
+docs/
 .claude/
 .vscode/
 .idea/

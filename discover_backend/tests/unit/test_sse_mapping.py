@@ -5,6 +5,17 @@
 纯函数测试，无网络无 DB。
 """
 
+from app.harness.events.run_events import (
+    Heartbeat,
+    RunCompleted,
+    RunFailed,
+    TextDelta,
+    ThinkingDelta,
+    ThinkingEnded,
+    ThinkingStarted,
+    ToolCallStarted,
+)
+from app.harness.models import TerminationReason
 from app.interfaces.http.run_stream import map_run_event
 from app.interfaces.schemas import (
     ErrorStreamEvent,
@@ -15,17 +26,6 @@ from app.interfaces.schemas import (
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
-from app.runtime.events.run_events import (
-    Heartbeat,
-    RunCompleted,
-    RunFailed,
-    TextDelta,
-    ThinkingDelta,
-    ThinkingEnded,
-    ThinkingStarted,
-    ToolCallStarted,
-)
-from app.runtime.models import TerminationReason
 from app.shared.errors.base import ErrorCategory
 
 _MESSAGE_ID = "msg-1"

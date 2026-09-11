@@ -12,13 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from app.interfaces.schemas.conversations import (
-    ConversationSession,
-    MessageStatus,
-    TurnRecord,
-    TurnUsage,
-)
-from app.runtime.events.run_events import (
+from app.harness.events.run_events import (
     LLMCallStarted,
     LLMUsageUpdated,
     RunCancelled,
@@ -28,6 +22,12 @@ from app.runtime.events.run_events import (
     TextDelta,
     ThinkingDelta,
     ThinkingEnded,
+)
+from app.interfaces.schemas.conversations import (
+    ConversationSession,
+    MessageStatus,
+    TurnRecord,
+    TurnUsage,
 )
 from app.shared.errors.base import ErrorCategory
 

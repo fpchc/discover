@@ -12,6 +12,9 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
+from app.harness.events.run_events import RunCompleted, RunEvent, TextDelta, ThinkingDelta
+from app.harness.models import TerminationReason
+from app.harness.turn import ActiveTurn, ActiveTurnRegistry
 from app.interfaces.http.chat import chat_messages
 from app.interfaces.schemas import ChatMessageRequest
 from app.interfaces.schemas.conversations import (
@@ -20,9 +23,6 @@ from app.interfaces.schemas.conversations import (
     TurnRecord,
     TurnStartRecord,
 )
-from app.runtime.events.run_events import RunCompleted, RunEvent, TextDelta, ThinkingDelta
-from app.runtime.models import TerminationReason
-from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
 from app.shared.errors.base import ConflictError
 from fastapi import Response
 

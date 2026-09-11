@@ -4,12 +4,12 @@ import asyncio
 
 import pytest
 from app.config.settings import Settings
-from app.runtime.events.emitter import (
+from app.harness.events.emitter import (
     QueueEmitter,
     _BoundedEventQueue,
     _TypewriterChannel,
 )
-from app.runtime.events.run_events import (
+from app.harness.events.run_events import (
     Heartbeat,
     RunCompleted,
     RunEvent,
@@ -18,7 +18,7 @@ from app.runtime.events.run_events import (
     ToolCallCompleted,
     run_event_adapter,
 )
-from app.runtime.models import TerminationReason
+from app.harness.models import TerminationReason
 from app.shared.errors.base import ErrorCategory
 from app.shared.utils.graphemes import split_graphemes
 from app.shared.utils.sanitize import (

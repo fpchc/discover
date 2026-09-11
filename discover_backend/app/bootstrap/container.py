@@ -31,18 +31,18 @@ from app.domain.file.service import FileService
 from app.domain.skill.hot_reload import HotReloader
 from app.domain.skill.registry import AgentRegistry
 from app.domain.workspace.service import WorkspaceManager
+from app.harness.checkpoint.memory import (
+    MemoryEventLog,
+    MemoryRunLease,
+    MemorySnapshotStore,
+)
+from app.harness.service import RunService
+from app.harness.turn import ActiveTurnRegistry
 from app.infrastructure.database.accessors import get_database
 from app.infrastructure.database.engine import Database
 from app.infrastructure.redis.client import get_cache
 from app.infrastructure.storage.accessors import get_storage
 from app.infrastructure.storage.base import BaseStorage
-from app.runtime.checkpoint.memory import (
-    MemoryEventLog,
-    MemoryRunLease,
-    MemorySnapshotStore,
-)
-from app.runtime.service import RunService
-from app.runtime.turn import ActiveTurnRegistry
 
 
 class AppServices:

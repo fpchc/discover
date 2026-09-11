@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from pydantic import ValidationError
 from app.config.loader import MCPRegistry
 from app.config.settings import Settings
 from app.domain.assistant.models import GENERIC_ASSISTANT_ID
+from app.domain.skill.contract import check_agent_manifest, check_skill_manifest
 from app.domain.skill.definition import (
     AgentLoadFailure,
     AgentPackage,
@@ -29,6 +31,7 @@ from app.shared.errors.base import ConfigError, RegistryValidationError
 _ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _DRIVE_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/](?!/)")
 _QUOTED_ROOT_PATTERN = re.compile(r"""['"][\\/][^'"\\n]+['"]""")
+logger = logging.getLogger(__name__)
 
 
 # ---- frontmatter 解析 ----
@@ -184,6 +187,10 @@ class AgentLoader:
             raise RegistryValidationError(
                 f"AGENT 正文超预算：{len(manifest.body)}/{self._settings.agent_body_max_chars} 字符"
             )
+        for violation in check_agent_manifest(
+            agent_id=manifest.agent_id, body=manifest.body, mcp_server_ids=self._mcp_ids
+        ):
+            logger.warning("Agent 包契约告警：%s", violation.message)
 
     def _load_skill_manifest(self, skill_dir: Path, skill_id: str) -> SkillManifest:
         manifest_file = skill_dir / "SKILL.md"
@@ -196,8 +203,30 @@ class AgentLoader:
         except ValidationError as exc:
             raise RegistryValidationError(f"SKILL.md 校验失败（{skill_id}）：{exc}") from exc
         manifest = manifest.model_copy(update={"body": body})
+        manifest = self._hydrate_preloaded_documents(manifest, skill_dir)
         self._validate_skill(manifest, skill_dir)
         return manifest
+
+    def _hydrate_preloaded_documents(
+        self, manifest: SkillManifest, skill_dir: Path
+    ) -> SkillManifest:
+        """把 preload=True 的参考文档正文读入 DocumentDeclaration.content。
+
+        loader 本身在 anyio.to_thread 中运行（_load_package_sync），这里的同步
+        read_text 不阻塞事件循环；preload 文档用于 render 阶段的确定性模板注入。
+        """
+        if not manifest.documents:
+            return manifest
+        documents = []
+        for doc in manifest.documents:
+            if doc.preload:
+                path = skill_dir / doc.path
+                documents.append(
+                    doc.model_copy(update={"content": path.read_text(encoding="utf-8")})
+                )
+            else:
+                documents.append(doc)
+        return manifest.model_copy(update={"documents": documents})
 
     def _validate_skill(self, manifest: SkillManifest, skill_dir: Path) -> None:
         if manifest.skill_id != skill_dir.name:
@@ -216,6 +245,13 @@ class AgentLoader:
         for cap_dep in manifest.capability_dependencies:
             if cap_dep.capability not in self._capability_ids:
                 raise RegistryValidationError(f"平台能力未注册：{cap_dep.capability}")
+        for violation in check_skill_manifest(
+            agent_id=skill_dir.parent.name,
+            skill_id=manifest.skill_id,
+            body=manifest.body,
+            mcp_server_ids=self._mcp_ids,
+        ):
+            logger.warning("Skill 包契约告警：%s", violation.message)
         seen_names: set[str] = set()
         for script in manifest.scripts:
             if script.name in seen_names:

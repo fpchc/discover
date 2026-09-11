@@ -1,6 +1,6 @@
 ---
 skill_id: client-finder
-version: "3.3"
+version: "3.4"
 description: 客户调研——为销售调研潜在客户信息，候选池评分后推荐最优一家，输出 450~550 字信息卡
 scope:
   applies: 销售调研客户信息、从候选池推荐最优客户、售前情报收集时
@@ -11,9 +11,6 @@ capability_dependencies:
     core_tools: [search_companies, get_company_basic_profile]
     required: false
   - capability: enterprise_risk
-    core_tools: []
-    required: false
-  - capability: financial_data
     core_tools: []
     required: false
   - capability: web_search
@@ -27,8 +24,10 @@ scripts:
 documents:
   - path: references/card-format.md
     when: 输出企业信息卡正文时（三段式结构、加粗要点、正反例，排版唯一权威）
+    preload: true
   - path: references/evidence-rules.md
     when: 证据等级判定、缺项是否补搜时
+    preload: true
   - path: references/scoring-rules.md
     when: 候选池评分子维度与权重（仅候选池场景）
   - path: references/architecture.md
@@ -45,43 +44,39 @@ gates:
     validator: scripts/gate_final_qa.py
     schema_path: schemas/final_qa_input.json
     blocking: true
+workflow:
+  workflow_id: client-finder
+  phases:
+    - phase_id: research
+      executor: react
+      goal: 采集候选企业工商、规模、触达与风险信息
+      inherit_tools: true
+      fallback_phase: render
+    - phase_id: render
+      executor: render
+      goal: 基于已采集信息生成 450~550 字信息卡正文
+      allowed_tools: []
 ---
-# 客户调研工作流（一次调研版）
+# 客户调研工作流
 
-交付物：单企为一张 450~550 字信息卡；多企输入时每家各出一张 450~550 字信息卡并全部输出，禁止合并成一张总体卡。排版强制三段式（定位句 → 加粗小标签逐条的事实段 → 切入价值段），大数字与风险必加粗、风险单列 `**注意**` 行，权威规范见 `references/card-format.md`，冲突时以该文件为准；禁止整段纯散文或 `|` / `—` 分隔的机械串行模版。目标是一次调研完成，禁止多次往返、禁止长链条思考。
+交付物：单企为一张 450~550 字信息卡；多企输入时每家各出一张 450~550 字信息卡并全部输出，禁止合并成一张总体卡。排版强制三段式，细节以 `references/card-format.md` 为准。
 
-## 1. 场景判定（一步）
+## 场景判定
 
-- 输入含企业名 → **单企调研（默认）**：直接出该企信息卡，不做候选池、不做评分。
-- 输入含多家企业名 → **多企调研**：每家走 §2 快车道，并发采集，逐家各出一张 450~550 字卡、全部输出、不择优；禁止把多家企业合并成一张总体卡。
-- 输入是产品/能力且明确要推荐 → **候选池推荐**：一轮召回 → top3 → 一次评分 → 出卡。
+- 输入含企业名 → 单企调研，直接出卡，不评分。
+- 输入含多家企业名 → 多企调研，每家独立采集并各出一张卡、全部输出、不择优。
+- 输入是产品/能力且明确要推荐 → 候选池推荐：一轮召回 → top3 → 一次评分 → 出卡。
 
-## 2. 单企调研（默认·快车道，≤5 次工具调用）
+## 数据采集
 
-1. **一轮并发采集（禁止多轮）**：第一轮直接并行调用 `tyc_mcp.get_company_basic_profile` 与 `tencent_mcp.web_search_tencent`（搜索词：`{企业名} 官网 电话 邮箱 主营 注册资本 成立`），不要先调 `search_companies`；拿到结果后立即 `submit_final_answer`，禁止再补一轮。
-2. **核心字段缺才补 1 轮**：核心字段 = 注册资本 / 成立日期 / 主营业务。缺 → 定向补搜一次；官网 / 电话 / 邮箱缺 → 直接标「未检索到」，不补。
-3. **标准化 + 出卡**：10 字段三态标注 → Final QA 2 问 → 调 `gate_final_qa` 一次 → 输出信息卡。
+- 优先使用企业工商能力与企业风险能力；缺失或未覆盖的字段再用联网搜索能力兜底。
+- 单企快车道：一轮并发采集；仅注册资本 / 成立日期 / 主营业务缺失时定向补搜一轮。
+- 官网 / 电话 / 邮箱缺失直接标「未检索到」，不额外补搜。
+- 候选池仅对 top3 一次性评分；缺数据维度取中性分，不为评分补搜。
 
-## 3. 候选池推荐（仅明确要求，一次评分）
+## 最终提交契约
 
-1. **一轮召回**：只发 1-2 个合并关键词（产品 + 行业 + 区域），不逐通道搜索；候选 ≥3，红线一票否决（失信 / 破产 / 吊销 / 严重违法）。
-2. **粗筛 top3**：按「产品匹配 + 触达可行性」一句话排序，取 top3。
-3. **一轮采集**：top3 并发拉工商 / 主营；每企 1 个合并搜索词补官网 / 联系方式 / 动态。
-4. **一次评分**：top3 一次性打完 8 维 → 调 `score_calculator` 一次 → 取综合分第 1。缺数据维度取中性分，不为评分补搜。
-5. **出卡**：Final QA 4 问 → 调 `gate_final_qa` 一次 → 输出信息卡。
-
-## 4. Final QA（一次过）
-
-- **单企 2 问**：关键字段有来源或已显式降级？无编造、无矛盾？
-- **多企**：每家按单企标准各过 2 问（每家各过一遍），禁止只查一次套用于全部。
-- **候选池 4 问**：上述 2 问 + 评分每维有 basis？推荐 = 综合分第 1？
-- 任一不通过：仅补搜一次或改写后重过；门禁脚本最多调用 2 次。
-
-## 5. 输出纪律（红线）
-
-- **最终提交**：完成信息卡后调用 `submit_final_answer`，`answer` 只放信息卡正文（多企时逐卡拼接）；禁止调用 `complete_phase`，禁止把卡片打包成 JSON 对象。
-
-- 可见 answer 只允许信息卡本体；候选池对比、评分明细、深挖、排除理由、Final QA 过程、工具名 / 脚本名 / 文档名 / 门禁名 / 能力名，**一律只进思考**。
-- 字数 450~550（含标点）；多企时每张卡独立满足 450~550，禁止合并成一张总体卡。以可扫读、重点分明为准；缺项显式标「未检索到 / 推断」；禁止编造。
-- 排版落地：每个加粗小标签独占一行、三段之间空行、多企卡间空行（或独立成行 `---`）；禁止整段散文、禁止 `；` 一行塞多个字段、禁止行内 `---`。
-- **不数数**：禁止在思考中逐字统计字数；字数由 `gate_final_qa` 校验，超限/不足再精简。
+- 完成后调用 `submit_final_answer`，`answer` 只放信息卡正文。
+- 多企输入时逐卡拼接，每张卡独立满足 450~550 字。
+- 最终提交前调用 `gate_final_qa` 门禁脚本一次；失败只修复一次后重新提交。
+- 可见 answer 不得出现候选池对比、评分明细、排除理由、Final QA 过程、工具名 / 脚本名 / 文档名 / 门禁名 / 能力名。

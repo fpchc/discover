@@ -15,16 +15,16 @@ from types import SimpleNamespace
 import anyio
 import pytest
 from app.capabilities.llm.stream_parser import TextChunk
-from app.interfaces.http.chat import _stream_sse, stop_chat_message
-from app.interfaces.schemas import ChatStopResponse
-from app.interfaces.schemas.conversations import ConversationSession, MessageStatus
-from app.runtime.checkpoint.memory import (
+from app.harness.checkpoint.memory import (
     MemoryEventLog,
     MemoryRunLease,
     MemorySnapshotStore,
 )
-from app.runtime.service import RunService
-from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
+from app.harness.service import RunService
+from app.harness.turn import ActiveTurn, ActiveTurnRegistry
+from app.interfaces.http.chat import _stream_sse, stop_chat_message
+from app.interfaces.schemas import ChatStopResponse
+from app.interfaces.schemas.conversations import ConversationSession, MessageStatus
 from app.shared.errors.base import NotFoundError
 
 _CONVERSATION_ID = "conv-stop-1"

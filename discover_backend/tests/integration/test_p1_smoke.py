@@ -37,17 +37,17 @@ from app.domain.assistant.models import AssistantTarget, TargetType
 from app.domain.skill.loader import _find_absolute_path_literals
 from app.domain.skill.registry import AgentRegistry
 from app.domain.workspace.service import WorkspaceManager
-from app.runtime.agent_runner import AgentAssembler, build_agent_budget, run_agent_turn
-from app.runtime.events.run_events import (
+from app.harness.agent_runner import AgentAssembler, build_agent_budget, run_agent_turn
+from app.harness.events.run_events import (
     LLMCallStarted,
     LLMUsageUpdated,
     RunEvent,
 )
-from app.runtime.models import (
+from app.harness.models import (
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
 )
-from app.runtime.wiring import ToolRunner
+from app.harness.wiring import ToolRunner
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS_DIR = ROOT / "agents"

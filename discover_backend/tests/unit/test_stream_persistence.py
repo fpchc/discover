@@ -13,9 +13,7 @@ from types import SimpleNamespace
 import anyio
 import pytest
 from app.domain.conversation.recorder import ExitReason, TurnRecorder, resolve_turn_status
-from app.interfaces.http.chat import _blocking, _stream_sse
-from app.interfaces.schemas.conversations import ConversationSession, MessageStatus, TurnRecord
-from app.runtime.events.run_events import (
+from app.harness.events.run_events import (
     RunCancelled,
     RunCompleted,
     RunEvent,
@@ -23,8 +21,10 @@ from app.runtime.events.run_events import (
     TextDelta,
     ThinkingDelta,
 )
-from app.runtime.models import TerminationReason
-from app.runtime.turn import ActiveTurn, ActiveTurnRegistry
+from app.harness.models import TerminationReason
+from app.harness.turn import ActiveTurn, ActiveTurnRegistry
+from app.interfaces.http.chat import _blocking, _stream_sse
+from app.interfaces.schemas.conversations import ConversationSession, MessageStatus, TurnRecord
 from app.shared.errors.base import ErrorCategory, PlatformError
 
 _MESSAGE_ID = "msg-interrupt-1"
@@ -296,7 +296,7 @@ def test_turn_recorder_terminal_events_drive_status() -> None:
 
 def test_turn_recorder_accumulates_usage() -> None:
     """TurnRecorder 聚合 LLM 用量，compat_usage 输出对外 5 键形状。"""
-    from app.runtime.events.run_events import LLMUsageUpdated
+    from app.harness.events.run_events import LLMUsageUpdated
 
     recorder = TurnRecorder(message_id=_MESSAGE_ID, query="查询", session=_make_session())
     recorder.absorb(

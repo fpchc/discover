@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 
 from app.bootstrap.container import AppServices, get_services
 from app.domain.conversation.recorder import ExitReason, TurnRecorder
+from app.harness.turn import ActiveTurn
 from app.interfaces.http.chat_execution import _run_turn_events
 from app.interfaces.http.deps import get_current_account_id
 from app.interfaces.http.run_stream import is_terminal, map_run_event
@@ -51,7 +52,6 @@ from app.interfaces.schemas import (
     ThinkingStartFrame,
     TurnStartRecord,
 )
-from app.runtime.turn import ActiveTurn
 from app.shared.errors.base import ConflictError, ErrorCategory, PlatformError
 
 router = APIRouter(tags=["chat"])
