@@ -10,12 +10,12 @@ from pathlib import Path
 
 from app.config.loader import load_mcp_servers
 from app.config.settings import Settings
-from app.domain.skill.contract import (
+from app.harness.skill.contract import (
     check_agent_dir,
     check_agent_manifest,
     check_skill_manifest,
 )
-from app.domain.skill.registry import AgentRegistry
+from app.harness.skill.registry import AgentRegistry
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = ROOT / "agents"

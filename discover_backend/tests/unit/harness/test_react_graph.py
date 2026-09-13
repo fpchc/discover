@@ -10,16 +10,8 @@ from collections.abc import AsyncIterator, Callable
 
 import anyio
 import pytest
-from app.capabilities.llm.models import ChatToolSpec, ToolFunction
-from app.capabilities.llm.stream_parser import (
-    SemanticChunk,
-    TextChunk,
-    ThinkingChunk,
-    ToolCall,
-    ToolCallsChunk,
-)
-from app.capabilities.tools.broker import ToolCallRequest, ToolResult
-from app.capabilities.tools.descriptor import ToolDescriptor, ToolSource
+from app.environment.tools.broker import ToolCallRequest, ToolResult
+from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.events.run_events import RunEvent
 from app.harness.graph import build_react_subgraph
 from app.harness.models import (
@@ -28,12 +20,16 @@ from app.harness.models import (
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
 )
-from app.harness.react.executor import (
-    AgentDurationExceeded,
-    BoundedReActExecutor,
-    LLMRunnerPort,
-    ReactGraphState,
-    ToolRunnerPort,
+from app.harness.react.executor import AgentDurationExceeded, BoundedReActExecutor
+from app.harness.react.ports import LLMRunnerPort, ToolRunnerPort
+from app.harness.react.state import ReactGraphState
+from app.llm.models import ChatToolSpec, ToolFunction
+from app.llm.stream_parser import (
+    SemanticChunk,
+    TextChunk,
+    ThinkingChunk,
+    ToolCall,
+    ToolCallsChunk,
 )
 from langgraph.graph.state import CompiledStateGraph
 

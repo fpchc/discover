@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from app.application.dto.files import ArtifactRecord
+from app.application.file.service import FileService, file_preview_path
 from app.config.settings import Settings
-from app.domain.file.service import FileService, file_preview_path
+from app.environment.storage.local import LocalStorage
 from app.infrastructure.database.engine import Database
-from app.infrastructure.storage.local import LocalStorage
-from app.interfaces.schemas.files import ArtifactRecord
 from app.shared.errors.base import SessionError
 
 # 测试共享同一数据库引擎（连接池有界；产物场景才连接）。

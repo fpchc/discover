@@ -11,8 +11,12 @@ Contract 接入契约上下文由 W5 体系复用。
 
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel, Field
 
+from app.harness.contracts.executor import ContractContext, GateRunnerPort, ScriptGateExecutor
+from app.harness.contracts.models import ContractDefinition, ContractType, ContractVerdict
 from app.harness.models import (
     BudgetState,
     PhaseExecutionOutcome,
@@ -22,6 +26,7 @@ from app.harness.models import (
 )
 from app.harness.workflow.definition import PhaseDefinition, WorkflowDefinition
 from app.harness.workflow.executors import PhaseExecutorRegistry
+from app.llm.models import ChatMessage
 
 
 class PhaseRun(BaseModel):
@@ -49,9 +54,11 @@ class WorkflowRunner:
         *,
         executors: PhaseExecutorRegistry,
         max_repair_attempts: int = 1,
+        gate_runner: GateRunnerPort | None = None,
     ) -> None:
         self._executors = executors
         self._max_repair_attempts = max_repair_attempts
+        self._gate_runner = gate_runner
 
     async def run(
         self,
@@ -62,6 +69,7 @@ class WorkflowRunner:
         budget: BudgetState,
         allowed_tools: list[str],
         context_summary: str = "",
+        context_messages: list[ChatMessage] | None = None,
         system_prompt: str = "",
         thinking_enabled: bool = True,
         thinking_budget: int | None = None,
@@ -78,6 +86,8 @@ class WorkflowRunner:
         outputs: dict[str, PhaseOutput] = {}
         index = 0
         fallback_context = ""
+        final_phase: PhaseDefinition | None = None
+        final_request: PhaseExecutionRequest | None = None
         while index < len(definition.phases):
             phase = definition.phases[index]
             bound = dict(phase_input)
@@ -90,6 +100,7 @@ class WorkflowRunner:
                 system_prompt=system_prompt,
                 phase_input=bound,
                 context_summary=fallback_context or context_summary,
+                context_messages=list(context_messages or []),
                 allowed_tools=phase_tools,
                 thinking_enabled=thinking_enabled,
                 thinking_budget=thinking_budget,
@@ -119,7 +130,16 @@ class WorkflowRunner:
             result.phases.append(PhaseRun(phase=phase, outcome=outcome))
             result.final_outcome = outcome
             result.reason_code = outcome.reason_code or outcome.outcome_type.value
+            final_phase = phase
+            final_request = request
             break
+        if final_phase is not None and final_request is not None:
+            result = await self._enforce_output_contracts(
+                definition,
+                result,
+                final_phase=final_phase,
+                final_request=final_request,
+            )
         return result
 
     def _apply_bindings(
@@ -155,3 +175,91 @@ class WorkflowRunner:
             evidence_refs=list(outcome.action_ids),
             limitations=list(outcome.limitations),
         )
+
+    async def _enforce_output_contracts(
+        self,
+        workflow: WorkflowDefinition,
+        result: WorkflowRunResult,
+        *,
+        final_phase: PhaseDefinition,
+        final_request: PhaseExecutionRequest,
+    ) -> WorkflowRunResult:
+        """render 等收尾阶段产出后，确定性执行输出门禁并做有界修复（§9.4）。"""
+        if not workflow.output_contract_refs or self._gate_runner is None:
+            return result
+        outcome = result.final_outcome
+        if outcome is None or outcome.outcome_type != PhaseExecutionOutcomeType.FINAL_PROPOSED:
+            return result
+        executor = ScriptGateExecutor(self._gate_runner)
+        data = self._contract_data(final_request, outcome.answer)
+        for attempt in range(self._max_repair_attempts + 1):
+            failures = await self._run_output_contracts(
+                workflow.output_contract_refs, executor, data
+            )
+            if not failures:
+                result.reason_code = outcome.reason_code or "output_contract_passed"
+                return result
+            if attempt >= self._max_repair_attempts:
+                result.reason_code = "output_contract_failed:" + ",".join(
+                    workflow.output_contract_refs
+                )
+                return result
+            repair_goal = (
+                f"{final_request.phase_goal}\n\n"
+                "上一版未通过输出门禁，请按以下问题修复后重新输出：\n"
+                f"{_remediation_text(failures)}"
+            )
+            repair_request = final_request.model_copy(update={"phase_goal": repair_goal})
+            outcome = await self._executors.resolve(final_phase.executor_type).execute(
+                final_phase, repair_request
+            )
+            data = self._contract_data(final_request, outcome.answer)
+            result.final_outcome = outcome
+            result.reason_code = outcome.reason_code or "render_repaired"
+        return result
+
+    async def _run_output_contracts(
+        self,
+        refs: list[str],
+        executor: ScriptGateExecutor,
+        data: dict[str, object],
+    ) -> list[str]:
+        """逐条执行输出门禁，返回全部失败项（空 = 全部通过）。"""
+        failures: list[str] = []
+        for ref in refs:
+            definition = ContractDefinition(
+                contract_id=ref,
+                contract_type=ContractType.QUALITY,
+                retryable=True,
+            )
+            contract_result = await executor.execute(definition, ContractContext(data=data))
+            if contract_result.verdict == ContractVerdict.FAIL:
+                failures.extend(contract_result.failures or [contract_result.remediation])
+        return failures
+
+    @staticmethod
+    def _contract_data(request: PhaseExecutionRequest, answer: str) -> dict[str, object]:
+        """输出契约上下文：最终正文 + 本阶段绑定的结构化输入（如 report/card_data）。"""
+        data = dict(request.phase_input)
+        data["answer"] = answer
+        return data
+
+
+def _remediation_text(failures: list[str]) -> str:
+    """把门禁失败项整理成可回填 render 提示词的修复说明。"""
+    parts: list[str] = []
+    for item in failures:
+        text = item.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+            if isinstance(payload, dict):
+                errors = payload.get("errors")
+                if isinstance(errors, list) and errors:
+                    parts.extend(str(error) for error in errors)
+                    continue
+        except (json.JSONDecodeError, TypeError):
+            pass
+        parts.append(text)
+    return "\n".join(f"- {part}" for part in parts) or "- 门禁未通过"

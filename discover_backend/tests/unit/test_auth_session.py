@@ -8,12 +8,8 @@ mock，禁真实连接）。
 from __future__ import annotations
 
 import pytest
-from app.domain.auth.session import (
-    KeyValueStore,
-    RedisSessionStore,
-    access_key,
-    refresh_key,
-)
+from app.domain.identity.ports import KeyValueStore
+from app.infrastructure.redis.session_store import RedisSessionStore, access_key, refresh_key
 from app.shared.errors.base import UnauthorizedError
 from redis.exceptions import RedisError
 

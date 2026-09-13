@@ -1,154 +1,118 @@
-"""接入层共享服务容器：应用生命周期内单例 + FastAPI 依赖。
+"""组合根装配：构造应用服务容器 + 生命周期启停顺序。
 
-扩展系统统一加载基础设施（logging/db/storage/redis/mcp/llm），startup 从
-扩展访问器取类型化客户端并组装领域服务（conversation/registry/script_executor/
-workspace/files/runtime）；shutdown 逆序关停扩展。热重载开关开启时启动后台
-轮询任务。
+本模块是唯一允许「同时认识 infrastructure 访问器、application 服务与
+domain 端口实现」的地方；只做装配，不承载业务判断。
 """
 
+from __future__ import annotations
+
 import asyncio
-from collections.abc import Callable
+import logging
 
 import anyio
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 
+from app.application.assistant.catalog import AssistantCatalog
+from app.application.context.adapters import ConversationContextAdapter
+from app.application.conversation.service import ConversationService
+from app.application.file.service import FileService
+from app.application.identity.service import AuthService
+from app.application.services import AppServices
 from app.bootstrap.extensions import shutdown_extensions, startup_extensions
-from app.capabilities.llm.accessors import get_client, get_providers, resolve_api_key
-from app.capabilities.llm.client import LLMClient
-from app.capabilities.llm.providers import ProviderRegistry
-from app.capabilities.mcp.accessors import get_manager, get_registry
-from app.capabilities.mcp.manager import MCPManager
-from app.capabilities.tools.script_executor import ScriptExecutor
-from app.config.loader import LLMProvider
-from app.config.settings import Settings
-from app.domain.assistant.catalog import AssistantCatalog
-from app.domain.auth.service import AuthService
-from app.domain.auth.session import RedisSessionStore
-from app.domain.auth.sso import ElecnestSSOClient
-from app.domain.conversation.service import ConversationService
-from app.domain.file.service import FileService
-from app.domain.skill.hot_reload import HotReloader
-from app.domain.skill.registry import AgentRegistry
-from app.domain.workspace.service import WorkspaceManager
-from app.harness.checkpoint.memory import (
-    MemoryEventLog,
-    MemoryRunLease,
-    MemorySnapshotStore,
-)
-from app.harness.service import RunService
-from app.harness.turn import ActiveTurnRegistry
+from app.environment.context import ContextAssembler
+from app.environment.mcp.accessors import get_manager, get_registry
+from app.environment.storage.accessors import get_storage
+from app.environment.tools.script_executor import ScriptExecutor
+from app.environment.workspace.service import WorkspaceManager
+from app.harness.skill.hot_reload import HotReloader
+from app.harness.skill.registry import AgentRegistry
 from app.infrastructure.database.accessors import get_database
 from app.infrastructure.database.engine import Database
 from app.infrastructure.redis.client import get_cache
-from app.infrastructure.storage.accessors import get_storage
-from app.infrastructure.storage.base import BaseStorage
+from app.infrastructure.redis.session_store import RedisSessionStore
+from app.infrastructure.sso.elecnest import ElecnestSSOClient
+from app.llm.accessors import get_client, get_providers, resolve_api_key
+
+logger = logging.getLogger(__name__)
 
 
-class AppServices:
-    """平台服务容器。由 create_app 构造，经 lifespan 启动 / 关闭。"""
-
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self.llm: LLMClient | None = None
-        self.providers: ProviderRegistry | None = None
-        self.mcp_manager: MCPManager | None = None
-        self.script_executor: ScriptExecutor | None = None
-        self.db: Database | None = None
-        self.storage: BaseStorage | None = None
-        self.workspaces: WorkspaceManager | None = None
-        self.files: FileService | None = None
-        self.catalog: AssistantCatalog | None = None
-        self.conversation_service: ConversationService | None = None
-        self.auth: AuthService | None = None
-        self.registry: AgentRegistry | None = None
-        self.elecnest: ElecnestSSOClient | None = None
-        self._elecnest_http: httpx.AsyncClient | None = None
-        # Run 生命周期服务（v2 §16/§17）：checkpoint 内存实现，DB/Redis store 接线后替换
-        self.run_service = RunService(
-            snapshots=MemorySnapshotStore(),
-            events=MemoryEventLog(),
-            lease=MemoryRunLease(),
-            owner_id="api",
-        )
-        # 进行中回合句柄注册表（stop 接口据此取消回合；回合退出后注销；
-        # 陈旧句柄按 TTL 自动回收，防客户端断连泄漏会话锁）
-        self.active_turns = ActiveTurnRegistry(ttl_seconds=settings.active_turn_ttl_seconds)
-        self._resolve_api_key: Callable[[LLMProvider], str] | None = None
-        self._reloader_scope: anyio.CancelScope | None = None
-        self._reloader_task: asyncio.Task[None] | None = None
-
-    async def startup(self, app: FastAPI) -> None:
-        """启动扩展、加载注册表、刷新索引、启动热重载后台任务。"""
-        await startup_extensions(app)
-        self.db = get_database()
-        self.storage = get_storage()
-        self.llm = get_client()
-        self.providers = get_providers()
-        self._resolve_api_key = resolve_api_key
-        self.mcp_manager = get_manager()
-        self.script_executor = ScriptExecutor(self.settings)
-        self.workspaces = WorkspaceManager(self.settings)
-        self.files = FileService(self.settings, self.db, self.storage)
-        self.registry = AgentRegistry(self.settings, get_registry())
-        await self.registry.refresh()
-        self.catalog = AssistantCatalog(self.registry)
-        self.conversation_service = ConversationService(self.db, self.settings, self.catalog)
-        self.elecnest = self._build_elecnest()
-        # Redis 会话层：原本地登录（兼容回退）签发令牌对后写会话，受保护请求对本地令牌校验访问会话；
-        # 平台令牌路径不写本地会话（只验签）；login/refresh/logout 依赖此层
-        self.auth = AuthService(
-            self.settings,
-            self.db,
-            self.conversation_service,
-            self.files,
-            elecnest=self.elecnest,
-            sessions=RedisSessionStore(get_cache()),
-        )
-        reloader = HotReloader(self.registry, self.settings)
-        scope = anyio.CancelScope()
-        self._reloader_scope = scope
-        # pragma: 简化 — 单常驻协程在 anyio v4 无顶层 create_task；任务组宿主模式
-        # 跨任务退出会触发 cancel-scope 跨任务报错，宿主任务内嵌任务组取消时又会
-        # 死锁（同 protocol/emitter.py 注释），故用 asyncio.create_task + 显式
-        # 取消/join 管理生命周期（CLAUDE.md §4 禁令针对「裸建任务不管理生命周期」）。
-        self._reloader_task = asyncio.create_task(self._run_reloader(reloader, scope))
-
-    async def shutdown(self, app: FastAPI) -> None:
-        """停止热重载、逆序关停扩展。"""
-        if self._reloader_task is not None and self._reloader_scope is not None:
-            self._reloader_scope.cancel()
-            await self._reloader_task
-            self._reloader_task = None
-            self._reloader_scope = None
-        if self._elecnest_http is not None:
-            await self._elecnest_http.aclose()
-            self._elecnest_http = None
-            self.elecnest = None
-        await shutdown_extensions(app)
-
-    async def _run_reloader(self, reloader: HotReloader, scope: anyio.CancelScope) -> None:
-        """常驻协程宿主：取消作用域进入/退出在同一任务，由 shutdown 跨任务取消。"""
-        with scope:
-            await reloader.run()
-
-    def assistant_catalog(self) -> AssistantCatalog:
-        """助手目录（复用注册表当前索引，热重载后即最新）。"""
-        assert self.catalog is not None
-        return self.catalog
-
-    def _build_elecnest(self) -> ElecnestSSOClient | None:
-        """统一登录客户端：开关关闭返回 None（/auth/login/elecnest 返回 400）。"""
-        if not self.settings.elecnest_sso_enabled:
-            return None
-        self._elecnest_http = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.settings.elecnest_sso_timeout_seconds)
-        )
-        return ElecnestSSOClient(self.settings, self._elecnest_http)
+async def start_services(services: AppServices, app: FastAPI) -> None:
+    """启动扩展 → 构造应用服务 → 刷新技能索引 → 启动热重载后台任务。"""
+    await startup_extensions(app)
+    _build_services(services, get_database())
+    assert services.registry is not None
+    await services.registry.refresh()
+    reloader = HotReloader(services.registry, services.settings)
+    scope = anyio.CancelScope()
+    services.reloader_scope = scope
+    # pragma: 简化 — 单常驻协程在 anyio v4 无顶层 create_task；任务组宿主模式
+    # 跨任务退出会触发 cancel-scope 跨任务报错，宿主任务内嵌任务组取消时又会
+    # 死锁（同 emitter.py 注释），故用 asyncio.create_task + 显式取消/join 管理
+    # 生命周期（CLAUDE.md §4 禁令针对「裸建任务不管理生命周期」）。
+    services.reloader_task = asyncio.create_task(_run_reloader(reloader, scope))
 
 
-def get_services(request: Request) -> AppServices:
-    """FastAPI 依赖：取应用级服务容器。"""
-    services = request.app.state.services
-    assert isinstance(services, AppServices)
-    return services
+async def stop_services(services: AppServices, app: FastAPI) -> None:
+    """停止热重载 → 释放 SSO 连接池 → 逆序关停扩展。"""
+    if services.reloader_task is not None and services.reloader_scope is not None:
+        services.reloader_scope.cancel()
+        await services.reloader_task
+        services.reloader_task = None
+        services.reloader_scope = None
+    if services.elecnest_http is not None:
+        await services.elecnest_http.aclose()
+        services.elecnest_http = None
+        services.elecnest = None
+    await shutdown_extensions(app)
+
+
+def _build_services(services: AppServices, database: Database) -> None:
+    """从扩展访问器取客户端并组装应用服务（唯一装配点）。"""
+    services.db = database
+    services.storage = get_storage()
+    services.llm = get_client()
+    services.providers = get_providers()
+    services.resolve_api_key = resolve_api_key
+    services.mcp_manager = get_manager()
+    services.script_executor = ScriptExecutor(services.settings)
+    services.workspaces = WorkspaceManager(services.settings)
+    services.files = FileService(services.settings, database, services.storage)
+    services.registry = AgentRegistry(services.settings, get_registry())
+    services.catalog = AssistantCatalog(services.registry)
+    services.conversation_service = ConversationService(
+        database, services.settings, services.catalog
+    )
+    services.context_assembler = ContextAssembler(
+        conversation=ConversationContextAdapter(services.conversation_service)
+    )
+    services.elecnest = _build_elecnest(services)
+    # Redis 会话层：原本地登录（兼容回退）签发令牌对后写会话，受保护请求对本地
+    # 令牌校验访问会话；平台令牌路径不写本地会话（只验签）
+    services.auth = AuthService(
+        services.settings,
+        database,
+        services.conversation_service,
+        services.files,
+        elecnest=services.elecnest,
+        sessions=RedisSessionStore(get_cache()),
+    )
+
+
+def _build_elecnest(services: AppServices) -> ElecnestSSOClient | None:
+    """统一登录客户端：开关关闭返回 None（/auth/login/elecnest 返回 400）。"""
+    if not services.settings.elecnest_sso_enabled:
+        return None
+    services.elecnest_http = httpx.AsyncClient(
+        timeout=httpx.Timeout(services.settings.elecnest_sso_timeout_seconds)
+    )
+    return ElecnestSSOClient(services.settings, services.elecnest_http)
+
+
+async def _run_reloader(reloader: HotReloader, scope: anyio.CancelScope) -> None:
+    """常驻协程宿主：取消作用域进入/退出在同一任务，由 shutdown 跨任务取消。"""
+    with scope:
+        await reloader.run()
+
+
+__all__ = ["AppServices", "start_services", "stop_services"]

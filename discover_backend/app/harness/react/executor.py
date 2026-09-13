@@ -10,186 +10,63 @@ Tool Runtime 不决定阶段完成；执行器只编排。
 
 from __future__ import annotations
 
-import json
 import time
-from collections.abc import AsyncIterator, Callable
-from typing import Protocol
+from collections.abc import Callable
 
 import anyio
-from pydantic import BaseModel, Field
 
-from app.capabilities.llm.models import (
-    ChatMessage,
-    ChatRequest,
-    ChatToolCall,
-    ChatToolCallFunction,
-    ChatToolSpec,
+from app.environment.tools.models import ToolCallRequest
+from app.harness.decision import (
+    AgentDecisionType,
+    control_tool_specs,
+    parse_decision,
 )
-from app.capabilities.llm.stream_parser import (
-    SemanticChunk,
+from app.harness.events.run_events import (
+    ActionProposed,
+    LLMCallStarted,
+    LLMUsageUpdated,
+)
+from app.harness.models import (
+    ActionRecord,
+    ActionStatus,
+    ObservationRecord,
+    PhaseExecutionOutcome,
+    PhaseExecutionOutcomeType,
+)
+from app.harness.policy.action import check_action
+from app.harness.policy.budget import check_budget
+from app.harness.policy.models import PolicyDecisionType
+from app.harness.progress import (
+    action_fingerprint,
+    evaluate_progress,
+    observation_fingerprint,
+)
+from app.harness.react.ports import EventSinkPort, LLMRunnerPort, ToolRunnerPort
+from app.harness.react.prompt import (
+    _budget_termination,
+    _context_payload,
+    _observation_status,
+    _parse_call_args,
+    _repair_messages,
+    _to_chat_tool_call,
+    _to_stream_call,
+    _tool_message_content,
+    build_phase_system_prompt,
+)
+from app.harness.react.state import ReactGraphState
+from app.llm.chunks import (
     TextChunk,
     ThinkingChunk,
     ToolCall,
     ToolCallsChunk,
     UsageChunk,
 )
-from app.capabilities.tools.broker import ToolCallRequest, ToolResult
-from app.capabilities.tools.descriptor import ToolDescriptor
-from app.harness.events.run_events import (
-    ActionProposed,
-    LLMCallStarted,
-    LLMUsageUpdated,
-    RunEvent,
-)
-from app.harness.models import (
-    ActionRecord,
-    ActionStatus,
-    BudgetState,
-    ObservationRecord,
-    ObservationStatus,
-    PhaseExecutionOutcome,
-    PhaseExecutionOutcomeType,
-    PhaseExecutionRequest,
-    ProgressState,
-)
-from app.harness.policy.action import check_action
-from app.harness.policy.budget import check_budget
-from app.harness.policy.models import PolicyDecision, PolicyDecisionType
-from app.harness.react.decision import (
-    AgentDecision,
-    AgentDecisionType,
-    control_tool_specs,
-    parse_decision,
-)
-from app.harness.react.progress import (
-    action_fingerprint,
-    evaluate_progress,
-    observation_fingerprint,
+from app.llm.models import (
+    ChatMessage,
+    ChatRequest,
+    ChatToolSpec,
 )
 from app.shared.errors.base import ErrorCategory, PlatformError
-from app.shared.utils.sanitize import truncate
-
-
-class LLMRunnerPort(Protocol):
-    """LLM 流式调用抽象：隐藏 provider / api_key 解析（组装层适配）。
-
-    声明为异步生成器签名（def + AsyncIterator），供 ``async for`` 消费。
-    """
-
-    def stream(self, *, request: ChatRequest) -> AsyncIterator[SemanticChunk]: ...
-
-
-class ToolRunnerPort(Protocol):
-    """工具执行抽象：目录查询 + 分发（ToolBroker 实现，唯一出口）。"""
-
-    def exposed_tools(self) -> list[ChatToolSpec]: ...
-    def get_descriptor(self, name: str) -> ToolDescriptor | None: ...
-    async def execute(self, calls: list[ToolCallRequest]) -> list[ToolResult]: ...
-
-
-class EventSinkPort(Protocol):
-    """Run 事件发射抽象：SSE / 审计 / 观测统一出口。"""
-
-    async def emit(self, event: RunEvent) -> None: ...
-
-
-class ReactGraphState(BaseModel):
-    """Bounded ReAct 子图状态（§10）。普通内部节点不持久化，仅内存传递。"""
-
-    request: PhaseExecutionRequest
-    budget: BudgetState
-    messages: list[ChatMessage] = Field(default_factory=list)
-    pending_calls: list[ToolCallRequest] = Field(default_factory=list)
-    decision: AgentDecision | None = None
-    text_parts: str = ""
-    action_records: list[ActionRecord] = Field(default_factory=list)
-    observation_records: list[ObservationRecord] = Field(default_factory=list)
-    last_results: list[ToolResult] = Field(default_factory=list)
-    last_action_fingerprint: str = ""
-    last_observation_fingerprint: str = ""
-    new_evidence_count: int = 0
-    new_artifact_count: int = 0
-    progress: ProgressState = Field(default_factory=ProgressState)
-    iteration: int = 0
-    repair_attempts: int = 0
-    degraded_sources: list[str] = Field(default_factory=list)
-    terminate_reason: str = ""
-    outcome: PhaseExecutionOutcome | None = None
-
-
-def _to_chat_tool_call(call: ToolCall) -> ChatToolCall:
-    return ChatToolCall(
-        id=call.id or "",
-        function=ChatToolCallFunction(name=call.name or "", arguments=call.arguments),
-    )
-
-
-def _parse_call_args(call: ToolCall) -> dict[str, object]:
-    try:
-        data = json.loads(call.arguments or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _to_stream_call(call: ToolCallRequest) -> ToolCall:
-    return ToolCall(
-        index=0,
-        id=call.call_id,
-        name=call.tool_name,
-        arguments=json.dumps(call.arguments, ensure_ascii=False),
-    )
-
-
-def _repair_hint(reason: str) -> str:
-    """INVALID 决策 → 面向模型的定向修复指令（§10.1 格式修复）。"""
-    if "text_only" in reason or "empty_decision" in reason:
-        return (
-            "请调用 submit_final_answer 提交最终答案，answer 字段放完整信息卡正文；"
-            "不要只输出文本或只思考。"
-        )
-    if "control_tool" in reason:
-        return "submit_final_answer 参数必须为合法 JSON，且 answer 必须包含完整信息卡正文。"
-    return "上一轮工具决策格式非法，请重新输出符合要求的工具调用。"
-
-
-def _repair_messages(state: ReactGraphState, reason: str) -> list[ChatMessage]:
-    """格式修复反馈：注入定向指令，并补齐上一轮未执行的工具调用回复。
-
-    上一轮 assistant 若携带 tool_calls 却被判 INVALID，OpenAI 兼容协议要求
-    每个 tool_call_id 都要有对应 role="tool" 回复，否则下一轮请求 400；
-    这里补齐并把失败原因回写，同时给出修复指令。
-    """
-    messages: list[ChatMessage] = [ChatMessage(role="system", content=_repair_hint(reason))]
-    if state.messages and state.messages[-1].role == "assistant":
-        for call in state.messages[-1].tool_calls or []:
-            messages.append(
-                ChatMessage(
-                    role="tool",
-                    tool_call_id=call.id,
-                    content=f"该工具调用未被执行（{reason}），请重新输出。",
-                )
-            )
-    return messages
-
-
-def _context_payload(state: ReactGraphState) -> str:
-    """把 ReactGraphState 的对话消息归一为 render 阶段可读文本。
-
-    system 消息不重复带入 render（render 会注入自己的 system prompt）；
-    assistant 消息仅保留工具调用名，tool 消息保留正文。
-    """
-    parts: list[str] = []
-    for message in state.messages:
-        if message.role == "system":
-            continue
-        content = message.content or ""
-        if message.tool_calls:
-            calls = " | ".join(call.function.name for call in message.tool_calls)
-            content = f"{content} | 工具调用：{calls}".strip(" |")
-        if content:
-            parts.append(f"{message.role}: {content}")
-    return "\n".join(parts)
 
 
 class AgentDurationExceeded(PlatformError):
@@ -229,28 +106,17 @@ class BoundedReActExecutor:
 
     # ---- 节点：react_prepare ----
     async def react_prepare(self, state: ReactGraphState) -> dict[str, object]:
-        system = ChatMessage(role="system", content=self._system_prompt(state))
-        return {"messages": [system], "iteration": 0, "terminate_reason": ""}
+        """初始化阶段消息：优先采用装配层投影结果，缺失时回落系统提示。
 
-    def _system_prompt(self, state: ReactGraphState) -> str:
-        request = state.request
-        lines: list[str] = []
-        if request.system_prompt:
-            # 装配层系统提示（AGENT.md + SKILL.md + 平台红线）：阶段信息叠加在其上，
-            # 不替换技能包声明的角色 / 工作流 / 红线（§18.4 LLM Context 组装）。
-            lines.append(request.system_prompt)
-        else:
-            lines.append("你是执行当前阶段任务的智能体。")
-        lines.append(f"阶段目标：{request.phase_goal}")
-        lines.append(f"阶段输入：{request.phase_input or {}}")
-        if request.context_summary:
-            lines.append(f"上下文摘要：{request.context_summary}")
-        lines.append(
-            "完成后调用 submit_final_answer 提交最终答案；"
-            "多阶段流程的中间候选输出调用 complete_phase；"
-            "信息不足调用 request_clarification。"
-        )
-        return "\n".join(lines)
+        `context_messages` 由 ContextProjector 产出（system + 历史消息 + 独立
+        role=user 的当前用户消息），历史 role 语义不再被压平进 system prompt。
+        """
+        messages = list(state.request.context_messages)
+        if not messages:
+            messages = [
+                ChatMessage(role="system", content=build_phase_system_prompt(state.request))
+            ]
+        return {"messages": messages, "iteration": 0, "terminate_reason": ""}
 
     # ---- 节点：check_budget ----
     async def check_budget(self, state: ReactGraphState) -> dict[str, object]:
@@ -606,29 +472,3 @@ class BoundedReActExecutor:
             reason_code=state.terminate_reason,
         )
         return {"outcome": outcome}
-
-
-def _budget_termination(decision: PolicyDecision) -> str:
-    if decision.decision == PolicyDecisionType.TERMINATE:
-        return f"hard_budget:{decision.reason_code}"
-    if decision.decision == PolicyDecisionType.FINALIZE_PARTIAL:
-        return f"soft_budget:{decision.reason_code}"
-    return ""
-
-
-def _observation_status(result: ToolResult) -> ObservationStatus:
-    if result.ok:
-        if not result.content:
-            return ObservationStatus.EMPTY
-        return ObservationStatus.SUCCEEDED
-    return ObservationStatus.FAILED
-
-
-def _tool_message_content(result: ToolResult, *, max_chars: int) -> str:
-    """ToolResult → role="tool" 消息正文：优先正文，失败时给错误/建议，避免空串。"""
-    if result.ok:
-        content = result.content or "（工具调用完成，无返回内容）"
-        return truncate(content, max_length=max_chars)
-    parts = [result.message, result.suggestion]
-    text = "；".join(part for part in parts if part)
-    return truncate(text or "工具调用失败", max_length=max_chars)

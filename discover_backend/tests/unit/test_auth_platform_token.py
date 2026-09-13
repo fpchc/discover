@@ -12,7 +12,7 @@ import time
 import jwt
 import pytest
 from app.config.settings import Settings
-from app.domain.auth.security import JwtService
+from app.infrastructure.crypto.security import JwtService
 from app.shared.errors.base import UnauthorizedError
 
 _SECRET = "test-secret-0123456789abcdef0123456789abcdef"

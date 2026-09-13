@@ -3,7 +3,7 @@ kind: agent
 type: expert
 agent_id: discover
 display_name: 客户发现
-version: "1.4"
+version: "1.6"
 description: 为电子信息产业链销售寻找潜在客户，输出八维量化评分与专业客户发现报告
 scope:
   applies: 寻找/开发/评估电子信息产业链潜在客户、竞品客户反推、行业机会扫描、区域产业带聚焦

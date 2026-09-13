@@ -21,6 +21,8 @@
 | 工具目录、三级暴露、命名空间、分发、read_reference | `tool-broker-spec.md` |
 | 白名单脚本、标准流、子进程、产物与超时 | `script-execution-spec.md` |
 | SSE 帧、打字机、心跳、背压和终态 | `sse-streaming-spec.md` |
+| Agent 可见上下文、上下文装配与投影、上下文裁剪与版本 | `agent-context-plane-spec.md` |
+| 路由登录声明（@login_required / @bearer_required / @public、守卫注入与装配期校验） | `http-auth-spec.md` |
 
 ## 维护规则
 

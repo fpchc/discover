@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import httpx
 from app.config.settings import Settings
-from app.domain.auth.sso import ElecnestSSOClient
+from app.infrastructure.sso.elecnest import ElecnestSSOClient
 
 
 def _client(handler: object) -> ElecnestSSOClient:

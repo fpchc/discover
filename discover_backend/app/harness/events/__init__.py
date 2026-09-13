@@ -1,65 +1,19 @@
-"""事件契约（runtime 输出）：RunEvent 生命周期 + 展示增量事件（react-runtime-v2-architecture §17）。
-
-旧 AgentEvent 会话事件模型已整体下架（v2 统一 RunEvent 输出）；HTTP/SSE 只负责
-经 run_stream.map_run_event 映射，不感知 LangGraph 内部节点（§21）。
-"""
+"""Harness 事件：RunEvent 生命周期契约 + 会话级事件发射器。"""
 
 from app.harness.events.emitter import QueueEmitter
 from app.harness.events.run_events import (
-    ActionProposed,
-    ActionRejected,
-    ContractChecked,
-    Heartbeat,
-    LLMCallStarted,
-    LLMUsageUpdated,
-    PhaseCompleted,
-    PhaseStarted,
-    ProgressStalled,
-    ProgressUpdated,
-    RunCancelled,
-    RunCompleted,
-    RunDegraded,
+    TERMINAL_EVENT_TYPES,
     RunEvent,
     RunEventUnion,
-    RunFailed,
-    RunFinalizing,
-    RunInputRequested,
-    RunStarted,
-    TextDelta,
-    ThinkingDelta,
-    ThinkingEnded,
-    ThinkingStarted,
-    ToolCallCompleted,
-    ToolCallStarted,
+    is_terminal,
     run_event_adapter,
 )
 
 __all__ = [
-    "ActionProposed",
-    "ActionRejected",
-    "ContractChecked",
-    "Heartbeat",
-    "LLMCallStarted",
-    "LLMUsageUpdated",
-    "PhaseCompleted",
-    "PhaseStarted",
-    "ProgressStalled",
-    "ProgressUpdated",
+    "TERMINAL_EVENT_TYPES",
     "QueueEmitter",
-    "RunCancelled",
-    "RunCompleted",
-    "RunDegraded",
     "RunEvent",
     "RunEventUnion",
-    "RunFailed",
-    "RunFinalizing",
-    "RunInputRequested",
-    "RunStarted",
-    "TextDelta",
-    "ThinkingDelta",
-    "ThinkingEnded",
-    "ThinkingStarted",
-    "ToolCallCompleted",
-    "ToolCallStarted",
+    "is_terminal",
     "run_event_adapter",
 ]

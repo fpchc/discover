@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domain.assistant.models import AssistantTarget
+from app.harness.targets import AssistantTarget
 
 
 class AssistantResolver(Protocol):

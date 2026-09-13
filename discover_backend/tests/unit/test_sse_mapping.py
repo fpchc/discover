@@ -16,7 +16,6 @@ from app.harness.events.run_events import (
     ToolCallStarted,
 )
 from app.harness.models import TerminationReason
-from app.interfaces.http.run_stream import map_run_event
 from app.interfaces.schemas import (
     ErrorStreamEvent,
     MessageEndEvent,
@@ -26,6 +25,7 @@ from app.interfaces.schemas import (
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
+from app.interfaces.sse.frames import map_run_event
 from app.shared.errors.base import ErrorCategory
 
 _MESSAGE_ID = "msg-1"

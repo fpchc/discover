@@ -14,7 +14,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from app.capabilities.tools.broker import ToolResult
+from app.environment.tools.models import ToolResult
 from app.harness.contracts.models import (
     ContractDefinition,
     ContractResult,

@@ -10,14 +10,12 @@ from collections.abc import Callable
 
 from langgraph.graph.state import CompiledStateGraph
 
-from app.capabilities.mcp.manager import MCPManager
-from app.capabilities.tools.broker import ToolBroker
-from app.capabilities.tools.script_executor import ScriptExecutor
 from app.config.settings import Settings
-from app.domain.assistant.models import AssistantTarget, TargetType
-from app.domain.skill.assemble import AssemblyPlan
-from app.domain.skill.registry import AgentRegistry
-from app.domain.workspace.service import Workspace, WorkspaceManager
+from app.environment.mcp.manager import MCPManager
+from app.environment.tools.broker import ToolBroker
+from app.environment.tools.models import ToolCallRequest, ToolResult
+from app.environment.tools.script_executor import ScriptExecutor
+from app.environment.workspace.service import Workspace, WorkspaceManager
 from app.harness.graph import build_react_subgraph
 from app.harness.models import (
     BudgetLimits,
@@ -25,17 +23,20 @@ from app.harness.models import (
     PhaseExecutionOutcome,
     PhaseExecutionRequest,
 )
-from app.harness.react.executor import (
-    BoundedReActExecutor,
-    EventSinkPort,
-    LLMRunnerPort,
-    ReactGraphState,
-    ToolRunnerPort,
-)
+from app.harness.react.executor import BoundedReActExecutor
+from app.harness.react.ports import EventSinkPort, LLMRunnerPort, ToolRunnerPort
+from app.harness.react.state import ReactGraphState
 from app.harness.resolver.assistant import AssistantResolver, ExplicitSelectionResolver
 from app.harness.resolver.skill import SkillResolutionContext, SkillResolver
+from app.harness.skill.assemble import AssemblyPlan
+from app.harness.skill.registry import AgentRegistry
+from app.harness.targets import AssistantTarget, TargetType
 from app.harness.workflow.compiler import WorkflowRunner
-from app.harness.workflow.definition import PhaseDefinition, PhaseExecutorType, WorkflowDefinition
+from app.harness.workflow.definition import (
+    PhaseDefinition,
+    PhaseExecutorType,
+    WorkflowDefinition,
+)
 from app.harness.workflow.executors import (
     PhaseExecutorRegistry,
     ReactPhaseExecutor,
@@ -69,6 +70,7 @@ def build_workflow_definition(plan: AssemblyPlan) -> WorkflowDefinition | None:
     return WorkflowDefinition(
         workflow_id=plan.workflow.workflow_id,
         phases=phases,
+        output_contract_refs=plan.workflow.output_contract_refs,
     )
 
 
@@ -167,7 +169,7 @@ class AgentAssembler:
             settings=self._settings, mcp_manager=self._mcp, script_executor=self._script
         )
         activation = await broker.activate(
-            plan=plan,
+            plan=plan.tool_plan(),
             skill_dir=skill_dir,
             workspace=workspace.root,
             session_id=session_id,
@@ -176,6 +178,35 @@ class AgentAssembler:
         if not activation.ok:
             raise ConfigError(f"必需 MCP 依赖不可用：{', '.join(activation.failed_required)}")
         return AssemblyResult(broker=broker, workspace=workspace, plan=plan)
+
+
+class _ToolGateRunner:
+    """GateRunnerPort 生产适配：把已激活的 gate_<id> 脚本工具接到 Contract 执行。"""
+
+    def __init__(self, tools: ToolRunnerPort) -> None:
+        self._tools = tools
+
+    def _find_gate_name(self, gate_id: str) -> str | None:
+        suffix = f".script.gate_{gate_id}"
+        for spec in self._tools.exposed_tools():
+            if spec.function.name.endswith(suffix):
+                return spec.function.name
+        return None
+
+    async def run_gate(self, *, gate_id: str, data: dict[str, object]) -> ToolResult:
+        name = self._find_gate_name(gate_id)
+        if name is None:
+            return ToolResult(
+                call_id=f"gate_{gate_id}",
+                tool_name=f"gate_{gate_id}",
+                ok=False,
+                message=f"门禁脚本未装配：gate_{gate_id}",
+                suggestion="在 SKILL.md gates 中为该门禁声明 validator 后再运行",
+            )
+        results = await self._tools.execute(
+            [ToolCallRequest(call_id=f"gate_{gate_id}", tool_name=name, arguments=data)]
+        )
+        return results[0]
 
 
 async def run_skill_workflow(
@@ -218,6 +249,7 @@ async def run_skill_workflow(
     runner = WorkflowRunner(
         executors=registry,
         max_repair_attempts=request.budget.limits.max_repair_attempts,
+        gate_runner=_ToolGateRunner(tools),
     )
     result = await runner.run(
         definition,
@@ -226,6 +258,7 @@ async def run_skill_workflow(
         budget=request.budget,
         allowed_tools=request.allowed_tools,
         context_summary=request.context_summary,
+        context_messages=request.context_messages,
         system_prompt=request.system_prompt,
         thinking_enabled=request.thinking_enabled,
         thinking_budget=request.thinking_budget,

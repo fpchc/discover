@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.capabilities.tools.broker import ToolCallRequest, ToolResult
-from app.capabilities.tools.descriptor import ToolDescriptor, ToolSource
 from app.config.settings import SideEffectType
+from app.environment.context.models import ArtifactRef
+from app.environment.tools.broker import ToolCallRequest, ToolResult
+from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.events.run_events import RunEvent, ToolCallCompleted, ToolCallStarted
 from app.harness.execution.pipeline import (
     BrokerPort,
@@ -21,7 +22,6 @@ from app.harness.execution.pipeline import (
     side_effect_class,
 )
 from app.harness.models import BudgetLimits, BudgetState, ProgressState
-from app.interfaces.schemas.files import ArtifactRecord
 from app.shared.errors.base import ErrorCategory
 
 
@@ -56,15 +56,11 @@ class _FakeCheckpoint:
 
 
 class _FakeArtifacts:
-    """产物登记桩：按请求生成 ArtifactRecord。"""
+    """产物登记桩：按请求生成环境侧产物引用。"""
 
-    async def register(
-        self, *, source_path: Path, filename: str, created_by: str
-    ) -> ArtifactRecord:
+    async def register(self, *, source_path: Path, filename: str, created_by: str) -> ArtifactRef:
         del source_path, created_by
-        return ArtifactRecord(
-            artifact_id=f"art-{filename}", filename=filename, media_type="text/plain", size_bytes=1
-        )
+        return ArtifactRef(artifact_id=f"art-{filename}", name=filename, media_type="text/plain")
 
 
 class _Recorder:

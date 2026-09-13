@@ -6,9 +6,9 @@ import pytest
 import yaml
 from app.config.loader import MCPRegistry, MCPServer, MCSCapability
 from app.config.settings import Settings
-from app.domain.skill.hot_reload import HotReloader
-from app.domain.skill.loader import AgentRegistrySnapshot
-from app.domain.skill.registry import AgentRegistry
+from app.harness.skill.hot_reload import HotReloader
+from app.harness.skill.loader import AgentRegistrySnapshot
+from app.harness.skill.registry import AgentRegistry
 from app.shared.errors.base import RegistryValidationError
 
 
@@ -147,7 +147,7 @@ async def test_relative_agents_root_resolved_absolute(
     """回归：相对 agents_root（生产默认 Path("agents")）须归一为绝对路径。
 
     否则 skill_dir / 脚本宿主路径保持相对，脚本 subprocess cwd=工作区时会把
-    相对路径按工作区解析而找不到（实测 dedup_manager "No such file"）。
+    相对路径按工作区解析而找不到（脚本 subprocess cwd=工作区）。
     """
     _write_agent(tmp_path / "agents")
     monkeypatch.chdir(tmp_path)

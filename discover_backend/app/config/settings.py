@@ -252,7 +252,7 @@ class Settings(BaseSettings):
     log_file_backup_count: int = 14
     # 是否 gzip 压缩轮转出的旧文件
     log_compress: bool = True
-    # 模块级日志级别覆盖：{logger 名: 级别}，如 {"app.capabilities.tools.broker": "DEBUG"}
+    # 模块级日志级别覆盖：{logger 名: 级别}，如 {"app.infrastructure.tools.broker": "DEBUG"}
     log_module_levels: dict[str, str] = {}
 
     # ---- redis 插件 ----

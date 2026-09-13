@@ -1,7 +1,7 @@
 """ORM 模型（持久化载体）。
 
 设计：Blob Engine 模式——文件字节流入存储层（storage/），业务元数据
-100% 入库（upload_files）；去重历史入 dedup_clues；对话历史入
+100% 入库（upload_files）；对话历史入
 conversations（会话头）+ messages（回合明细）。ORM 与 pydantic DTO
 分离（CLAUDE.md §3），跨边界传递用 DTO，持久化用 ORM。
 
@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base, local_now
@@ -157,25 +157,3 @@ class UploadFileRecord(Base):
     used: Mapped[bool] = mapped_column(default=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
-
-
-class DedupClue(Base):
-    """推荐历史线索（去重历史持久化，按账号隔离）。
-
-    组合主键 (created_by, clue_id)：不同账号同日同产品可生成相同 clue_id 而不冲突；
-    去重逻辑只注入当前账号的线索（load_history(account_id)）。
-    """
-
-    __tablename__ = "dedup_clues"
-
-    # 先声明 created_by，主键列序即 (created_by, clue_id)；存本地账号 uuid 文本
-    created_by: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
-    clue_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    product_keywords: Mapped[list[str]] = mapped_column(JSONB)
-    target_industry: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
-    report_path: Mapped[str] = mapped_column(Text, default="")
-    recommendations: Mapped[list[dict[str, object]]] = mapped_column(JSONB)
-    excluded_companies: Mapped[list[dict[str, object]]] = mapped_column(JSONB)
-    total_found: Mapped[int] = mapped_column(default=0)
-    remaining_pool: Mapped[int] = mapped_column(default=0)

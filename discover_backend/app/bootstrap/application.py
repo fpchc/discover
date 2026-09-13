@@ -13,7 +13,8 @@ from types import TracebackType
 
 from fastapi import FastAPI
 
-from app.bootstrap.container import AppServices
+from app.application.services import AppServices
+from app.bootstrap.container import start_services, stop_services
 from app.bootstrap.extensions import initialize_extensions
 from app.config.settings import Settings
 from app.interfaces.http import (
@@ -23,6 +24,7 @@ from app.interfaces.http import (
     conversations_router,
     files_router,
 )
+from app.interfaces.http.auth_guard import verify_route_guards
 from app.interfaces.middleware import ExceptionHandlingMiddleware, RequestLoggingMiddleware
 
 
@@ -34,7 +36,7 @@ class AppLifespan:
         self._app = app
 
     async def __aenter__(self) -> None:
-        await self._services.startup(self._app)
+        await start_services(self._services, self._app)
 
     async def __aexit__(
         self,
@@ -42,7 +44,7 @@ class AppLifespan:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self._services.shutdown(self._app)
+        await stop_services(self._services, self._app)
 
 
 def _make_lifespan(services: AppServices) -> Callable[[FastAPI], AppLifespan]:
@@ -56,11 +58,11 @@ def _make_lifespan(services: AppServices) -> Callable[[FastAPI], AppLifespan]:
 
 def _register_routes(app: FastAPI) -> None:
     prefix = "/api/v1"
-    app.include_router(auth_router, prefix=prefix)
-    app.include_router(chat_router, prefix=prefix)
-    app.include_router(files_router, prefix=prefix)
-    app.include_router(conversations_router, prefix=prefix)
-    app.include_router(assistants_router, prefix=prefix)
+    routers = (auth_router, chat_router, files_router, conversations_router, assistants_router)
+    # 登录声明校验：漏标 / 标记与鉴权依赖不一致 → 启动即失败（不静默放行）
+    verify_route_guards(routers)
+    for router in routers:
+        app.include_router(router, prefix=prefix)
 
 
 def _register_middleware(app: FastAPI, settings: Settings) -> None:

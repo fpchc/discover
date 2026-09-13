@@ -19,15 +19,17 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.bootstrap.container import AppServices, get_services
-from app.interfaces.http.deps import get_current_account_id
-from app.interfaces.schemas.files import FileResponse, UploadConfig
+from app.application.dto.files import FileResponse, UploadConfig
+from app.application.services import AppServices
+from app.interfaces.http.auth_guard import LoginRoute, login_required, public
+from app.interfaces.http.deps import get_current_account_id, get_services
 from app.shared.errors.base import BadRequestError
 
-router = APIRouter(prefix="/files", tags=["storage"])
+router = APIRouter(prefix="/files", tags=["storage"], route_class=LoginRoute)
 
 
 @router.get("/upload")
+@public(reason="前端本地校验用上传限制，纯阈值无用户数据")
 async def upload_config(services: AppServices = Depends(get_services)) -> UploadConfig:
     """获取上传限制配置（供前端约束输入）。"""
     settings = services.settings
@@ -41,6 +43,7 @@ async def upload_config(services: AppServices = Depends(get_services)) -> Upload
 
 
 @router.post("/upload")
+@login_required
 async def upload_file(
     file: UploadFile,
     account_id: str = Depends(get_current_account_id),
@@ -61,6 +64,7 @@ async def upload_file(
 
 
 @router.get("/{file_id}/preview")
+@public(reason="历史行为：预览直链由前端 <img>/<a> 访问，无法携带 Authorization 头")
 async def preview_file(
     file_id: str,
     services: AppServices = Depends(get_services),

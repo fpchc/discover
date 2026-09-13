@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.harness.models import ProgressState
-from app.harness.react.progress import (
+from app.harness.progress import (
     action_fingerprint,
     evaluate_progress,
     observation_fingerprint,

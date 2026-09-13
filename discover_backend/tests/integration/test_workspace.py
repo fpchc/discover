@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from app.config.settings import Settings
-from app.domain.workspace.service import WorkspaceManager
+from app.environment.workspace.service import WorkspaceManager
 from app.shared.errors.base import SessionError
 
 

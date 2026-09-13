@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from app.capabilities.llm.stream_parser import ToolCall
-from app.harness.react.decision import (
+from app.harness.decision import (
     AgentDecisionType,
     parse_decision,
 )
+from app.llm.stream_parser import ToolCall
 
 
 def _call(name: str, *, arguments: str = "{}", call_id: str = "c1") -> ToolCall:

@@ -1,26 +1,12 @@
-"""业务域：agent 注册 / 助手选择 / 会话 / 工作区 / 文件 / 认证。
+"""DDD 领域层：只承载业务（CRUD）侧的领域词汇与端口。
 
-对外只暴露显式入口（CLAUDE.md §13.1）；跨边界 DTO 走 interfaces.schemas，
-持久化实现走 infrastructure。
+Agent System 的三根核心边界不在这里——见顶层 `app/llm/`（L）、
+`app/harness/`（H）、`app/environment/`（E）。本层只保留业务承载：
+会话（conversation）、文件（file）、身份（identity）。
+
+**零框架、零 I/O**：不 import FastAPI / SQLAlchemy / httpx / redis / anyio，
+不直接访问数据库、存储、子进程或外部 HTTP。具体实现由 `infrastructure`
+提供，用例编排由 `application` 提供，组合根负责装配。
 """
 
-from app.domain.assistant.catalog import AssistantCatalog
-from app.domain.auth.security import JwtService, PasswordHasher
-from app.domain.auth.service import AuthService
-from app.domain.conversation.service import ConversationService
-from app.domain.file.service import FileService, file_preview_path
-from app.domain.skill.registry import AgentRegistry
-from app.domain.workspace.service import Workspace, WorkspaceManager
-
-__all__ = [
-    "AgentRegistry",
-    "AssistantCatalog",
-    "AuthService",
-    "ConversationService",
-    "FileService",
-    "JwtService",
-    "PasswordHasher",
-    "Workspace",
-    "WorkspaceManager",
-    "file_preview_path",
-]
+__all__: list[str] = []

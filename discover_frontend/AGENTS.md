@@ -36,7 +36,7 @@
 | **react-router** | 页面路由唯一实现（纯客户端 BrowserRouter，CLAUDE.md 第 1 节）；五条页面路由，URL 为页面导航唯一事实源，禁止再造非路由的页面状态切换（如旧 view/centerTab） |
 | **axios** | 普通 HTTP（blocking 模式）唯一出口，统一实例在 `src/lib/api.ts` |
 | **fetch + ReadableStream** | SSE 唯一实现方式。`POST` 无法用 `EventSource`，禁止 `EventSource` |
-| **react-markdown + remark-gfm + rehype-highlight** | Markdown 渲染唯一实现；默认不渲染原始 HTML（安全收敛，见第 6 节） |
+| **react-markdown + remark-gfm + remark-breaks + rehype-highlight** | Markdown 渲染唯一实现；默认不渲染原始 HTML（安全收敛，见第 6 节）；`remark-breaks` 把单换行软回车渲染为 `<br>`（适配 AI 报告字段分行） |
 | **DOMPurify** | 任何 `dangerouslySetInnerHTML` 边界必须经它清洗（渲染红线见第 6 节） |
 | **sonner** | toast 唯一实现（替代旧 ElMessage） |
 | **lucide-react** | 图标唯一来源（替代旧手写 SVG） |

@@ -7,11 +7,10 @@ react 执行器复用 BoundedReAct 子图；render 执行器关闭工具，仅�
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Protocol
 
-from app.capabilities.llm.models import ChatMessage, ChatRequest
-from app.capabilities.llm.stream_parser import TextChunk, ThinkingChunk, UsageChunk
 from app.harness.events.run_events import LLMUsageUpdated
 from app.harness.models import (
     BudgetUsage,
@@ -19,13 +18,12 @@ from app.harness.models import (
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
 )
-from app.harness.react.executor import (
-    BoundedReActExecutor,
-    EventSinkPort,
-    LLMRunnerPort,
-    ReactGraphState,
-)
+from app.harness.react.executor import BoundedReActExecutor
+from app.harness.react.ports import EventSinkPort, LLMRunnerPort
+from app.harness.react.state import ReactGraphState
 from app.harness.workflow.definition import PhaseDefinition, PhaseExecutorType
+from app.llm.chunks import TextChunk, ThinkingChunk, UsageChunk
+from app.llm.models import ChatMessage, ChatRequest
 
 
 class PhaseExecutor(Protocol):
@@ -91,6 +89,11 @@ class RenderPhaseExecutor:
         user_goal = request.phase_input.get("user_goal")
         if user_goal:
             user_parts.append(f"用户目标：{user_goal}")
+        bound_inputs = {
+            key: value for key, value in request.phase_input.items() if key != "user_goal"
+        }
+        if bound_inputs:
+            user_parts.append(f"阶段数据：\n{json.dumps(bound_inputs, ensure_ascii=False)}")
         if request.context_summary:
             user_parts.append(f"已采集信息：\n{request.context_summary}")
         user_parts.append(f"任务：{request.phase_goal}")

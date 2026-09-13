@@ -6,6 +6,6 @@
 
 from app.infrastructure.database.base import Base, local_now
 from app.infrastructure.database.engine import Database
-from app.infrastructure.database.models import Account, DedupClue, UploadFileRecord
+from app.infrastructure.database.models import Account, UploadFileRecord
 
-__all__ = ["Account", "Base", "Database", "DedupClue", "UploadFileRecord", "local_now"]
+__all__ = ["Account", "Base", "Database", "UploadFileRecord", "local_now"]

@@ -81,10 +81,10 @@ def test_builtin_order_logging_first_redis_enabled() -> None:
     names = [ext.__name__ for ext in app.state.enabled_extensions]
     assert names == [
         "app.infrastructure.database.accessors",
-        "app.infrastructure.storage.accessors",
+        "app.environment.storage.accessors",
         "app.infrastructure.redis.client",
-        "app.capabilities.mcp.accessors",
-        "app.capabilities.llm.accessors",
+        "app.environment.mcp.accessors",
+        "app.llm.accessors",
     ]
 
 

@@ -2,7 +2,7 @@
 
 覆盖：
 - discover 智能体包加载与装配（真实 agents/ 目录 + 真实 MCP 注册表）
-- 脚本 stdin/stdout 契约（score_calculator / dedup_manager / render_report --check-only
+- 脚本 stdin/stdout 契约（score_calculator / render_report --check-only
   与 gate_render_valid）
 - 报告渲染（jinja2 可用时全量渲染到工作区 output/）
 - 真实注册表 + 假 LLM/MCP 的两级路由端到端（无需密钥）
@@ -21,22 +21,13 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from app.capabilities.llm.stream_parser import (
-    FinishChunk,
-    SemanticChunk,
-    ToolCall,
-    ToolCallsChunk,
-)
-from app.capabilities.mcp.client import MCPCallResult, MCPToolInfo
-from app.capabilities.tools.script_executor import ScriptExecution
 from app.config.loader import (
     load_mcp_servers,
 )
 from app.config.settings import Settings
-from app.domain.assistant.models import AssistantTarget, TargetType
-from app.domain.skill.loader import _find_absolute_path_literals
-from app.domain.skill.registry import AgentRegistry
-from app.domain.workspace.service import WorkspaceManager
+from app.environment.mcp.client import MCPCallResult, MCPToolInfo
+from app.environment.tools.script_executor import ScriptExecution
+from app.environment.workspace.service import WorkspaceManager
 from app.harness.agent_runner import AgentAssembler, build_agent_budget, run_agent_turn
 from app.harness.events.run_events import (
     LLMCallStarted,
@@ -47,7 +38,16 @@ from app.harness.models import (
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
 )
+from app.harness.skill.loader import _find_absolute_path_literals
+from app.harness.skill.registry import AgentRegistry
+from app.harness.targets import AssistantTarget, TargetType
 from app.harness.wiring import ToolRunner
+from app.llm.stream_parser import (
+    FinishChunk,
+    SemanticChunk,
+    ToolCall,
+    ToolCallsChunk,
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AGENTS_DIR = ROOT / "agents"
@@ -203,42 +203,6 @@ def test_score_calculator_red_flag_excludes() -> None:
     data = json.loads(result.stdout)
     assert data["rankings"] == []
     assert data["excluded"][0]["excluded_reason"] == "失信被执行人"
-
-
-def test_dedup_manager_contract() -> None:
-    empty_history = {"version": "1.0", "product_clues": []}
-    add = {
-        "history": empty_history,
-        "mode": "add",
-        "clue_data": {
-            "product_keywords": ["高速背板连接器"],
-            "target_industry": "数据中心交换机",
-            "recommendations": [
-                {"company_name": "锐捷网络股份有限公司", "uscc": "X", "status": "已推荐"}
-            ],
-        },
-    }
-    added = _run_script(
-        SCRIPTS_DIR / "dedup_manager.py", stdin_data=json.dumps(add, ensure_ascii=False)
-    )
-    assert added.returncode == 0
-    add_data = json.loads(added.stdout)
-    assert add_data["success"] is True
-    clue = add_data["_upsert"]
-    assert clue["clue_id"]
-    exclude = {
-        "history": {"version": "1.0", "product_clues": [clue]},
-        "mode": "exclude",
-        "product_keywords": ["高速背板连接器"],
-        "target_industry": "数据中心交换机",
-    }
-    excluded = _run_script(
-        SCRIPTS_DIR / "dedup_manager.py",
-        stdin_data=json.dumps(exclude, ensure_ascii=False),
-    )
-    data = json.loads(excluded.stdout)
-    assert data["matched"] is True
-    assert data["all_excluded"][0]["company_name"] == "锐捷网络股份有限公司"
 
 
 def test_render_check_only_and_gate_validator(tmp_path: Path) -> None:

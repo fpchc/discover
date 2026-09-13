@@ -1,7 +1,7 @@
 """单元测试：stop 接口的取消链路。
 
 覆盖设计评审中的关键风险点：
-- 跨任务 task.cancel() 能真实中断承载 `_run_turn_events` 的任务（task 边界确认）；
+- 跨任务 task.cancel() 能真实中断承载 `run_turn_events` 的任务（task 边界确认）；
 - 预启动窗口（register 后、生成器未消费前）stop 仍生效；
 - 归属校验 404 / idle / stopping 的响应语义。
 
@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import anyio
 import pytest
-from app.capabilities.llm.stream_parser import TextChunk
+from app.application.dto.conversations import ConversationSession, MessageStatus
 from app.harness.checkpoint.memory import (
     MemoryEventLog,
     MemoryRunLease,
@@ -22,9 +22,9 @@ from app.harness.checkpoint.memory import (
 )
 from app.harness.service import RunService
 from app.harness.turn import ActiveTurn, ActiveTurnRegistry
-from app.interfaces.http.chat import _stream_sse, stop_chat_message
+from app.interfaces.http.chat import stop_chat_message, stream_sse
 from app.interfaces.schemas import ChatStopResponse
-from app.interfaces.schemas.conversations import ConversationSession, MessageStatus
+from app.llm.stream_parser import TextChunk
 from app.shared.errors.base import NotFoundError
 
 _CONVERSATION_ID = "conv-stop-1"
@@ -100,7 +100,7 @@ def _services() -> SimpleNamespace:
         active_turns=ActiveTurnRegistry(),
         llm=_FakeLLMClient(),
         providers=_FakeProviders(),
-        _resolve_api_key=lambda provider: "test-key",
+        resolve_api_key=lambda provider: "test-key",
         run_service=RunService(
             snapshots=MemorySnapshotStore(),
             events=MemoryEventLog(),
@@ -181,9 +181,7 @@ async def test_stop_cross_task_cancels_running_turn() -> None:
     frames: list[str] = []
 
     async def consume() -> None:
-        async for frame in _stream_sse(
-            services, "查询", _session(), _MESSAGE_ID, _CREATED_AT, turn
-        ):
+        async for frame in stream_sse(services, "查询", _session(), _MESSAGE_ID, _CREATED_AT, turn):
             frames.append(frame)
 
     task = asyncio.create_task(consume())
@@ -222,9 +220,7 @@ async def test_stop_before_stream_start_persists_interrupted() -> None:
 
     frames: list[str] = []
     with pytest.raises(asyncio.CancelledError):
-        async for frame in _stream_sse(
-            services, "查询", _session(), _MESSAGE_ID, _CREATED_AT, turn
-        ):
+        async for frame in stream_sse(services, "查询", _session(), _MESSAGE_ID, _CREATED_AT, turn):
             frames.append(frame)
     assert frames == []
 

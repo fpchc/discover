@@ -1,7 +1,7 @@
 """扩展加载器（bootstrap）：有序加载 + 统一生命周期（模块式可插拔扩展模式）。
 
-本模块只做「组装」：EXTENSIONS 元组引用各能力的访问器模块（实现已归位
-infrastructure / capabilities）。新增扩展：写访问器模块 + 在本元组按序追加。
+本模块只做「组装」：EXTENSIONS 元组引用各能力的访问器模块（实现全部沉在
+infrastructure）。新增扩展：写访问器模块 + 在本元组按序追加。
 active_settings / set_active_settings 见 app.config.settings。
 """
 
@@ -11,13 +11,13 @@ from typing import Protocol, cast
 
 from fastapi import FastAPI
 
-from app.capabilities.llm import accessors as ext_llm
-from app.capabilities.mcp import accessors as ext_mcp
 from app.config.settings import Settings, get_settings, set_active_settings
+from app.environment.mcp import accessors as ext_mcp
+from app.environment.storage import accessors as ext_storage
 from app.infrastructure.database import accessors as ext_database
 from app.infrastructure.logging import accessors as ext_logging
 from app.infrastructure.redis import client as ext_redis
-from app.infrastructure.storage import accessors as ext_storage
+from app.llm import accessors as ext_llm
 
 
 class Extension(Protocol):

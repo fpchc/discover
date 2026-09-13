@@ -8,16 +8,20 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 
-from app.capabilities.llm.models import ChatToolSpec, ToolFunction
-from app.capabilities.llm.stream_parser import SemanticChunk, ToolCall, ToolCallsChunk
-from app.capabilities.tools.broker import ToolCallRequest, ToolResult
-from app.capabilities.tools.descriptor import ToolDescriptor, ToolSource
+from app.environment.tools.broker import ToolCallRequest, ToolResult
+from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.events.run_events import RunEvent
 from app.harness.models import BudgetLimits, BudgetState
 from app.harness.react.executor import BoundedReActExecutor
 from app.harness.workflow.compiler import WorkflowRunner
-from app.harness.workflow.definition import PhaseDefinition, PhaseExecutorType, WorkflowDefinition
+from app.harness.workflow.definition import (
+    PhaseDefinition,
+    PhaseExecutorType,
+    WorkflowDefinition,
+)
 from app.harness.workflow.executors import PhaseExecutorRegistry, ReactPhaseExecutor
+from app.llm.models import ChatToolSpec, ToolFunction
+from app.llm.stream_parser import SemanticChunk, ToolCall, ToolCallsChunk
 
 
 class _FakeLLM:
@@ -244,10 +248,10 @@ async def test_workflow_falls_back_to_render_with_context() -> None:
 
 async def test_render_phase_executor_streams_text_without_tools() -> None:
     """render 阶段关闭工具，只流式产出正文。"""
-    from app.capabilities.llm.models import ChatRequest
-    from app.capabilities.llm.stream_parser import TextChunk, UsageChunk
     from app.harness.models import PhaseExecutionRequest
     from app.harness.workflow.executors import RenderPhaseExecutor
+    from app.llm.models import ChatRequest
+    from app.llm.stream_parser import TextChunk, UsageChunk
 
     captured_request: ChatRequest | None = None
 
@@ -287,9 +291,9 @@ async def test_render_phase_executor_streams_text_without_tools() -> None:
 
 async def test_run_skill_workflow_research_then_render() -> None:
     """端到端：research 阶段用满 LLM 调用预算后，Harness 强制 fallback 到 render 并产出正文。"""
-    from app.capabilities.llm.stream_parser import TextChunk, UsageChunk
     from app.harness.agent_runner import run_skill_workflow
     from app.harness.models import PhaseExecutionRequest
+    from app.llm.stream_parser import TextChunk, UsageChunk
 
     def respond(call_index: int) -> list[SemanticChunk]:
         if call_index == 0:
@@ -332,3 +336,163 @@ async def test_run_skill_workflow_research_then_render() -> None:
     )
     assert outcome is not None
     assert outcome.answer == "最终答案"
+
+
+async def test_workflow_output_contract_repairs_render() -> None:
+    """render 产出后确定性执行输出门禁；首次失败触发一次修复后重跑。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    gate_calls: list[str] = []
+
+    class _GateRunner:
+        async def run_gate(self, *, gate_id: str, data: dict[str, object]) -> ToolResult:
+            del gate_id
+            gate_calls.append(str(data.get("answer", "")))
+            if len(gate_calls) == 1:
+                return ToolResult(
+                    call_id="g",
+                    tool_name="gate_final_qa",
+                    ok=False,
+                    message='{"passed": false, "errors": ["第 1 张卡过短"]}',
+                    suggestion="修复",
+                )
+            return ToolResult(call_id="g", tool_name="gate_final_qa", ok=True, content="通过")
+
+    render_calls: list[int] = []
+
+    class _Render:
+        async def execute(self, definition: object, request: object) -> object:
+            del definition, request
+            render_calls.append(1)
+            answer = "第一版" if len(render_calls) == 1 else "修复版"
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.FINAL_PROPOSED,
+                answer=answer,
+                reason_code="render_completed",
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.RENDER: _Render()}),
+        max_repair_attempts=1,
+        gate_runner=_GateRunner(),
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-gate",
+        phases=[PhaseDefinition(phase_id="render", executor_type=PhaseExecutorType.RENDER)],
+        output_contract_refs=["final_qa"],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.final_outcome is not None
+    assert result.final_outcome.answer == "修复版"
+    assert gate_calls == ["第一版", "修复版"]
+    assert render_calls == [1, 1]
+
+
+async def test_workflow_output_contract_exhausts_repairs() -> None:
+    """门禁持续失败时受 max_repair_attempts 有界约束，不无限返工。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    class _AlwaysFailGate:
+        async def run_gate(self, *, gate_id: str, data: dict[str, object]) -> ToolResult:
+            del gate_id, data
+            return ToolResult(
+                call_id="g",
+                tool_name="gate_final_qa",
+                ok=False,
+                message='{"passed": false, "errors": ["超限"]}',
+                suggestion="修复",
+            )
+
+    render_calls: list[int] = []
+
+    class _Render:
+        async def execute(self, definition: object, request: object) -> object:
+            del definition, request
+            render_calls.append(1)
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.FINAL_PROPOSED,
+                answer=f"第{len(render_calls)}版",
+                reason_code="render_completed",
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.RENDER: _Render()}),
+        max_repair_attempts=1,
+        gate_runner=_AlwaysFailGate(),
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-gate-fail",
+        phases=[PhaseDefinition(phase_id="render", executor_type=PhaseExecutorType.RENDER)],
+        output_contract_refs=["final_qa"],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.reason_code == "output_contract_failed:final_qa"
+    assert render_calls == [1, 1]
+    assert result.final_outcome is not None
+    assert result.final_outcome.answer == "第2版"
+
+
+async def test_workflow_output_contract_receives_bound_input() -> None:
+    """输出契约上下文须同时携带最终正文与本阶段绑定的结构化输入。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    received: list[dict[str, object]] = []
+
+    class _GateRunner:
+        async def run_gate(self, *, gate_id: str, data: dict[str, object]) -> ToolResult:
+            del gate_id
+            received.append(dict(data))
+            return ToolResult(
+                call_id="g", tool_name="gate_report_structure", ok=True, content="通过"
+            )
+
+    class _Research:
+        async def execute(self, definition: object, request: object) -> object:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                candidate_output={"report": {"composite_score": 9.5}},
+                reason_code="candidate_completed",
+            )
+
+    class _Render:
+        async def execute(self, definition: object, request: object) -> object:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.FINAL_PROPOSED,
+                answer="报告正文",
+                reason_code="render_completed",
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry(
+            {
+                PhaseExecutorType.REACT: _Research(),
+                PhaseExecutorType.RENDER: _Render(),
+            }
+        ),
+        max_repair_attempts=1,
+        gate_runner=_GateRunner(),
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-bound",
+        phases=[
+            PhaseDefinition(phase_id="research", executor_type=PhaseExecutorType.REACT),
+            PhaseDefinition(
+                phase_id="render",
+                executor_type=PhaseExecutorType.RENDER,
+                input_bindings={"research.report": "report"},
+            ),
+        ],
+        output_contract_refs=["report_structure"],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.final_outcome is not None
+    assert result.final_outcome.answer == "报告正文"
+    assert received == [{"answer": "报告正文", "report": {"composite_score": 9.5}}]

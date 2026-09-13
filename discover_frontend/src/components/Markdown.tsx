@@ -10,6 +10,7 @@ import xml from 'highlight.js/lib/languages/xml'
 import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 
 // 按需注册语言，控制包体；新增语言在数组追加即可
@@ -115,7 +116,7 @@ export function Markdown({ content, streaming = false }: MarkdownProps) {
 
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
         {content}
       </ReactMarkdown>
     </div>

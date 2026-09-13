@@ -274,3 +274,11 @@ RunEventUnion = Annotated[
 ]
 
 run_event_adapter: TypeAdapter[RunEventUnion] = TypeAdapter(RunEventUnion)
+
+# 终态事件契约（§17.1）：SSE 不得通过「队列为空」猜测结束，一律看事件类型。
+TERMINAL_EVENT_TYPES: frozenset[str] = frozenset({"run_completed", "run_failed", "run_cancelled"})
+
+
+def is_terminal(event: RunEvent) -> bool:
+    """终态事件判断（领域契约）：HTTP 层据此结束流，生命周期据此释放会话锁。"""
+    return event.type in TERMINAL_EVENT_TYPES

@@ -13,6 +13,7 @@ from typing import Annotated
 
 import httpx
 import pytest
+from app.application.dto.auth import AccountRecord, UserType
 from app.interfaces.schemas import (
     ChatMessageResponse,
     ErrorStreamEvent,
@@ -23,7 +24,6 @@ from app.interfaces.schemas import (
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
-from app.interfaces.schemas.auth import AccountRecord, UserType
 from pydantic import Field, TypeAdapter
 
 _LOCAL_BASE_URL = "http://127.0.0.1:9101"

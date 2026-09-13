@@ -21,9 +21,16 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from app.bootstrap.container import AppServices, get_services
-from app.interfaces.schemas.auth import AccountRecord
+from app.application.dto.auth import AccountRecord
+from app.application.services import AppServices
 from app.shared.errors.base import ForbiddenError, UnauthorizedError
+
+
+def get_services(request: Request) -> AppServices:
+    """FastAPI 依赖：取应用级服务容器（组合根在 lifespan 中挂到 app.state）。"""
+    services = request.app.state.services
+    assert isinstance(services, AppServices)
+    return services
 
 
 def _bearer_token(request: Request) -> str:

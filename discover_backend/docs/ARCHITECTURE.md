@@ -14,44 +14,60 @@
 > 宿主 subprocess 本地直跑，Docker 不再是前置条件。持久化已入 PostgreSQL
 > （SQLAlchemy async + Alembic）；对话历史落库（conversations 会话头 + messages
 > 回合明细，usage 含缓存 token 聚合）；产物/文件走 Blob Engine（字节入存储层、
-> 元数据入库，upload_files 为多消费方共享注册表）；去重历史入 `dedup_clues` 表
-> （脚本纯计算）；技能包三级结构 `agents/{agent}/{skill}`（无 skills/ 壳与 shared/），
+> 元数据入库，upload_files 为多消费方共享注册表）；技能包三级结构 `agents/{agent}/{skill}`（无 skills/ 壳与 shared/），
 > 工作区 `workspaces/{agent}` 按 agent 键控、跨会话共享。全套测试 179 通过
 > （2 跳过：本地 8000 真服务用例）。随代码演进持续同步；一次性任务报告不写入本文件。
 
 ## 分层与依赖方向
 
-依赖只能自上而下，禁止反向 import。2026-09-02 按「业务核心分层 + 基础设施下沉」
-重构（替代原 L0–L5 技术横切分层，见「关键设计决策」目录分层行）：
+**核心边界是 `LLM + Harness + Environment = Agent System`，三根支柱是顶层一等包；
+DDD（`domain` / `application` / `infrastructure`）只承载业务 CRUD。** 禁止反向 import
+（2026-09-12 定稿；见「关键设计决策」核心边界行）：
 
 ```
-bootstrap/                组合根：application.py（工厂）/ container.py（DI）/ extensions.py
-                          （扩展加载器：EXTENSIONS 元组 + 启停，只组装不实现；active_settings 在 config/settings）
-interfaces/               对外接入：http/（FastAPI 路由 + deps）、schemas/（DTO + SSE 帧）、
+llm/                      L —— 模型接入：models/chunks（请求与分片词汇）+ client/providers/
+                          stream_parser/errors/usage/accessors（提供方协议适配）
+harness/                  H —— 驱动循环：models（Run/Phase/Budget/Progress/Termination）
+                          + decision/progress + policy/ + contracts/ + react/ + graph.py
+                          + execution/pipeline.py + workflow/ + resolver/ + skill/（AGENT.md /
+                          SKILL.md 技能包：清单/加载/索引/装配/注册表/热重载）+ targets.py
+                          （助手目标词汇）+ service.py（RunService）+ turn.py（并发回合句柄）
+                          + events/（run_events + emitter）+ checkpoint/ + wiring.py
+environment/              E —— 智能体可感知/可操作的世界：tools/（描述符 + ToolBroker +
+                          脚本宿主）、mcp/、context/（上下文平面：模型/端口/装配/投影）、
+                          workspace/、storage/（BaseStorage + local/s3）、memory/（去重历史）
+domain/ + application/ + infrastructure/   DDD：只承载业务 CRUD
+                          domain/（identity 词汇与端口、conversation/file 域词汇）、
+                          application/（chat 用例、conversation、file、identity、assistant
+                          目录、dto、services.py 容器）、infrastructure/（database、redis、
+                          crypto、sso、logging —— 共享技术底座）
+interfaces/               对外接入：http/（FastAPI 路由 + deps + 登录声明）、sse/frames.py
+                          （RunEvent → SSE 帧）、schemas/（仅 HTTP 请求/响应 + SSE 帧模型）、
                           middleware/（全局异常 + 请求日志）
-domain/                   业务域：skill/（Skill Pack 注册域：manifest 模型 + definition 聚合 +
-                          loader/index/assemble/hot_reload/registry/contract）、assistant/（选择模型 + 目录）、
-                          conversation/（会话历史）、workspace/、file/、auth/
-harness/                  Agent 执行内核（V2）：models.py（Run/Phase/Step 状态模型）、graph.py
-                          （Bounded ReAct 子图拓扑 + 条件边）、react/（决策/执行器/进展判定）、
-                          policy/（LLM 前后确定性约束）、contracts/（阶段完成判定）、checkpoint/
-                          （内存快照 + Run 租约）、workflow/（多阶段编排）、execution/pipeline.py
-                          （工具运行时管线）、agent_runner.py（技能包装配 + run_agent_turn）、
-                          service.py（RunService 生命周期）、events/（run_events.py RunEvent +
-                          emitter.py QueueEmitter）、resolver/（assistant/skill 解析）、turn.py
-                          （回合并发协调）、wiring.py（生产适配器）
-capabilities/             Runtime 可调用的能力：llm/、tools/（broker/descriptor/script_executor/history）、mcp/
-infrastructure/           外部技术实现：database/（SQLAlchemy/ORM/PostgreSQL）、redis/
-                          （客户端 + Cache/Lock）、storage/（BaseStorage 抽象 + local/s3 后端）、
-                          logging/（日志内核）
+bootstrap/                组合根：application.py（工厂 + 路由/中间件挂载 + lifespan）、
+                          container.py（服务容器构造 + 启停顺序，唯一装配点）、extensions.py
+                          （扩展加载器：EXTENSIONS 元组 + 启停，只组装不实现）
 config/ + shared/         跨层共享：config/（Settings + 注册表 yaml）、shared/errors/（领域异常）、
                           shared/utils/（脱敏 / grapheme 切分）
 ```
 
-依赖方向：interfaces → domain/harness/capabilities → infrastructure → shared/config；bootstrap 组装全部，
-不承载业务逻辑。harness 不直接认识 MCP 与脚本：只向 `ToolBroker`（capabilities/tools）要工具列表，
-向 agent 注册表要装配上下文。图中无任何智能体名 / 技能名 / 工具名字面量——唯一耦合面是
-`AGENT.md` / `SKILL.md` 清单。
+依赖方向（`H = L + E` 单向，三支柱不反向依赖业务）：
+
+| 层 | 允许依赖 |
+|---|---|
+| `llm` | llm / config / shared |
+| `environment` | environment / llm / infrastructure / config / shared |
+| `harness` | harness / llm / environment / config / shared |
+| `application` | application / domain / llm / harness / environment / infrastructure / config / shared |
+| `domain` | domain / config / shared（零框架、零 I/O） |
+| `infrastructure` | infrastructure / domain / config / shared（共享技术底座） |
+| `interfaces` | 除 bootstrap 外全部 |
+| `bootstrap` | 全部 |
+
+跨支柱契约固定为 **harness → environment 单向**：工具激活所需的形状由环境声明
+（`environment/tools/plan.py` 的 `ToolActivationPlan`），技能装配层负责投影
+（`AssemblyPlan.tool_plan()`），环境因此不认识技能清单。方向由
+`tests/unit/test_layering.py` 用 AST 断言守卫（含 domain 不得 import 框架与 I/O 库）。
 图中无任何智能体名 / 技能名 / 工具名字面量——唯一耦合面是 `AGENT.md` / `SKILL.md` 清单。
 
 ## 关键设计决策
@@ -63,12 +79,12 @@ config/ + shared/         跨层共享：config/（Settings + 注册表 yaml）�
 | 助手选择 | 用户**显式选择**（`GET /assistants` 目录 + `chat-messages.agent_id`），非 LLM 路由；会话绑定 `assistant_target(type+id)`；图节点 `resolve_assistant`（读会话绑定）→ `resolve_skill`（SkillResolver 确定性策略链）；未绑定走通用对话 | 用户决策 2026-08，graph-runtime-spec §4 |
 | 助手类型体系 | 目录聚合专家（`agents/` 包，`kind: agent` + `type: expert`，类 Claude Code）；通用对话（`generic` 保留字）为未绑定默认，**不列入目录**；简单技能属未来 `kind: skill`，**非 agent 类型** | 用户决策 2026-08 |
 | 技能耦合面 | 唯一耦合面是 `AGENT.md` / `SKILL.md` frontmatter | agent-package-spec |
-| 技能包运行时对齐 | AGENT/SKILL 正文只声明语义；禁止硬编码 `<server>.<tool>`，AGENT 正文不出现保留控制工具，SKILL 正文必须声明 submit_final_answer/complete_phase；`app/domain/skill/contract.py` 告警 + 单测约束 | agent-package-spec §7 |
+| 技能包运行时对齐 | AGENT/SKILL 正文只声明语义；禁止硬编码 `<server>.<tool>`，AGENT 正文不出现保留控制工具，SKILL 正文必须声明 submit_final_answer/complete_phase；`app/harness/skill/contract.py` 告警 + 单测约束 | agent-package-spec §7 |
 | 工具命名空间 | MCP = `server.tool`；脚本 = `agent.skill.script.name`；元工具无前缀 | tool-broker-spec |
 | 工具暴露 | 三级：Tier0 元工具 / Tier1 核心 / Tier2 懒加载 | tool-broker-spec |
 | 搜索 MCP 自建 | 腾讯 yuanbao 托管 MCP 已弃（不稳定）。**两个独立本地自建 MCP 服务，职责单一不混装**（CLAUDE.md §13.1），统一收拢在 `local_mcp/` 聚合包下：`local_mcp/tencent_mcp/`（腾讯 WSA SearchPro，`python -m local_mcp.tencent_mcp.main`，`127.0.0.1:10001/mcp`，工具 `web_search_tencent`，`TENCENT_MCP_TOKEN` 鉴权）+ `local_mcp/eastmoney_mcp/`（东财 JSONP 资讯，`python -m local_mcp.eastmoney_mcp.main`，`127.0.0.1:10002/mcp`，工具 `web_search_eastmoney`，`EASTMONEY_MCP_TOKEN` 鉴权，按 IP 限流 1s）。web_search 用 `strategy: all` 挂 alibaba_search + tencent_mcp；financial_data 用 `strategy: failover` 挂 tushare_mcp + eastmoney_mcp（东方财富本地备源）。平台侧纯 MCP 客户端一行不改 | 用户决策 2026-08-31（集中到 local_mcp/ 2026-09-01），mcp-integration-spec §2.1/§3.1 |
 | 脚本执行 | **P1 宿主 subprocess 直跑**（`sys.executable`，cwd=工作区，不做容器隔离）；脚本内禁止绝对路径字面量；对外开放脚本编辑后再评估轻量沙箱 | 用户决策 2026-08，script-sandbox-spec |
-| 脚本路径归一 | `agents_root_dir` 在 `AgentRegistry` 归一为绝对路径（`Path.resolve()`）——技能目录 / 脚本宿主路径 / `SKILL_ROOT_DIR` 一律绝对；否则 subprocess cwd=工作区会把相对脚本路径按工作区解析而找不到（实测：dedup_manager "No such file or directory"） | 实测修复 2026-08-24 |
+| 脚本路径归一 | `agents_root_dir` 在 `AgentRegistry` 归一为绝对路径（`Path.resolve()`）——技能目录 / 脚本宿主路径 / `SKILL_ROOT_DIR` 一律绝对；否则 subprocess cwd=工作区会把相对脚本路径按工作区解析而找不到 | 实测修复 2026-08-24 |
 | 脚本入参契约 | 平台一律经 stdin 传 JSON，脚本须从 stdin 读入参；声明 `schema_path` 让模型可见正确参数约束。缺省 schema 只有 `input` 字段，多字段脚本（dedup/render/gate）必须补 schema，否则参数与脚本实际读取字段错位（实测：报告管线全部 `执行失败`） | 实测修复 2026-08-23 |
 | 报告数据闭环 | AI 无写文件工具，报告 JSON 只能经 stdin 到达脚本；`render_report` 入参 **`data` 内联必填**（schema 移除 `input` 路径选项），渲染时把数据落盘 `output/report.json`；`gate_render_pass` 经 `report_json` 引用该落盘文件（`GateDeclaration.schema_path` 挂载校验器入参约束） | 实测修复 2026-08-23 |
 | 报告校验分级 | `render_report` 收窄阻断为「clients 非空数组 + 无 Jinja 残留 + 无 CSS 泄露」，字段齐全/密度/工具名泄漏降级为警告（消除打地鼠循环）；字段清单以 `schemas/report_schema.json` 为单一事实来源，校验器/参考文档/模板注释三者不再各自维护一份（此前 market_size/position 新旧格式、data_date/score/rank 三处漂移） | 用户决策 2026-08-24 |
@@ -80,19 +96,19 @@ config/ + shared/         跨层共享：config/（Settings + 注册表 yaml）�
 | 公司统一登录（elecnest SSO） | 与手机号+密码并列的登录来源：`POST /auth/login/elecnest`（body `{token, uid}`）→ `ElecnestSSOClient` 调 `ELECNEST_GET_USER_INFO_URL`（默认 `https://id.elecnest.cn/api/login/getUserInfo`，`GET token+uid`）换用户资料（昵称缺失回退用户名，`data` 为空即 401）→ `AuthService.login_with_elecnest` 按 `elecnest_uid` **find-or-create** 账号并标 `user_type=elecnest` → 签发令牌对。`accounts` 加 `elecnest_uid`（对方主键 uid 的字符串，唯一索引）+ `user_type`（默认 password）；`httpx.AsyncClient` 由容器注入（DIP，CLAUDE.md §13.2），开关默认开启（2026-08-29 由默认关闭改为默认开启），关闭时返回 400；既有账号不迁移保持 password | 用户决策 2026-08-29 |
 | 登录会话层（Redis 权威 + 刷新令牌） | 原本地登录（**兼容回退恢复可用**，2026-09-07）：登录签发「访问令牌（JWT）+ 刷新令牌（`secrets.token_urlsafe(32)` 不透明随机串）」写入 Redis 会话层（key `auth:access\|refresh:{sha256(token)}` = account_id，TTL 以 Redis 为准）。`AuthService.validate_session` 每请求校验 JWT + Redis 访问会话存在，key 缺失即 401；`POST /auth/refresh` 轮换制续期；`POST /auth/logout` 同时作废。受保护接口对本地令牌经 `AuthService.validate_session` 校验（deps 兼容解析）；本地令牌 JWT 寿命校验与 `AUTH_ACCESS_TOKEN_TTL_SECONDS` 同步（exp-iat 超出即拒，默认 7 天），平台令牌不施加本地 TTL。**Fail-closed**：任何 RedisError 一律转 401 | 用户决策 2026-08-29，2026-09-07 兼容回退恢复 |
 | **统一认证平台接入（2026-09-05）** | 登录令牌由平台签发，本项目**仅本地验签 + 登录映射**：① 令牌校验=**仅本地验签**（`JwtService.decode_platform_token`：HS256 + 共享密钥 `JWT_SECRET_KEY`=平台 APP_SECRET_KEY + exp + `aud`=`JWT_AUDIENCE`(默认 crm-backend) + `iss`=`JWT_ISSUER`(默认 crm-auth) + `type=access`，PyJWT `audience`/`issuer` 原生校验，无 Redis / 无网络）；② 用户标识=**恒为本地账号 uuid 文本**（`str(accounts.id)`；`from_account_id`/`created_by` 列保持存本地 uuid，varchar(64) 兼容历史行，平台 `user_id` 不写入数据列、无区分处理）；③ accounts 新增 `auth_user_id`（平台 user_id，唯一索引）作**登录映射键**（find-or-create 本地账号 `user_type=unified`，默认名「用户{user_id}」，`account_id` 对外恒为本地 uuid）；④ **兼容模式（2026-09-07）**：原本地登录端点（`/auth/login`、`/auth/login/elecnest`、`/auth/refresh`、`/auth/logout`、`/users/me/password`）恢复可用（兼容回退），本地令牌经 `resolve_current_account` 按 id 直查 + Redis 会话校验；⑤ `require_superuser`（is_system）过渡期占位，权限码体系留待另行方案。对接说明见 `docs/UNIFIED_AUTH.md` | 用户决策 2026-09-05；2026-09-07 修正：统一登录仅映射，保留原数据隔离结构（本地 uuid） |
-| 数据按账号隔离 | conversations.`from_account_id` + messages/upload_files/dedup_clues.`created_by`（varchar(36) 存 uuid 文本、无外键，平台惯例）；会话列表/消息/删除按账号过滤，跨账号 404；upload_files 预览**保持全局**（file_id 不可猜测）；dedup_clues 主键改 **(created_by, clue_id)** 按账号隔离，消除「两账号同日同产品生成相同 clue_id 互相覆盖」冲突；token 用量按 created_by **聚合 messages**（无汇总表，读时 SUM） | 用户决策 2026-08-28 |
+| 数据按账号隔离 | conversations.`from_account_id` + messages/upload_files.`created_by`（varchar(36) 存 uuid 文本、无外键，平台惯例）；会话列表/消息/删除按账号过滤，跨账号 404；upload_files 预览**保持全局**（file_id 不可猜测）token 用量按 created_by **聚合 messages**（无汇总表，读时 SUM） | 用户决策 2026-08-28 |
 | usage 防腐层 | `StreamParser` 把三种提供方缓存字段统一为平台标准（OpenAI `prompt_tokens_details.cached_tokens` / DeepSeek `prompt_cache_hit_tokens` / Anthropic `cache_read_input_tokens`+`cache_creation_input_tokens` → cached_read/cached_write）；`UsageAggregator` 回合聚合，Runner 各 LLM 调用点只调 `add()`，修复「后一次覆盖前一次」；LLMUsageUpdated 事件驱动携带聚合 usage，消费方（路由/未来计费）只监听事件 | 评审采纳 |
 | 文件系统 | `upload_files` 多消费方共享注册表（agent 产物 / 用户上传 / 知识库），**删 session/agent 强绑定**，`created_by_role` 宽松消费方标识，`used`/`used_at` 强制标注使用状态供清理；`/files` API：`GET /files/upload`（上传限制配置）、`POST /files/upload`（字节上传，校验大小+扩展名）、`GET /files/{file_id}/preview`（按 record id 流式 inline 预览，预览即标记 used）；`FileService`（register 磁盘产物 / upload 字节上传 / get_content_stream_by_id 预览） | 用户决策 2026-08 |
-| 去重历史 | 结构化状态入 PG `dedup_clues`，脚本改纯计算：平台注入 `history`、add 模式经 `_upsert` 回写（声明 `history_store: true`） | 用户决策 2026-08 |
+| 去重历史退役 | dedup_clues 表、DedupStore、脚本 `history_store` 契约整体移除：推荐去重已收敛进会话上下文，无需独立去重线索表 | 用户决策 2026-09-12 |
 | 目录结构 | 技能包三级 `agents/{agent}/{skill}`（去掉 skills/ 壳与 shared/）；工作区 `workspaces/{agent}` 按 agent 键控、跨会话共享，会话删除不再清工作区 | 用户决策 2026-08 |
 | 目录分层 | 业务服务统一收拢 `app/services/`（conversations/files/workspace/auth + auth_security/auth_provision），持久化仓库统一收拢 `app/repositories/`（dedup），跨边界 DTO 统一 `app/schemas/`，认证 FastAPI 依赖入 `app/api/deps.py`；删除散落的 feature 包（conversations/files/workspace/auth/dedup） | 用户决策 2026-08-28（**2026-09-02 已被目录重构取代**，见下行） |
-| 目录重构（2026-09-02） | 按「业务核心分层 + 基础设施下沉」整体迁移（非机械改名）：bootstrap（组合根：工厂/容器/扩展加载器）/ interfaces（http 路由 + schemas + middleware）/ domain（agent 注册域含技能聚合、assistant 选择域、conversation、workspace、file、auth）/ runtime（Agent 执行内核：engine/transition/turn/state/context/events）/ capabilities（llm/tools/mcp）/ infrastructure（database/storage/logging）/ config + shared（跨层共享）。关键裁决：agent 注册表（原 registry/）并入 `domain/agent/`（loader/manifests/assemble 同时处理 AGENT.md+SKILL.md，AgentPackage 为聚合体，不按 assistant/skill 拆）；删除 app/workspace/ 重复死代码与 repositories/kernel/catalog/protocol 空壳；DedupStore 归 capabilities/tools/history.py（唯一消费者 ToolBroker）；事件契约归 runtime/events/（emitter 产事件，interfaces/http 做 SSE 映射）；门面导出避免急切跨层 import（interfaces/、domain/assistant 空门面防 assemble⇄registry、interfaces.schemas⇄http 循环） | 用户决策 2026-09-02，实测验证：ruff/mypy 全绿、tests/unit 216 通过 |
+| 目录重构（2026-09-02） | 按「业务核心分层 + 基础设施下沉」整体迁移（非机械改名）：bootstrap（组合根：工厂/容器/扩展加载器）/ interfaces（http 路由 + schemas + middleware）/ domain（agent 注册域含技能聚合、assistant 选择域、conversation、workspace、file、auth）/ runtime（Agent 执行内核：engine/transition/turn/state/context/events）/ capabilities（llm/tools/mcp）/ infrastructure（database/storage/logging）/ config + shared（跨层共享）。关键裁决：agent 注册表（原 registry/）并入 `domain/agent/`（loader/manifests/assemble 同时处理 AGENT.md+SKILL.md，AgentPackage 为聚合体，不按 assistant/skill 拆）；删除 app/workspace/ 重复死代码与 repositories/kernel/catalog/protocol 空壳；事件契约归 runtime/events/（emitter 产事件，interfaces/http 做 SSE 映射）；门面导出避免急切跨层 import（interfaces/、domain/assistant 空门面防 assemble⇄registry、interfaces.schemas⇄http 循环） | 用户决策 2026-09-02，实测验证：ruff/mypy 全绿、tests/unit 216 通过 |
 | 目录重构二轮（2026-09-02） | 在首轮基础上对齐「Agent Runtime 一等公民」：① `domain/agent/` → `domain/skill/`（Skill Pack 域，manifest.py=frontmatter 模型 + definition.py=AgentPackage 聚合，loader 只负责加载）；② 解析器归 `runtime/resolver/`（assistant/skill，服务单轮解析，不构成独立业务体系）；③ **重建 runtime/execution/**（首轮曾删，用户二次要求，回滚）：action/observation 为 Action/Observation 词汇（类型别名 ToolCallRequest/ToolResult），executor.py=ToolExecutor 承接 engine.tool_node（分发+事件+门禁+产物登记），Engine 只做状态转移，为未来 SOP→ReAct 留位；④ bootstrap/extensions.py 摊平单文件（只组装），6 访问器归位（database/redis/storage/logging + capabilities/llm/mcp），新建 infrastructure/redis/client.py；⑤ storage 文件改名 base/local/s3/types、logging/kernel→logging；⑥ active_settings 归 config/settings（避免 infra→bootstrap 反向依赖）。既有裁决不推翻：conversation 保留 service.py（非 repository）、保留 domain/file/、runtime 不拆 engine+runner 双文件、auth 保留 service.py 门面（2026-09-04：V1 engine/transition/state/context 与 execution 词汇已随 V2 全量迁移删除） | 用户决策 2026-09-02，实测验证：ruff/mypy 全绿、tests/unit 219 通过（新增 ToolExecutor 单测） |
 | DB 连接地址 | 默认 URL 用 `127.0.0.1` 而非 `localhost`（Windows + Docker 下 localhost 先解析 IPv6 `::1`，回环转发超时 ~21s） | 实测修复 |
 | 门禁执行 | 有校验器的门禁注册为脚本工具 `…script.gate_<id>`，tool_node 写 gate_status | graph-runtime-spec §6 |
 | 审批 | 已整体移除：无审批节点 / 事件 / 接口 / 策略，工具调用直接执行 | 用户决策 2026-08 |
 | 对话输出 | chat-messages 契约：`POST /chat-messages`，`response_mode=streaming` 走 SSE（`event` 判别帧，message/message_end/thinking_started/thinking_delta/thinking_ended/ping/error，无 `[DONE]`），`blocking` 返回 JSON；typewriter 节流 + 有界队列背压；思考经 `thinking_*` 帧独立暴露（不进 `message.answer`），供前端渲染 DeepSeek 式思考分区 | 用户决策 2026-08 |
-| 停止对话 | `POST /chat-messages/{conversation_id}/stop`：路由层登记 ActiveTurn（`app/harness/active_turns.py`，早于响应返回覆盖「已创建未消费」窗口）；stop 经 **`asyncio.Task.cancel()`** 中断回合——与 uvicorn 客户端断连**同一取消原语**，统一落入 `except(GeneratorExit, CancelledError)` → interrupted 落库（partial 保留），规避跨任务 CancelScope 取消嵌套任务组的死锁风险（emitter/container 既有注释）。同会话并发二次发起 → **409**（底层 Runtime 非并发安全，`ActiveTurnRegistry.register` 原子拒绝不覆盖）；锁在**终态事件处理时即释放**（客户端收到 message_end 即可发起下一回合，收尾落库不占锁），陈旧句柄（任务已结束 / 未启动超过 `active_turn_ttl_seconds`）自动回收防泄漏。归属校验 `require_owned` 严格读 404；stopping 只承诺取消已请求，前端以 SSE 流关闭为准 | 评审采纳 2026-08-30，`task.cancel()` == 断连证明可用 |
+| 停止对话 | `POST /chat-messages/{conversation_id}/stop`：路由层登记 ActiveTurn（`app/application/chat/turn_registry.py`，早于响应返回覆盖「已创建未消费」窗口）；stop 经 **`asyncio.Task.cancel()`** 中断回合——与 uvicorn 客户端断连**同一取消原语**，统一落入 `except(GeneratorExit, CancelledError)` → interrupted 落库（partial 保留），规避跨任务 CancelScope 取消嵌套任务组的死锁风险（emitter/container 既有注释）。同会话并发二次发起 → **409**（底层 Runtime 非并发安全，`ActiveTurnRegistry.register` 原子拒绝不覆盖）；锁在**终态事件处理时即释放**（客户端收到 message_end 即可发起下一回合，收尾落库不占锁），陈旧句柄（任务已结束 / 未启动超过 `active_turn_ttl_seconds`）自动回收防泄漏。归属校验 `require_owned` 严格读 404；stopping 只承诺取消已请求，前端以 SSE 流关闭为准 | 评审采纳 2026-08-30，`task.cancel()` == 断连证明可用 |
 | emitter | 单协程 tick 循环（嵌套任务组在父作用域取消时本机 anyio/asyncio 会死锁，流尾挂起） | 实测修复 |
 | 后台热重载任务 | 单常驻协程 + CancelScope 宿主任务（`asyncio.create_task`），不用跨 startup/shutdown 常驻的 anyio task group：任务组跨任务退出报 cancel-scope 跨任务错误（pytest-asyncio 生成器 fixture setup/teardown 分任务），嵌套任务组宿主取消时死锁 | 实测修复 |
 | 配置 | `pydantic-settings` 唯一入口，无硬编码 URL/密钥/阈值；env 白名单透传 | CLAUDE.md §5 |
@@ -104,12 +120,20 @@ config/ + shared/         跨层共享：config/（Settings + 注册表 yaml）�
 | **chat 消息两段式落库 + 会话锁竞态修复（2026-09-07）** | `POST /chat-messages` 落库改两段式：用户提问先 `ConversationService.start_turn` 落一条 `MessageStatus.PROCESSING` 记录（仅 query，历史即时可见），回合结束 `record_turn` 更新同 message_id 的 thinking/answer/status/usage（行缺失兜底重建兼容旧调用）。会话锁（ActiveTurnRegistry）释放时机修复：`message_end` 帧发出前在终态事件处理处注销句柄（客户端收到结束即可发起下一回合，慢落库不再占锁）；`_stream_sse`/`_blocking` finally 先注销后兜底落库，落库异常不阻断注销；注册表自愈——`task.done()` 或未启动超 `active_turn_ttl_seconds`（配置，默认 120s）视为陈旧句柄直接覆盖，杜绝生成器未被消费/关闭导致的永久 409 泄漏锁。`record_turn` 会话行读带 FOR UPDATE 串行化并发落库的 `dialogue_count` 自增 | 用户决策 2026-09-07，实测验证：ruff/mypy 全绿、tests/unit 345 通过（1 环境性失败除外） |
 | **MCP 依赖修复（2026-09-08）** | ① 泛化分发工具（`call_tool`/`call_tools_batch`）仅在同服务存在具体工具可替代时剔除，tyc_mcp（天眼查，只暴露泛化工具）为唯一入口时保留进目录（Tier 2）；② 必需 MCP 依赖激活时做有界退避重试（`mcp_acquire_retry_attempts`/`mcp_acquire_retry_backoff_seconds`，默认 3 次/1.5s 逐次累加），重试耗尽仍不可用才拒绝激活；每轮重新装配，本地服务（如 tencent_mcp）恢复后下一轮自动接上 | 用户决策 2026-09-08，修复 tyc_mcp 完全不可用与 tencent_mcp 必需依赖一次性检查问题；实测验证：ruff 全绿、tests/unit 354 通过 |
 | **Skill Workflow 机器化接线（2026-09-11）** | 给 Skill 增加机器可读 `workflow`（阶段、executor、allowed_tools、fallback_phase），`AssemblyPlan` 透传；`chat_execution._run_agent_react` 有 workflow 时走 `run_skill_workflow`（`WorkflowRunner` + `ReactPhaseExecutor`/`RenderPhaseExecutor`），阶段间由 Harness 确定性推进，render 阶段关闭工具强制生成正文；无 workflow 的旧技能回落单阶段 `run_agent_turn`。`PhaseExecutionOutcome.context_payload` 承载研究阶段采集上下文，软预算/无进展经 `fallback_phase` 跳到 render，避免再出现「有思考、无正文」 | 用户决策 2026-09-11 |
+| **Agent 上下文平面首期落地（2026-09-11）** | 依据 `specs/agent-context-plane-spec.md` 首期范围：新增 `app/environment/context/`（`models.py` 结构化上下文模型 + `ports.py` 来源端口 + `assembler.py` ContextAssembler + `projector.py` ContextProjector）+ `app/application/context/adapters.py` 会话适配器，新增应用层胶水 `app/application/chat/turn_context.py`；`ConversationContextAdapter` 在组合根注入 ContextAssembler（`AppServices.context_assembler`）。**行为变化**：专家 ReAct 与通用对话两条路径统一经装配 + 投影产生 LLM 消息——`PhaseExecutionRequest.context_messages`（system + 历史 role + 独立 `role=user` 当前消息）非空时 `react_prepare` 直接采用，缺失时回落 `build_phase_system_prompt`（原 `_system_prompt` 抽出为模块函数）；`context_summary` 保留为兼容字段（仍由装配层摘要派生，供 render 阶段与回落路径使用）。**边界**：不改数据库表、不加 Alembic migration、不改对外响应格式；文件附件契约（`AttachmentContextPort` 已定义但未接线）、ContextDelta 应用链路、Checkpoint/恢复、role-based 消息持久化属后续阶段。**依赖方向**：interfaces → application/chat（装配/投影）+ llm（消息模型）；domain 核心不触达 DB/存储，具体来源经端口注入 | 用户决策 2026-09-11，agent-context-plane-spec §5/§11/§14 |
+| **路由登录声明显式化（2026-09-12）** | 依据 `specs/http-auth-spec.md`：新增 `app/interfaces/http/auth_guard.py`——`@login_required` / `@bearer_required` / `@public(reason=...)` 三个声明装饰器 + `LoginRoute`（`APIRoute` 子类，把标记翻译为 `Depends(get_current_account)` / `Depends(get_bearer_token)`）+ `verify_route_guards` 装配期校验。21 条 `/api/v1` 路由全部标注（13 受保护 / 1 仅 Bearer / 7 公开）；`app/bootstrap/application.py::_register_routes` 在 include 前校验，漏标、装饰器顺序写反、公开路由误挂鉴权 → 启动即失败。**为什么不是包装函数**：FastAPI 按端点签名做依赖注入，`functools.wraps` 包装后守卫拿不到 Request（实测 500），且包装层返回 Response 会绕开统一异常中间件；因此装饰器只打标记、执行交给依赖注入——鉴权实现与错误体仍是 `deps.py` 单一来源，FastAPI 依赖缓存保证同一请求只验签一次。**行为不变**：不新增/删除接口，公开路由清单保持原状（`/files/{file_id}/preview` 仍公开——直链预览无法携带 Authorization 头，归属校验与签名 URL 属后续阶段） | 用户决策 2026-09-12，http-auth-spec §1–§4 |
+
+| ~~四层重构（2026-09-12，同日晚被核心边界重构取代）~~ | 目录结构回归标准分层边界，`capabilities/`、`harness/` 全量解散：① 新增 `application/` 用例层（chat / conversation / file / workspace / identity / skill / agent / assistant / context / dto + `services.py` 容器）；② `harness/` 按性质三分——纯内核（状态模型 / 决策 / policy / contracts / workflow 定义 / events / checkpoint 协议）归 `domain/agent/`，编排（graph / react / pipeline / run_service / emitter / workflow 执行器 / resolver / agent_runner）归 `application/agent/`，适配器（wiring / checkpoint memory）归 `infrastructure/`；③ `capabilities/` 全量下沉 `infrastructure/`（llm / mcp / tools），端口词汇上提 `domain/llm/`、`domain/tools/`；④ `domain/auth` → `domain/identity`（词汇 + 端口），crypto 实现归 `infrastructure/crypto/`，Redis 会话实现归 `infrastructure/redis/session_store.py`，SSO 归 `infrastructure/sso/`；⑤ 跨边界 DTO 从 `interfaces/schemas/` 迁至 `application/dto/`，接入层只留 HTTP 请求/响应与 SSE 帧；⑥ `interfaces/http/{turn_context,chat_execution}.py` 迁至 `application/chat/`，回合生命周期（并发登记 / 终态释放锁 / 兜底落库）从路由抽出为 `application/chat/turn_lifecycle.py`，路由只做参数提取与帧编码；⑦ 删除死代码 `SSEEventSink`（harness → interfaces 反向依赖的最后来源）；⑧ 新增 `tests/unit/test_layering.py` 用 AST 断言分层方向与 domain 纯性。实测：`domain` 零跨层 import，`ruff` / `mypy`（除 2 处既有问题）/ `tests/unit` 全绿 | 用户决策 2026-09-12 |
+
+| **核心边界定稿：LLM + Harness + Environment（2026-09-12）** | 目录结构回归项目**核心边界**——`LLM + Harness + Environment = Agent System`，DDD 只承载业务 CRUD。① `app/llm/`（模型接入）、`app/harness/`（驱动）、`app/environment/`（工具 / MCP / 上下文 / 工作区 / 存储 / 记忆）成为顶层一等包；② 同日早先那版「把 harness/capabilities 拆进 DDD 四层」的做法被推翻：`harness/` 全量重建（模型 + decision/progress + policy/ + contracts/ + react/ + graph + execution/pipeline + workflow/ + resolver/ + service + turn + events/ + checkpoint/ + wiring），技能包归 `harness/skill/`（技能包定义 harness 行为），助手目标词汇归 `harness/targets.py`；③ 新增 `environment/tools/plan.py` 的 `ToolActivationPlan` 作为跨支柱契约，由 `AssemblyPlan.tool_plan()` 投影，**断开 harness ⇄ environment 双向依赖**（跨支柱只允许 harness → environment）；④ 上下文平面归 `environment/context/`，其业务侧适配器留在 `application/context/adapters.py`；⑤ `infrastructure/` 收敛为共享技术底座（database / redis / crypto / sso / logging），storage 归 environment、去重历史归 environment/memory；⑥ 保留此前正确部分：跨边界 DTO 在 `application/dto/`、接入层只做协议适配（`turn_context` / 回合生命周期在 `application/chat/`）、AST 边界守卫测试改写为三支柱矩阵。实测：三支柱零反向依赖、`domain` 零跨层 import、ruff/mypy 绿（除 2 处既有问题）、tests/unit 560 通过 | 用户决策 2026-09-12 |
 
 ## 技术债（演进方向）
 
 1. **messages 单行拍平**：query/answer/thinking 同行耦合「一问一答」范式；工具调用明细
    （ToolCalls/结果）不持久化。演进方向：role-based 消息流（message_id, conversation_id,
    role, content, parent_id）或事件溯源，以支持多 Agent 协作 / 系统主动触达 / 多工具分发。
+   （2026-09-11 部分缓解：运行时已按 role 装配上下文、消息语义不再被压平进 system prompt，
+   但历史仍从 query/answer 单行还原，角色级 message_id 与工具调用明细仍未持久化。）
 2. **SessionStore 纯内存态**：内存是会话流转的唯一事实来源，DB 仅为只读审计 —— 单机 P1
    妥协。演进方向：对齐 LangGraph Checkpointer / Redis 持久化，消除「双写/脑裂」并支持
    水平扩展（多 Pod 路由到新节点不丢状态）。

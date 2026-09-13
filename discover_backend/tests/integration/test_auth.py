@@ -23,19 +23,18 @@ import httpx
 import jwt
 import pytest
 import pytest_asyncio
-from app.capabilities.tools.history import DedupStore
+from app.application.conversation.service import ConversationService
+from app.application.dto.auth import AvatarConfig, LoginResponse, UserType
+from app.application.dto.conversations import TurnRecord, TurnUsage
+from app.application.file.service import FileService
+from app.application.identity.service import AuthService
 from app.config.settings import Settings
-from app.domain.auth.security import JwtService, PasswordHasher
-from app.domain.auth.service import AuthService
-from app.domain.auth.session import SessionStore
-from app.domain.auth.sso import ElecnestSSOClient
-from app.domain.conversation.service import ConversationService
-from app.domain.file.service import FileService
+from app.domain.identity.ports import SessionStore
+from app.environment.storage.local import LocalStorage
+from app.infrastructure.crypto.security import JwtService, PasswordHasher
 from app.infrastructure.database.engine import Database
 from app.infrastructure.database.models import Account, Message, UploadFileRecord
-from app.infrastructure.storage.local import LocalStorage
-from app.interfaces.schemas.auth import AvatarConfig, LoginResponse, UserType
-from app.interfaces.schemas.conversations import TurnRecord, TurnUsage
+from app.infrastructure.sso.elecnest import ElecnestSSOClient
 from app.shared.errors.base import BadRequestError, UnauthorizedError
 from sqlalchemy import select
 
@@ -654,39 +653,6 @@ async def test_change_password_short_new_password_rejected() -> None:
         await _service().change_password(
             account_id, old_password="old-pass-123", new_password="short"
         )
-
-
-# ---- dedup_clues 按账号隔离（组合主键） ----
-
-
-async def test_dedup_store_per_account_isolation() -> None:
-    store = DedupStore(_DATABASE)
-    account_a = str(uuid.uuid4())
-    account_b = str(uuid.uuid4())
-    clue = {
-        "clue_id": "高速背板连接器_20260828",
-        "product_keywords": ["高速背板连接器"],
-        "target_industry": "数据中心交换机",
-        "recommendations": [{"company_name": "A 公司", "status": "已推荐"}],
-        "excluded_companies": [],
-        "total_found": 1,
-        "remaining_pool": 0,
-    }
-    # 两账号同日同产品：相同 clue_id 互不覆盖（组合键）
-    await store.upsert_clue(
-        {**clue, "recommendations": [{"company_name": "A", "status": "已推荐"}]}, account_a
-    )
-    await store.upsert_clue(
-        {**clue, "recommendations": [{"company_name": "B", "status": "已推荐"}]}, account_b
-    )
-    history_a = await store.load_history(account_a)
-    history_b = await store.load_history(account_b)
-    assert len(history_a["product_clues"]) == 1
-    assert len(history_b["product_clues"]) == 1
-    rec_a = history_a["product_clues"][0]["recommendations"][0]["company_name"]
-    rec_b = history_b["product_clues"][0]["recommendations"][0]["company_name"]
-    assert rec_a == "A"
-    assert rec_b == "B"  # 相互独立，未被覆盖
 
 
 # ---- HTTP 原本地登录端点（兼容回退：恢复可用） ----

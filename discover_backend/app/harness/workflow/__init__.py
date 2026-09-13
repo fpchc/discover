@@ -1,9 +1,12 @@
-"""Workflow 体系：定义 / 编译 / 执行器注册表。"""
+"""Workflow：阶段定义模型 + 执行器注册表 + 顺序编排。"""
 
 from app.harness.workflow.compiler import PhaseRun, WorkflowRunner, WorkflowRunResult
-from app.harness.workflow.definition import PhaseDefinition, PhaseExecutorType, WorkflowDefinition
+from app.harness.workflow.definition import (
+    PhaseDefinition,
+    PhaseExecutorType,
+    WorkflowDefinition,
+)
 from app.harness.workflow.executors import (
-    PhaseExecutor,
     PhaseExecutorRegistry,
     ReactPhaseExecutor,
     RenderPhaseExecutor,
@@ -11,7 +14,6 @@ from app.harness.workflow.executors import (
 
 __all__ = [
     "PhaseDefinition",
-    "PhaseExecutor",
     "PhaseExecutorRegistry",
     "PhaseExecutorType",
     "PhaseRun",

@@ -5,7 +5,7 @@ import httpx
 import pytest
 from app.bootstrap.application import create_app
 from app.config.settings import Settings
-from app.domain.auth.security import JwtService
+from app.infrastructure.crypto.security import JwtService
 from sqlalchemy import text
 
 # 测试固定 JWT 密钥（≥32 字节，避免 pyjwt 弱密钥警告；与 _build_settings 对齐）

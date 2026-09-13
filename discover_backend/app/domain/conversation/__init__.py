@@ -1,5 +1,8 @@
-"""会话域：对话记录生命周期与历史（ConversationService 唯一入口）。"""
+"""会话域（domain/conversation）：对话与回合的领域词汇。
 
-from app.domain.conversation.service import ConversationService
+跨边界 DTO（ConversationSession / TurnRecord 等）在 `app/application/dto/`；
+用例编排（ConversationService / TurnRecorder）在 `app/application/conversation/`；
+持久化实现（ORM + 仓储）在 `app/infrastructure/database/`。
+"""
 
-__all__ = ["ConversationService"]
+__all__: list[str] = []

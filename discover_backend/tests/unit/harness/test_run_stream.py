@@ -17,11 +17,11 @@ from app.harness.events.run_events import (
     ToolCallStarted,
 )
 from app.harness.models import TerminationReason
-from app.interfaces.http.run_stream import (
+from app.interfaces.schemas.chat import ErrorStreamEvent, MessageEndEvent
+from app.interfaces.sse.frames import (
     is_terminal,
     map_run_event,
 )
-from app.interfaces.schemas.chat import ErrorStreamEvent, MessageEndEvent
 from app.shared.errors.base import ErrorCategory
 
 _CTX = {"message_id": "m1", "conversation_id": "c1", "created_at": 1000}

@@ -38,12 +38,6 @@ documents:
   - path: references/credit-period.json
     when: 需要参考完整账期评估示例输出（数据与报告结构、gate_report_valid 入参结构）时
 gates:
-  - id: redline_clear
-    condition: 5 条红线全未触发；任一触发则输出「阻断·现款现货/30%预付」，不进入评分
-    blocking: true
-  - id: score_valid
-    condition: 每客户 F/R/S 子分非空且 period_calculator 输出有效
-    blocking: false
   - id: report_structure
     condition: 报告章节完整、无占位符残留、评分与 period_calculator 输出一致
     validator: scripts/gate_report_valid.py
@@ -51,6 +45,8 @@ gates:
     blocking: true
 workflow:
   workflow_id: period-assessment
+  output_contract_refs:
+    - report_structure
   phases:
     - phase_id: research
       executor: react
@@ -61,6 +57,8 @@ workflow:
       executor: render
       goal: 基于采集与评分结果生成完整 Markdown 账期评估报告
       allowed_tools: []
+      input_bindings:
+        research.report: report
 ---
 # 账期评估工作流
 
@@ -73,9 +71,10 @@ workflow:
 3. 评分：按 `references/scoring-rules.md` 打 F/R/S 子分，调用 `period_calculator` 计算综合授信分、等级、建议账期与额度；红线触发即阻断。
 4. 报告交付：按 `references/period-rules.md`、`references/cross-validation-rules.md` 与 `references/adversarial-checklist.md` 组织并自检报告。
 
-## 最终提交契约
+## 阶段协作与最终提交契约
 
-- 完成后调用 `submit_final_answer`，`answer` 放完整 Markdown 报告正文。
-- 报告提交前调用 `gate_report_structure` 门禁脚本；失败按结构化错误修复后重跑。
+- research 阶段结束用 `complete_phase`，`output.report` 携带完整结构化报告（10 个 section 文案 + 评分字段），供 render 阶段确定性读取。
+- render 阶段由平台确定性收尾，基于该结构化报告生成完整 Markdown 账期评估报告，不调用工具。
+- render 完成后平台执行 `gate_report_structure` 门禁（章节齐全/无占位符/评分一致全部阻断级）；失败只修复一次后重跑。
 - 红线触发时报告结论为「阻断·现款现货/30%预付」，不进入评分。
 - 数据缺口显式标注「未检索到」或「数据不充分·取中性分」，不静默编造。

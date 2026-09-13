@@ -11,8 +11,9 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.harness.react.decision import AgentDecisionType
-from app.harness.react.executor import BoundedReActExecutor, ReactGraphState
+from app.harness.decision import AgentDecisionType
+from app.harness.react.executor import BoundedReActExecutor
+from app.harness.react.state import ReactGraphState
 
 
 def build_react_subgraph(

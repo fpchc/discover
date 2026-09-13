@@ -6,13 +6,17 @@ from pathlib import Path
 
 import httpx
 import pytest
-from app.capabilities.mcp.client import (
+from app.config.loader import MCPServer, MCPServerAuth
+from app.config.settings import Settings, SideEffectType
+from app.environment.mcp.client import (
     MCPCallResult,
     MCPClient,
     MCPToolInfo,
 )
-from app.capabilities.tools.broker import ToolBroker, ToolCallRequest, _coerce_nested_object_args
-from app.capabilities.tools.descriptor import (
+from app.environment.tools.broker import ToolBroker
+from app.environment.tools.broker_contracts import _coerce_nested_object_args
+from app.environment.tools.models import (
+    ToolCallRequest,
     ToolDescriptor,
     ToolSource,
     mcp_qualified_name,
@@ -20,17 +24,15 @@ from app.capabilities.tools.descriptor import (
     split_qualified_name,
     to_chat_tool_spec,
 )
-from app.capabilities.tools.script_executor import (
+from app.environment.tools.script_executor import (
     ENV_SKILL_ROOT_DIR,
     ENV_WORKSPACE_DIR,
     ScriptExecution,
     ScriptExecutor,
     _scan_workspace,
 )
-from app.config.loader import MCPServer, MCPServerAuth
-from app.config.settings import Settings, SideEffectType
-from app.domain.skill.assemble import AssemblyPlan, CapabilityPlan
-from app.domain.skill.manifest import ScriptDeclaration
+from app.harness.skill.assemble import AssemblyPlan, CapabilityPlan
+from app.harness.skill.manifest import ScriptDeclaration
 from app.shared.errors.base import (
     ErrorCategory,
     MCPAuthError,
@@ -460,7 +462,7 @@ async def test_activate_three_tiers(tmp_path: Path) -> None:
     manager = _FakeMCPManager(_MCP_TOOLS)
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -516,7 +518,7 @@ async def test_activate_capability_core_tools_exposed(tmp_path: Path) -> None:
     )
     broker = _broker(tmp_path, _FakeMCPManager(tools), _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -542,7 +544,7 @@ async def test_activate_hides_generic_mcp_dispatch_tools(tmp_path: Path) -> None
     plan = _plan().model_copy(update={"core_tool_names": ["search_companies"]})
     broker = _broker(tmp_path, _FakeMCPManager(tools), _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -569,7 +571,7 @@ async def test_activate_keeps_generic_dispatch_tools_when_only_tools(tmp_path: P
     plan = _plan().model_copy(update={"required_mcp_servers": ["tyc_mcp"]})
     broker = _broker(tmp_path, _FakeMCPManager(tools), _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -588,7 +590,7 @@ async def test_catalog_tool_names_excludes_unactivated_server(tmp_path: Path) ->
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     # 必填失败 → 激活失败，不应残留已激活目录项
     activation = await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -606,7 +608,7 @@ async def test_activate_required_failure_releases(tmp_path: Path) -> None:
     manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -623,7 +625,7 @@ async def test_activate_required_acquire_retries_then_succeeds(tmp_path: Path) -
     manager = _FakeMCPManager(_MCP_TOOLS, fail_until={"alibaba_search": 1})
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -642,7 +644,7 @@ async def test_activate_required_acquire_retries_exhausted(tmp_path: Path) -> No
     manager = _FakeMCPManager(_MCP_TOOLS, fail={"alibaba_search"})
     broker = _broker(tmp_path, manager, _FakeScriptExecutor())
     activation = await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -748,7 +750,7 @@ async def test_activate_capability_fallback_substitutes_search(tmp_path: Path) -
         env_whitelist=[],
     )
     activation = await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -789,7 +791,7 @@ async def test_activate_capability_fallback_all_fail_optional_continues(tmp_path
         env_whitelist=[],
     )
     activation = await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -807,7 +809,7 @@ async def test_execute_mcp_and_script_and_order(tmp_path: Path) -> None:
     script_executor = _FakeScriptExecutor()
     broker = _broker(tmp_path, manager, script_executor)
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -829,7 +831,7 @@ async def test_execute_unknown_tool_with_candidates(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -860,7 +862,7 @@ async def test_execute_delete_side_effect_runs_directly(tmp_path: Path) -> None:
     )
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), script_executor)
     await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -877,7 +879,7 @@ async def test_search_tools_no_params(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -972,7 +974,7 @@ async def test_describe_tool_expands_exposed(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -996,7 +998,7 @@ async def test_read_reference_traversal_rejected(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -1013,11 +1015,11 @@ async def test_read_reference_traversal_rejected(tmp_path: Path) -> None:
     assert results[0].error_category == ErrorCategory.INVALID_ARGUMENT
 
 
-async def test_read_reference_valid_and_dedup(tmp_path: Path) -> None:
+async def test_read_reference_valid(tmp_path: Path) -> None:
     skill_dir, workspace = _setup(tmp_path)
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor())
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -1044,7 +1046,7 @@ async def test_error_classification_with_suggestion(tmp_path: Path) -> None:
         update={"required_mcp_servers": ["alibaba_search"], "core_tool_names": ["boom"]}
     )
     await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -1069,7 +1071,7 @@ async def test_broker_degrades_mcp_server_on_payment_required(tmp_path: Path) ->
         update={"required_mcp_servers": ["alibaba_search"], "core_tool_names": ["paid"]}
     )
     await broker.activate(
-        plan=plan,
+        plan=plan.tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -1095,7 +1097,7 @@ async def test_script_produced_files_surfaced(tmp_path: Path) -> None:
     )
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor(produced))
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -1116,7 +1118,7 @@ async def test_script_failure_surfaces_stdout_error_json(tmp_path: Path) -> None
     )
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor(failed))
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",
@@ -1137,7 +1139,7 @@ async def test_script_failure_falls_back_to_stderr(tmp_path: Path) -> None:
     failed = ScriptExecution(exit_code=1, stdout="", stderr_tail="stderr 详情")
     broker = _broker(tmp_path, _FakeMCPManager(_MCP_TOOLS), _FakeScriptExecutor(failed))
     await broker.activate(
-        plan=_plan(),
+        plan=_plan().tool_plan(),
         skill_dir=skill_dir,
         workspace=workspace,
         session_id="s1",

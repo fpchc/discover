@@ -1,0 +1,421 @@
+"""会话历史服务（L0，ConversationService）：对话记录唯一入口。
+
+对话记录生命周期在此统一管理（CLAUDE.md §13 内聚）：
+- resolve：空串创建 conversations 行（归属账号 + 首查标题 + 助手绑定）并返回
+  ConversationSession；显式 conversation_id 校验归属（未知/跨账号/已删 → 404）
+  并按 agent_id 更新绑定。创建为 best-effort（DB 降级内部消化，舱壁），读取严格。
+- start_turn：用户提问先落一条 processing 记录（仅 query），供历史即时可见；
+  best-effort（DB 降级内部消化），回合结束由 record_turn 更新。
+- record_turn：回合结束把 thinking/answer/status/usage 更新进 start_turn 建的记录
+  （行缺失时兜底重建，兼容直接落库场景）。
+
+读取方法（list/get/delete/usage）不降级——读不到数据就该报错，经中间件走统一错误响应。
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+
+from sqlalchemy import distinct, func, select
+
+from app.application.assistant.catalog import AssistantCatalog
+from app.application.conversation.conversation_records import (
+    _accumulate_daily,
+    _conversation_title,
+    _conversation_to_record,
+    _daily_usage_window,
+    _fill_daily_items,
+    _message_to_record,
+    _target_agent_id,
+    _target_from_row,
+)
+from app.application.dto.conversations import (
+    ConversationRecord,
+    ConversationSession,
+    ConversationStatus,
+    DailyUsageItem,
+    MessageRecord,
+    TurnRecord,
+    TurnStartRecord,
+    UsageAggregate,
+)
+from app.config.settings import Settings
+from app.harness.targets import AssistantTarget
+from app.infrastructure.database.base import local_now
+from app.infrastructure.database.engine import Database
+from app.infrastructure.database.models import Conversation, Message
+from app.llm.models import ChatMessage
+from app.shared.errors.base import NotFoundError
+
+logger = logging.getLogger(__name__)
+
+
+class ConversationService:
+    """对话记录服务：生命周期（resolve）+ 历史落库/读取。"""
+
+    def __init__(self, db: Database, settings: Settings, catalog: AssistantCatalog) -> None:
+        self._db = db
+        self._name_max_chars = settings.conversation_name_max_chars
+        self._catalog = catalog
+
+    # ---- 对话记录生命周期 ----
+    async def resolve(
+        self,
+        *,
+        account_id: str,
+        conversation_id: str,
+        agent_id: str,
+        query: str,
+    ) -> ConversationSession:
+        """解析对话记录：空串创建（归属当前账号）；显式传入则校验存在与归属。
+
+        创建为 best-effort（DB 降级内部消化，舱壁，与 record_turn 一致）：写失败
+        仍返回有效 DTO；续聊读取严格——未知/跨账号/已软删 → 404（不泄露存在性）。
+        agent_id 为用户显式助手选择：非空 → 目录校验（未知 404）+ 更新绑定；
+        "generic"（保留字）→ 解除专家绑定走通用对话；空 → 沿用现有绑定。
+        """
+        target: AssistantTarget | None = None
+        if not conversation_id.strip():
+            conversation_id = uuid.uuid4().hex
+            if agent_id.strip():
+                target = self._catalog.resolve_target(agent_id)
+            try:
+                await self._create_conversation(
+                    conversation_id, account_id, _target_agent_id(target), query
+                )
+            except Exception as exc:
+                logger.warning("创建会话行失败（best-effort 忽略）：%s：%r", conversation_id, exc)
+        else:
+            conversation_id = conversation_id.strip()
+            row = await self._get_owned(account_id, conversation_id)
+            if agent_id.strip():
+                target = self._catalog.resolve_target(agent_id)
+                await self._update_binding(conversation_id, _target_agent_id(target))
+            else:
+                target = _target_from_row(row)
+        return ConversationSession(
+            conversation_id=conversation_id, account_id=account_id, assistant_target=target
+        )
+
+    async def _create_conversation(
+        self, conversation_id: str, account_id: str, agent_id: str | None, query: str
+    ) -> None:
+        """新建 conversations 行（标题取首查截断，绑定落 agent_id）。"""
+        async with self._db.session_factory() as session:
+            session.add(
+                Conversation(
+                    conversation_id=conversation_id,
+                    from_account_id=account_id,
+                    agent_id=agent_id,
+                    name=_conversation_title(query, self._name_max_chars),
+                    status=ConversationStatus.ACTIVE.value,
+                    dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
+                    is_delete=False,  # 同上：显式初始化软删除标记
+                )
+            )
+            await session.commit()
+
+    async def _get_owned(self, account_id: str, conversation_id: str) -> Conversation:
+        """按归属校验取会话行；未知/跨账号/已软删 → 404（不泄露存在性）。"""
+        async with self._db.session_factory() as session:
+            row = await session.get(Conversation, conversation_id)
+        if row is None or row.from_account_id != account_id or row.is_delete:
+            raise NotFoundError(f"未知会话：{conversation_id}")
+        return row
+
+    async def _update_binding(self, conversation_id: str, agent_id: str | None) -> None:
+        """更新会话行的助手绑定（切换同样走此方法）。"""
+        async with self._db.session_factory() as session:
+            row = await session.get(Conversation, conversation_id)
+            if row is not None:
+                row.agent_id = agent_id
+                row.updated_at = local_now()
+                await session.commit()
+
+    async def start_turn(self, conversation_id: str, start: TurnStartRecord) -> None:
+        """用户提问先落一条 processing 记录（仅 query），供历史即时可见。
+
+        与 resolve 同款 best-effort（DB 降级内部消化，舱壁）：写失败仅记日志，
+        不阻断回合；回合结束 record_turn 仍会兜底重建。会话行缺失时补建
+        （name 取 query 截断），并刷新 updated_at 使会话浮到列表顶部。
+        """
+        try:
+            async with self._db.session_factory() as session:
+                convo = await session.get(Conversation, conversation_id)
+                if convo is None:
+                    convo = Conversation(
+                        conversation_id=conversation_id,
+                        from_account_id=start.account_id,
+                        name=start.query[:64],
+                        status=ConversationStatus.ACTIVE.value,
+                        dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
+                        is_delete=False,  # 同上：显式初始化软删除标记
+                    )
+                    session.add(convo)
+                else:
+                    convo.updated_at = local_now()
+                if convo.agent_id is None and start.agent_id:
+                    convo.agent_id = start.agent_id
+                session.add(
+                    Message(
+                        message_id=start.message_id,
+                        conversation_id=conversation_id,
+                        created_by=start.account_id,
+                        agent_id=start.agent_id,
+                        query=start.query,
+                        status=start.status.value,
+                    )
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning("回合开始落库失败（best-effort 忽略）：%s：%r", conversation_id, exc)
+
+    async def record_turn(self, conversation_id: str, turn: TurnRecord) -> bool:
+        """回合结束落库：把 start_turn 建的 processing 记录更新为终态。
+
+        conversation 行由 resolve/start_turn 建好；此处行缺失为兜底重建（best-effort
+        场景下 start_turn 未落库），name 取 turn.conversation_name 或 query 截断。
+        conversation 读带 FOR UPDATE：回合锁在结束即释放（先注销后落库），同会话
+        新回合可能并发落库，串行化 dialogue_count 自增防丢。续聊保留原 name。
+        DB 故障仅记日志返回 False（舱壁），不阻断主流程。
+        """
+        try:
+            async with self._db.session_factory() as session:
+                convo = await session.get(Conversation, conversation_id, with_for_update=True)
+                if convo is None:
+                    convo = Conversation(
+                        conversation_id=conversation_id,
+                        from_account_id=turn.account_id,
+                        name=turn.conversation_name or turn.query[:64],
+                        status=ConversationStatus.ACTIVE.value,
+                        dialogue_count=0,  # default 是插入期默认，构造时需显式赋 0
+                        is_delete=False,  # 同上：显式初始化软删除标记
+                    )
+                    session.add(convo)
+                convo.dialogue_count += 1
+                convo.updated_at = local_now()
+                if convo.agent_id is None and turn.agent_id:
+                    convo.agent_id = turn.agent_id
+                if convo.model_provider is None and turn.provider:
+                    convo.model_provider = turn.provider
+                if convo.model_id is None and turn.model:
+                    convo.model_id = turn.model
+                msg = await session.get(Message, turn.message_id)
+                if msg is None:
+                    msg = Message(
+                        message_id=turn.message_id,
+                        conversation_id=conversation_id,
+                        created_by=turn.account_id,
+                        agent_id=turn.agent_id,
+                        provider=turn.provider,
+                        model=turn.model,
+                        query=turn.query,
+                        answer=turn.answer,
+                        thinking=turn.thinking,
+                        status=turn.status.value,
+                        error=turn.error,
+                        latency_ms=turn.latency_ms,
+                        prompt_tokens=turn.usage.prompt_tokens,
+                        completion_tokens=turn.usage.completion_tokens,
+                        total_tokens=turn.usage.total_tokens,
+                        cached_read_tokens=turn.usage.cached_read_tokens,
+                        cached_write_tokens=turn.usage.cached_write_tokens,
+                    )
+                    session.add(msg)
+                else:
+                    msg.answer = turn.answer
+                    msg.thinking = turn.thinking
+                    msg.status = turn.status.value
+                    msg.error = turn.error
+                    msg.latency_ms = turn.latency_ms
+                    msg.provider = turn.provider
+                    msg.model = turn.model
+                    msg.prompt_tokens = turn.usage.prompt_tokens
+                    msg.completion_tokens = turn.usage.completion_tokens
+                    msg.total_tokens = turn.usage.total_tokens
+                    msg.cached_read_tokens = turn.usage.cached_read_tokens
+                    msg.cached_write_tokens = turn.usage.cached_write_tokens
+                    msg.updated_at = local_now()
+                await session.commit()
+            return True
+        except Exception as exc:
+            # 预期降级（DB 未启动/不可达）：warning 即可，不必每回合刷堆栈
+            logger.warning("历史落库失败（best-effort 忽略）：%s：%r", conversation_id, exc)
+            return False
+
+    async def require_owned(self, account_id: str, conversation_id: str) -> None:
+        """只读归属校验：未知 / 跨账号 / 已软删 → 404（不泄露存在性）。
+
+        供 stop 等「只判断会话归属、不改会话」的接口使用，语义与
+        get_messages 的归属前置校验一致。
+        """
+        await self._get_owned(account_id, conversation_id)
+
+    async def list_conversations(
+        self, account_id: str, *, limit: int, offset: int
+    ) -> list[ConversationRecord]:
+        """分页列出当前账号会话（按 updated_at 倒序，跨账号隔离）。"""
+        async with self._db.session_factory() as session:
+            rows = (
+                await session.scalars(
+                    select(Conversation)
+                    .where(
+                        Conversation.from_account_id == account_id,
+                        Conversation.is_delete.is_(False),
+                    )
+                    .order_by(Conversation.updated_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            ).all()
+        return [_conversation_to_record(row) for row in rows]
+
+    async def get_messages(
+        self, account_id: str, conversation_id: str, *, limit: int, offset: int
+    ) -> list[MessageRecord]:
+        """分页列出会话消息（按 created_at 升序）。
+
+        先校验会话归属（from_account_id）；跨账号或不存在 → 404（不泄露存在性）。
+        """
+        async with self._db.session_factory() as session:
+            convo = await session.get(Conversation, conversation_id)
+            if convo is None or convo.from_account_id != account_id:
+                raise NotFoundError(f"未知会话：{conversation_id}")
+            rows = (
+                await session.scalars(
+                    select(Message)
+                    .where(Message.conversation_id == conversation_id)
+                    .order_by(Message.created_at.asc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            ).all()
+        return [_message_to_record(row) for row in rows]
+
+    async def get_history_messages(
+        self, account_id: str, conversation_id: str, *, limit: int
+    ) -> list[ChatMessage]:
+        """加载会话历史为模型上下文消息（会话记忆 L1）。
+
+        与 get_messages 同源：先校验会话归属（跨账号/不存在 → 404），再按
+        created_at 升序取**最近** limit 条（desc 取数后反转），还原为
+        user(query)/assistant(answer) 消息对；thinking 为审计内容不进模型上下文
+        （db/models.py 约定），错误回合 answer 为空则不产出 assistant 消息。
+        """
+        async with self._db.session_factory() as session:
+            convo = await session.get(Conversation, conversation_id)
+            if convo is None or convo.from_account_id != account_id:
+                raise NotFoundError(f"未知会话：{conversation_id}")
+            rows = (
+                await session.scalars(
+                    select(Message)
+                    .where(Message.conversation_id == conversation_id)
+                    .order_by(Message.created_at.desc())
+                    .limit(limit)
+                )
+            ).all()
+        messages: list[ChatMessage] = []
+        for row in reversed(rows):
+            if row.query:
+                messages.append(ChatMessage(role="user", content=row.query))
+            if row.answer:
+                messages.append(ChatMessage(role="assistant", content=row.answer))
+        return messages
+
+    async def soft_delete_conversation(self, account_id: str, conversation_id: str) -> bool:
+        """软删除会话：标记 is_delete=true（行与 messages 保留，token 可审计）。
+
+        业务状态 status 不被覆盖（可还原）；不存在、已删除或非本人账号 → False。
+        显式用户操作，DB 错误照常上抛（不降级）。
+        """
+        async with self._db.session_factory() as session:
+            convo = await session.get(Conversation, conversation_id)
+            if convo is None or convo.is_delete or convo.from_account_id != account_id:
+                return False
+            convo.is_delete = True
+            convo.updated_at = local_now()
+            await session.commit()
+        return True
+
+    # ---- 账号 token 用量聚合（按 messages.created_by） ----
+    async def aggregate_daily_usage(self, account_id: str, *, days: int) -> list[DailyUsageItem]:
+        """近 days 天逐日用量（口径同 aggregate_user_usage；按 GMT+8 自然日分组）。
+
+        返回 [今天 - days + 1, 今天] 每天一条、零填充、升序；窗口外消息不计。
+        """
+        start, lower, upper = _daily_usage_window(days)
+        async with self._db.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        Message.conversation_id,
+                        Message.prompt_tokens,
+                        Message.completion_tokens,
+                        Message.total_tokens,
+                        Message.cached_read_tokens,
+                        Message.cached_write_tokens,
+                        Message.created_at,
+                    )
+                    .where(Message.created_by == account_id)
+                    .where(Message.created_at >= lower)
+                    .where(Message.created_at < upper)
+                )
+            ).all()
+        return _fill_daily_items(_accumulate_daily(rows), start, days)
+
+    async def aggregate_user_usage(self, account_id: str) -> UsageAggregate:
+        """单账号用量：会话数（去重）+ 回合数 + token 合计（含缓存命中/写入）。"""
+        async with self._db.session_factory() as session:
+            row = (
+                await session.execute(
+                    select(
+                        func.count(distinct(Message.conversation_id)),
+                        func.count(Message.message_id),
+                        func.coalesce(func.sum(Message.prompt_tokens), 0),
+                        func.coalesce(func.sum(Message.completion_tokens), 0),
+                        func.coalesce(func.sum(Message.total_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_read_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_write_tokens), 0),
+                    ).where(Message.created_by == account_id)
+                )
+            ).one()
+        return UsageAggregate(
+            conversation_count=row[0],
+            message_count=row[1],
+            prompt_tokens=row[2],
+            completion_tokens=row[3],
+            total_tokens=row[4],
+            cached_read_tokens=row[5],
+            cached_write_tokens=row[6],
+        )
+
+    async def usage_by_account(self) -> dict[str, UsageAggregate]:
+        """全部账号用量（超级用户接口）：按 created_by 分组聚合。"""
+        async with self._db.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        Message.created_by,
+                        func.count(distinct(Message.conversation_id)),
+                        func.count(Message.message_id),
+                        func.coalesce(func.sum(Message.prompt_tokens), 0),
+                        func.coalesce(func.sum(Message.completion_tokens), 0),
+                        func.coalesce(func.sum(Message.total_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_read_tokens), 0),
+                        func.coalesce(func.sum(Message.cached_write_tokens), 0),
+                    ).group_by(Message.created_by)
+                )
+            ).all()
+        result: dict[str, UsageAggregate] = {}
+        for row in rows:
+            result[row[0]] = UsageAggregate(
+                conversation_count=row[1],
+                message_count=row[2],
+                prompt_tokens=row[3],
+                completion_tokens=row[4],
+                total_tokens=row[5],
+                cached_read_tokens=row[6],
+                cached_write_tokens=row[7],
+            )
+        return result

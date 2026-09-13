@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 
-from app.capabilities.tools.descriptor import ToolDescriptor
+from app.environment.tools.models import ToolDescriptor
 from app.harness.models import ActionRecord, ProgressState
 from app.harness.policy.models import PolicyDecision, PolicyDecisionType
-from app.harness.react.progress import action_fingerprint
+from app.harness.progress import action_fingerprint
 
 
 def check_action(

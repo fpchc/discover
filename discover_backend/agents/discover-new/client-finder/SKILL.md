@@ -1,6 +1,6 @@
 ---
 skill_id: client-finder
-version: "3.4"
+version: "3.5"
 description: 客户调研——为销售调研潜在客户信息，候选池评分后推荐最优一家，输出 450~550 字信息卡
 scope:
   applies: 销售调研客户信息、从候选池推荐最优客户、售前情报收集时
@@ -36,9 +36,6 @@ gates:
   - id: candidate_pool
     condition: 候选池 ≥ 3 家（不足向用户说明并继续）
     blocking: false
-  - id: score_valid
-    condition: 每客户 8 维子分均非 0 且 score_calculator 输出有效（含 trace）
-    blocking: false
   - id: final_qa
     condition: Final QA（单企 2 问 / 候选池 4 问）通过
     validator: scripts/gate_final_qa.py
@@ -46,6 +43,8 @@ gates:
     blocking: true
 workflow:
   workflow_id: client-finder
+  output_contract_refs:
+    - final_qa
   phases:
     - phase_id: research
       executor: react
@@ -56,6 +55,8 @@ workflow:
       executor: render
       goal: 基于已采集信息生成 450~550 字信息卡正文
       allowed_tools: []
+      input_bindings:
+        research.card_data: card_data
 ---
 # 客户调研工作流
 
@@ -74,9 +75,10 @@ workflow:
 - 官网 / 电话 / 邮箱缺失直接标「未检索到」，不额外补搜。
 - 候选池仅对 top3 一次性评分；缺数据维度取中性分，不为评分补搜。
 
-## 最终提交契约
+## 阶段协作与最终提交契约
 
-- 完成后调用 `submit_final_answer`，`answer` 只放信息卡正文。
+- research 阶段结束用 `complete_phase`，`output.card_data` 携带已采集/评分结果：单企为字段对象，多企为「每家一个对象」的数组，供 render 阶段确定性读取。
+- render 阶段由平台确定性收尾，生成 450~550 字信息卡正文，不调用工具。
 - 多企输入时逐卡拼接，每张卡独立满足 450~550 字。
-- 最终提交前调用 `gate_final_qa` 门禁脚本一次；失败只修复一次后重新提交。
+- render 完成后平台执行 `gate_final_qa` 门禁（排版/字数/泄露全部阻断级）；失败只修复一次后重跑。
 - 可见 answer 不得出现候选池对比、评分明细、排除理由、Final QA 过程、工具名 / 脚本名 / 文档名 / 门禁名 / 能力名。

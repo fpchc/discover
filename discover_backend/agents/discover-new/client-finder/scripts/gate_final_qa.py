@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Final QA 门禁校验器（gate_final_qa）：输出泄露（阻断）+ 排版/长度（警告）。
+"""Final QA 门禁校验器（gate_final_qa）：输出泄露 + 排版/长度/逐卡字数（阻断）。
 
 契约：stdin 一次写入 UTF-8 JSON，stdout 输出 UTF-8 JSON，非 0 退出码 = 未通过。
 入参：{"answer": "<信息卡正文>"}
@@ -7,14 +7,14 @@
 
 阻断级：answer 出现内部机制名（工具 / 脚本 / 文档 / 门禁 / 能力名）→ 泄露，判失败。
 
-警告级：
+阻断级：
 - 排版结构（card-format.md 禁例「整段纯散文」）：行首 `**` 加粗小标签行 < 2 行 →
-  字段未逐条成行，仅提示不阻断（避免模型陷入重写死循环）。
-- 总长低于 450 字（不足一张卡）；某段（空行分隔块）超过 550 字（疑似多卡挤一段/单卡超限）。
-- 行内出现 --- 分隔符（前端会当字面文本显示；卡间分隔应空行或独立成行 ---）。
+  字段未逐条成行，视为排版不合格。
+- 每张卡（按独立成行的 --- 分隔）450~550 字；低于/超过均判失败。
+- 行内出现 --- 分隔符（前端会当字面文本显示；卡间分隔必须用独立成行 ---）。
 
-用途：模型在输出信息卡前调用本门禁，校验可见 answer 不暴露技能内部信息 / 思考内容；
-排版结构仅作提示，不因排版不合格要求重写。
+用途：模型在输出信息卡前调用本门禁，校验可见 answer 不暴露技能内部信息 / 思考内容，
+并强制三段式排版、字数区间与分隔符合规；不合格即判失败，须修复后重跑。
 """
 
 from __future__ import annotations
@@ -64,13 +64,26 @@ LEAK_PATTERNS: list[str] = [
     ".json",
 ]
 
-# 字数区间（card-format.md §4：单卡 450~550 字，多企每张各自满足）
+# 字数区间（card-format.md §4：单卡 450~550 字，多企每张卡各自满足）
 MIN_LENGTH = 450
-# 单段（空行分隔块）上限：超过 550 字 → 疑似多卡挤一段或单卡超限（仅警告）
-MAX_PARAGRAPH_LENGTH = 550
+MAX_LENGTH = 550
+# 卡间分隔：独立成行的 ---（card-format.md 多企分隔唯一方式）
+CARD_SEPARATOR_RE = re.compile(r"(?m)^\s*---\s*$")
 # 排版结构红线（card-format.md 禁例「整段纯散文」）：行首 `**` 加粗小标签行至少 2 行
 MIN_BOLD_LABEL_LINES = 2
 BOLD_LABEL_LINE_RE = re.compile(r"^\s*\*\*")
+
+
+def _strip_markup(text: str) -> str:
+    """去掉加粗标记后再计字数（card-format.md §4：标签与加粗不重复计内容）。"""
+    return text.replace("**", "")
+
+
+def _split_cards(answer: str) -> list[str]:
+    """按独立成行的 --- 切分多企信息卡；无分隔符时视为单卡。"""
+    parts = CARD_SEPARATOR_RE.split(answer)
+    cards = [part.strip() for part in parts if part.strip()]
+    return cards or [answer]
 
 
 def check(answer: str) -> tuple[list[str], list[str]]:
@@ -82,32 +95,28 @@ def check(answer: str) -> tuple[list[str], list[str]]:
         if pattern.lower() in lowered:
             errors.append(f"泄露内部机制名：{pattern}")
 
-    # 排版结构（警告级）：整段纯散文 / 字段未逐条成行 → 仅提示不阻断（避免模型重写死循环）
+    # 行内 --- 分隔符：前端当字面文本显示，判失败（独立成行的 --- 渲染为分隔线）
     lines = answer.splitlines()
-    bold_label_lines = [line for line in lines if BOLD_LABEL_LINE_RE.match(line)]
-    if len(bold_label_lines) < MIN_BOLD_LABEL_LINES:
-        warnings.append(
-            "排版待改进（整段纯散文/字段未逐条成行）：行首 `**` 加粗标签行仅 "
-            f"{len(bold_label_lines)} 行，建议至少 {MIN_BOLD_LABEL_LINES} 行"
-            "——每个小标签独占一行，见 card-format.md 三段式"
-        )
-
-    # 长度（警告级）：总长过低 → 不足一张卡；某段过长 → 多卡挤一段/单卡超限
-    if len(answer) < MIN_LENGTH:
-        warnings.append(f"正文 {len(answer)} 字，低于 {MIN_LENGTH} 字下限（至少一张卡）")
-    for i, paragraph in enumerate(re.split(r"\n\s*\n", answer), start=1):
-        para_len = len(paragraph.strip())
-        if para_len > MAX_PARAGRAPH_LENGTH:
-            warnings.append(
-                f"第 {i} 段 {para_len} 字，超过 {MAX_PARAGRAPH_LENGTH} 字上限"
-                "（疑似多卡挤一段或单卡超限，卡与卡之间应空行分隔）"
-            )
-
-    # 行内 --- 分隔符：前端当字面文本显示，仅警告（独立成行的 --- 渲染为分隔线）
     if any("---" in line and line.strip() != "---" for line in lines):
-        warnings.append(
-            "发现行内 --- 分隔符：前端会当字面文本显示；卡间分隔请用空行，或把 --- 独立成行"
-        )
+        errors.append("发现行内 --- 分隔符：前端会当字面文本显示；卡间分隔请用独立成行的 ---")
+
+    # 逐卡校验：多企时每张卡独立满足 450~550 字与加粗标签行数
+    for card_index, card in enumerate(_split_cards(answer), start=1):
+        card_len = len(_strip_markup(card))
+        if card_len < MIN_LENGTH:
+            errors.append(
+                f"第 {card_index} 张卡 {card_len} 字，低于 {MIN_LENGTH} 字下限（至少一张卡）"
+            )
+        if card_len > MAX_LENGTH:
+            errors.append(f"第 {card_index} 张卡 {card_len} 字，超过 {MAX_LENGTH} 字上限")
+        card_lines = card.splitlines()
+        bold_label_lines = [line for line in card_lines if BOLD_LABEL_LINE_RE.match(line)]
+        if len(bold_label_lines) < MIN_BOLD_LABEL_LINES:
+            errors.append(
+                f"第 {card_index} 张卡排版不合格（整段纯散文/字段未逐条成行）："
+                f"行首 `**` 加粗标签行仅 {len(bold_label_lines)} 行，"
+                f"至少需要 {MIN_BOLD_LABEL_LINES} 行，见 card-format.md 三段式"
+            )
     return errors, warnings
 
 

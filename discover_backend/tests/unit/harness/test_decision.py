@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from app.capabilities.tools.broker import ToolCallRequest
-from app.harness.react.decision import (
+from app.environment.tools.broker import ToolCallRequest
+from app.harness.decision import (
     AgentDecision,
     AgentDecisionType,
     ControlToolName,

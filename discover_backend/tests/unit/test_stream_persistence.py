@@ -12,7 +12,8 @@ from types import SimpleNamespace
 
 import anyio
 import pytest
-from app.domain.conversation.recorder import ExitReason, TurnRecorder, resolve_turn_status
+from app.application.conversation.recorder import ExitReason, TurnRecorder, resolve_turn_status
+from app.application.dto.conversations import ConversationSession, MessageStatus, TurnRecord
 from app.harness.events.run_events import (
     RunCancelled,
     RunCompleted,
@@ -23,8 +24,7 @@ from app.harness.events.run_events import (
 )
 from app.harness.models import TerminationReason
 from app.harness.turn import ActiveTurn, ActiveTurnRegistry
-from app.interfaces.http.chat import _blocking, _stream_sse
-from app.interfaces.schemas.conversations import ConversationSession, MessageStatus, TurnRecord
+from app.interfaces.http.chat import run_blocking, stream_sse
 from app.shared.errors.base import ErrorCategory, PlatformError
 
 _MESSAGE_ID = "msg-interrupt-1"
@@ -129,10 +129,10 @@ async def _fake_events_run_failed(
 
 
 async def test_stream_persists_normal_on_complete(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_normal)
     services = _make_services()
     frames: list[str] = []
-    async for frame in _stream_sse(
+    async for frame in stream_sse(
         services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn()
     ):
         frames.append(frame)
@@ -154,7 +154,7 @@ async def test_stream_releases_lock_before_persist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """409 竞态修复：message_end 已发出即释放会话锁，落库窗口内可立即发起新回合。"""
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_normal)
     registry = ActiveTurnRegistry()
     history = _SlowRecordHistory(registry)
     services = SimpleNamespace(conversation_service=history, active_turns=registry)
@@ -163,7 +163,7 @@ async def test_stream_releases_lock_before_persist(
     history.old_turn = turn
     frames: list[str] = []
     second_ok: bool | None = None
-    async for frame in _stream_sse(
+    async for frame in stream_sse(
         services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, turn
     ):
         frames.append(frame)
@@ -178,11 +178,11 @@ async def test_stream_releases_lock_before_persist(
 
 
 async def test_stream_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_cancel)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_cancel)
     services = _make_services()
 
     async def _consume() -> None:
-        async for _ in _stream_sse(
+        async for _ in stream_sse(
             services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn()
         ):
             pass
@@ -199,9 +199,9 @@ async def test_stream_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyP
 
 
 async def test_stream_persists_interrupted_on_aclose(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_cancel)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_cancel)
     services = _make_services()
-    agen = _stream_sse(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())
+    agen = stream_sse(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())
     await anext(agen)
     await agen.aclose()
     history = services.conversation_service
@@ -213,10 +213,10 @@ async def test_stream_persists_interrupted_on_aclose(monkeypatch: pytest.MonkeyP
 
 
 async def test_stream_persists_error_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_boom)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_boom)
     services = _make_services()
     with pytest.raises(RuntimeError):
-        async for _ in _stream_sse(
+        async for _ in stream_sse(
             services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn()
         ):
             pass
@@ -229,10 +229,12 @@ async def test_stream_persists_error_on_exception(monkeypatch: pytest.MonkeyPatc
 
 
 async def test_blocking_persists_interrupted_on_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_cancel)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_cancel)
     services = _make_services()
     with anyio.move_on_after(0.05):
-        await _blocking(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())
+        await run_blocking(
+            services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn()
+        )
     history = services.conversation_service
     assert isinstance(history, _FakeHistory)
     assert len(history.turns) == 1
@@ -242,10 +244,14 @@ async def test_blocking_persists_interrupted_on_cancel(monkeypatch: pytest.Monke
 
 
 async def test_blocking_persists_error_and_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_run_failed)
+    monkeypatch.setattr(
+        "app.application.chat.turn_lifecycle.run_turn_events", _fake_events_run_failed
+    )
     services = _make_services()
     with pytest.raises(PlatformError):
-        await _blocking(services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn())
+        await run_blocking(
+            services, "查询", _make_session(), _MESSAGE_ID, _CREATED_AT, _make_turn()
+        )
     history = services.conversation_service
     assert isinstance(history, _FakeHistory)
     assert len(history.turns) == 1

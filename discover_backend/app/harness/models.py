@@ -13,6 +13,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from app.harness.contracts.models import ContractResult
+from app.llm.models import ChatMessage
 from app.shared.errors.base import ErrorCategory
 
 
@@ -297,6 +298,10 @@ class PhaseExecutionRequest(BaseModel):
     phase_input: dict[str, object] = Field(default_factory=dict)
     upstream_outputs: dict[str, PhaseOutput] = Field(default_factory=dict)
     context_summary: str = ""
+    # 结构化上下文投影结果（agent-context-plane-spec §5.3）：非空时 ReAct 阶段
+    # 直接采用该消息序列（system + 历史 + 独立 role=user 当前消息）；缺失时回落到
+    # system_prompt + phase_input 兼容路径。context_summary 在兼容期继续保留。
+    context_messages: list[ChatMessage] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
     # 是否向模型开启思考（thinking）通道：由全局开关与装配层 thinking_preference 共同决定
     thinking_enabled: bool = True

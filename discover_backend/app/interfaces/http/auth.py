@@ -12,14 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, UploadFile
 
-from app.bootstrap.container import AppServices, get_services
-from app.interfaces.http.deps import (
-    get_bearer_token,
-    get_current_account,
-    get_current_account_id,
-    require_superuser,
-)
-from app.interfaces.schemas.auth import (
+from app.application.dto.auth import (
     AccountRecord,
     AvatarConfig,
     ChangePasswordRequest,
@@ -32,12 +25,22 @@ from app.interfaces.schemas.auth import (
     UpdateAccountRequest,
     UserUsage,
 )
+from app.application.services import AppServices
+from app.interfaces.http.auth_guard import LoginRoute, bearer_required, login_required, public
+from app.interfaces.http.deps import (
+    get_bearer_token,
+    get_current_account,
+    get_current_account_id,
+    get_services,
+    require_superuser,
+)
 from app.shared.errors.base import BadRequestError, UnauthorizedError
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(tags=["auth"], route_class=LoginRoute)
 
 
 @router.post("/auth/login")
+@public(reason="登录入口：手机号 + 密码换取令牌对")
 async def login(
     body: LoginRequest,
     services: AppServices = Depends(get_services),
@@ -48,6 +51,7 @@ async def login(
 
 
 @router.post("/auth/login/elecnest")
+@public(reason="统一登录入口：token + uid 换取令牌对")
 async def elecnest_login(
     body: ElecnestLoginRequest,
     services: AppServices = Depends(get_services),
@@ -58,6 +62,7 @@ async def elecnest_login(
 
 
 @router.post("/auth/refresh")
+@public(reason="以 refresh_token 换新令牌对（旧令牌轮换作废）")
 async def refresh_token(
     body: RefreshTokenRequest,
     services: AppServices = Depends(get_services),
@@ -68,6 +73,7 @@ async def refresh_token(
 
 
 @router.post("/auth/logout", status_code=204)
+@bearer_required
 async def logout(
     body: LogoutRequest,
     access_token: str = Depends(get_bearer_token),
@@ -79,12 +85,14 @@ async def logout(
 
 
 @router.get("/users/me")
+@login_required
 async def current_account(account: AccountRecord = Depends(get_current_account)) -> AccountRecord:
     """当前用户信息（本地资料；account_id 恒为本地账号 uuid 文本）。"""
     return account
 
 
 @router.get("/users/me/usage")
+@login_required
 async def current_usage(
     account_id: str = Depends(get_current_account_id),
     services: AppServices = Depends(get_services),
@@ -98,6 +106,7 @@ async def current_usage(
 
 
 @router.get("/users/me/usage/daily")
+@login_required
 async def current_daily_usage(
     # pragma: 简化 — 天数上下界为 API 契约固定值（需求明确默认 30 / 上限 90），不进配置
     days: int = Query(default=30, ge=1, le=90),
@@ -113,6 +122,7 @@ async def current_daily_usage(
 
 
 @router.get("/users/me/avatar-config")
+@public(reason="前端本地校验用头像限制，纯阈值无用户数据")
 async def avatar_config(services: AppServices = Depends(get_services)) -> AvatarConfig:
     """头像上传限制配置（供前端本地校验输入；阈值全部配置驱动）。"""
     assert services.auth is not None
@@ -120,6 +130,7 @@ async def avatar_config(services: AppServices = Depends(get_services)) -> Avatar
 
 
 @router.patch("/users/me")
+@login_required
 async def update_account(
     body: UpdateAccountRequest,
     account: AccountRecord = Depends(get_current_account),
@@ -131,6 +142,7 @@ async def update_account(
 
 
 @router.post("/users/me/avatar")
+@login_required
 async def upload_avatar(
     file: UploadFile,
     account_id: str = Depends(get_current_account_id),
@@ -151,6 +163,7 @@ async def upload_avatar(
 
 
 @router.post("/users/me/password")
+@login_required
 async def change_password(
     body: ChangePasswordRequest,
     account: AccountRecord = Depends(get_current_account),
@@ -166,6 +179,7 @@ async def change_password(
 
 
 @router.get("/users")
+@login_required
 async def list_users(
     superuser: AccountRecord = Depends(require_superuser),
     services: AppServices = Depends(get_services),

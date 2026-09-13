@@ -13,16 +13,16 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
-from app.bootstrap.container import get_services
-from app.config.settings import Settings
-from app.interfaces.http.auth import router as auth_router
-from app.interfaces.middleware.exceptions import ExceptionHandlingMiddleware
-from app.interfaces.schemas.auth import (
+from app.application.dto.auth import (
     AccountRecord,
     AvatarConfig,
     LoginResponse,
     UserType,
 )
+from app.config.settings import Settings
+from app.interfaces.http.auth import router as auth_router
+from app.interfaces.http.deps import get_services
+from app.interfaces.middleware.exceptions import ExceptionHandlingMiddleware
 from app.shared.errors.base import UnauthorizedError
 from fastapi import FastAPI
 

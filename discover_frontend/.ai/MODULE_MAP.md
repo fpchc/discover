@@ -44,7 +44,7 @@
 | 结构化参数展示（【键】值 → KV 卡片网格 / 胶囊流，避免露出 【】 字符） | `src/components/StructuredParams.tsx` |
 | 状态徽章（thinking / generating / done / error / stopped，发光点 + 主题色） | `src/components/StatusBadge.tsx` |
 | 结构化参数解析（纯函数：【键】值 → StructuredParam[]；开头参数段剥离） | `src/lib/structure.ts` |
-| Markdown 渲染 + DOMPurify 清洗（hljs 按需高亮，流式期不高亮；代码块语言标签头 + 复制钮） | `src/components/Markdown.tsx` |
+| Markdown 渲染 + DOMPurify 清洗（remark-gfm + remark-breaks 单换行转 `<br>`；hljs 按需高亮，流式期不高亮；代码块语言标签头 + 复制钮） | `src/components/Markdown.tsx` |
 | Vitest 环境（jest-dom + matchMedia mock） | `src/test/setup.ts` |
 | 应用冒烟渲染测试 | `src/App.test.tsx` |
 | 纯逻辑 / store 单测 | `src/lib/*.test.ts` / `src/stores/*.test.ts` |

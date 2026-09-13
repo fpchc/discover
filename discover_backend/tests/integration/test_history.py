@@ -12,20 +12,20 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
-from app.config.loader import MCPRegistry
-from app.config.settings import Settings
-from app.domain.assistant.catalog import AssistantCatalog
-from app.domain.assistant.models import AssistantTarget, TargetType
-from app.domain.conversation.service import ConversationService
-from app.domain.skill.registry import AgentRegistry
-from app.infrastructure.database.engine import Database
-from app.infrastructure.database.models import Conversation, Message
-from app.interfaces.schemas.conversations import (
+from app.application.assistant.catalog import AssistantCatalog
+from app.application.conversation.service import ConversationService
+from app.application.dto.conversations import (
     ConversationStatus,
     MessageStatus,
     TurnRecord,
     TurnUsage,
 )
+from app.config.loader import MCPRegistry
+from app.config.settings import Settings
+from app.harness.skill.registry import AgentRegistry
+from app.harness.targets import AssistantTarget, TargetType
+from app.infrastructure.database.engine import Database
+from app.infrastructure.database.models import Conversation, Message
 from app.shared.errors.base import NotFoundError
 
 _DATABASE = Database(Settings(_env_file=None))

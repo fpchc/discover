@@ -21,9 +21,9 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from app.capabilities.tools.broker import ToolCallRequest, ToolResult
-from app.capabilities.tools.descriptor import ToolDescriptor
 from app.config.settings import SideEffectType
+from app.environment.context.models import ArtifactRef
+from app.environment.tools.models import ToolCallRequest, ToolDescriptor, ToolResult
 from app.harness.events.run_events import (
     ActionProposed,
     RunEvent,
@@ -40,11 +40,10 @@ from app.harness.models import (
 )
 from app.harness.policy.action import check_action
 from app.harness.policy.models import PolicyDecisionType
-from app.harness.react.progress import (
+from app.harness.progress import (
     action_fingerprint,
     observation_fingerprint,
 )
-from app.interfaces.schemas.files import ArtifactRecord
 
 
 class SideEffectClass(StrEnum):
@@ -97,7 +96,7 @@ class ArtifactRegistrar(Protocol):
 
     async def register(
         self, *, source_path: Path, filename: str, created_by: str
-    ) -> ArtifactRecord: ...
+    ) -> ArtifactRef: ...
 
 
 class ToolExecutionRequest(BaseModel):
@@ -119,7 +118,7 @@ class ToolExecutionResult(BaseModel):
     """管线输出：observations + artifacts + 更新后的 budget/progress。"""
 
     observations: list[ObservationRecord] = Field(default_factory=list)
-    artifacts: list[ArtifactRecord] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
     action_records: list[ActionRecord] = Field(default_factory=list)
     budget: BudgetState
     progress: ProgressState
@@ -210,7 +209,7 @@ class ToolRuntime:
             )
         results = await self._broker.execute(pending)
         observations: list[ObservationRecord] = []
-        artifacts: list[ArtifactRecord] = []
+        artifacts: list[ArtifactRef] = []
         for call, result in zip(pending, results, strict=True):
             descriptor = self._broker.get_descriptor(call.tool_name)
             klass = (
@@ -300,7 +299,7 @@ class ToolRuntime:
 
     async def _register_artifact(
         self, request: ToolExecutionRequest, rel: str
-    ) -> ArtifactRecord | None:
+    ) -> ArtifactRef | None:
         if self._artifacts is None or request.workspace is None:
             return None
         try:

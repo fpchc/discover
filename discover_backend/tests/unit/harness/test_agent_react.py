@@ -3,8 +3,8 @@
 覆盖核心接线（react-runtime-v2-architecture §9.4 / §18.4）：
 - 装配层系统提示（AGENT.md + SKILL.md + 平台红线）真正注入 ReAct LLM 首条消息，
   证明「ReAct 配合 agents 技能包配置」而非硬编码通用提示；
-- AgentAssembler 装配 / build_agent_budget 预算映射 / _outcome_answer /
-  _history_summary 适配。
+- AgentAssembler 装配 / build_agent_budget 预算映射 / _outcome_answer 适配；
+- 结构化上下文投影（context_messages）优先于 system prompt 回落路径。
 
 全部 Fake LLM / Fake ToolRunner，无网络无 DB（CLAUDE.md §12）。
 """
@@ -12,17 +12,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from types import SimpleNamespace
 
-from app.capabilities.llm.models import ChatToolSpec, ToolFunction
-from app.capabilities.llm.stream_parser import (
-    SemanticChunk,
-    ToolCall,
-    ToolCallsChunk,
-)
-from app.capabilities.tools.broker import ToolCallRequest, ToolResult
-from app.capabilities.tools.descriptor import ToolDescriptor, ToolSource
+from app.application.chat.run_turn import _outcome_answer
+from app.application.chat.turn_paths import _resolve_thinking_budget
 from app.config.settings import Settings
+from app.environment.tools.broker import ToolCallRequest, ToolResult
+from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.agent_runner import build_agent_budget
 from app.harness.events.run_events import RunEvent
 from app.harness.graph import build_react_subgraph
@@ -32,17 +27,14 @@ from app.harness.models import (
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
 )
-from app.harness.react.executor import (
-    BoundedReActExecutor,
-    EventSinkPort,
-    LLMRunnerPort,
-    ReactGraphState,
-    ToolRunnerPort,
-)
-from app.interfaces.http.chat_execution import (
-    _history_summary,
-    _outcome_answer,
-    _resolve_thinking_budget,
+from app.harness.react.executor import BoundedReActExecutor
+from app.harness.react.ports import EventSinkPort, LLMRunnerPort, ToolRunnerPort
+from app.harness.react.state import ReactGraphState
+from app.llm.models import ChatMessage, ChatToolSpec, ToolFunction
+from app.llm.stream_parser import (
+    SemanticChunk,
+    ToolCall,
+    ToolCallsChunk,
 )
 from langgraph.graph.state import CompiledStateGraph
 
@@ -251,18 +243,42 @@ def test_outcome_answer_none_and_empty() -> None:
     assert _outcome_answer(partial) == ""
 
 
-# ---- _history_summary 截断 ----
-def test_history_summary_caps_messages_and_chars() -> None:
-    from app.capabilities.llm.models import ChatMessage
+# ---- 结构化上下文：context_messages 优先于 system prompt 回落 ----
+async def test_context_messages_override_system_prompt_fallback() -> None:
+    """提供 context_messages 时，ReAct 必须按投影结果发起 LLM 调用。
 
-    history = [ChatMessage(role="user", content=f"消息{i}") for i in range(20)]
-    settings = SimpleNamespace(
-        agent_context_summary_max_messages=3,
-        agent_context_summary_max_chars=100,
+    agent-context-plane-spec §5.3：system + 历史消息（保留 role）+ 独立
+    role=user 的当前用户消息，历史不得再被压平进 system prompt。
+    """
+    projected = [
+        ChatMessage(role="system", content="投影后的系统约束"),
+        ChatMessage(role="user", content="历史提问"),
+        ChatMessage(role="assistant", content="历史回答"),
+        ChatMessage(role="user", content="本轮提问"),
+    ]
+
+    def respond(call_index: int) -> list[SemanticChunk]:
+        return _tool_call("submit_final_answer", '{"answer": "完成"}', call_id="t1")
+
+    llm = _CapturingLLM(respond)
+    executor = BoundedReActExecutor(llm=llm, tools=_FakeTools(), events=_RecordingSink())
+    request = _request(build_agent_budget(_settings()), system_prompt="装配层系统提示").model_copy(
+        update={"context_messages": projected}
     )
-    summary = _history_summary(history, settings)  # type: ignore[arg-type]  # 测试注入缺省字段的 settings
-    assert "消息17" in summary
-    assert "消息0" not in summary  # 只保留最近 3 条
+    state = await _run(executor, request)
+
+    assert llm.requests, "应至少发起一次 LLM 调用"
+    messages = getattr(llm.requests[0], "messages", [])
+    assert [message.role for message in messages[:4]] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert messages[0].content == "投影后的系统约束"
+    assert messages[-1].content == "本轮提问", "当前用户消息必须是独立 role=user"
+    assert state.outcome is not None
+    assert state.outcome.answer == "完成"
 
 
 # ---- 核心修复：工具结果必须回写为 role="tool" 消息（防盲搜死循环）----

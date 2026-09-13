@@ -7,13 +7,16 @@
 
 from fastapi import APIRouter, Depends
 
-from app.bootstrap.container import AppServices, get_services
-from app.domain.assistant.catalog import AssistantCatalogEntry
+from app.application.assistant.catalog import AssistantCatalogEntry
+from app.application.services import AppServices
+from app.interfaces.http.auth_guard import LoginRoute, public
+from app.interfaces.http.deps import get_services
 
-router = APIRouter(tags=["assistants"])
+router = APIRouter(tags=["assistants"], route_class=LoginRoute)
 
 
 @router.get("/assistants")
+@public(reason="助手目录渲染，登录前后都可展示")
 async def list_assistants(
     services: AppServices = Depends(get_services),
 ) -> list[AssistantCatalogEntry]:

@@ -12,17 +12,17 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
-from app.harness.events.run_events import RunCompleted, RunEvent, TextDelta, ThinkingDelta
-from app.harness.models import TerminationReason
-from app.harness.turn import ActiveTurn, ActiveTurnRegistry
-from app.interfaces.http.chat import chat_messages
-from app.interfaces.schemas import ChatMessageRequest
-from app.interfaces.schemas.conversations import (
+from app.application.dto.conversations import (
     ConversationSession,
     MessageStatus,
     TurnRecord,
     TurnStartRecord,
 )
+from app.harness.events.run_events import RunCompleted, RunEvent, TextDelta, ThinkingDelta
+from app.harness.models import TerminationReason
+from app.harness.turn import ActiveTurn, ActiveTurnRegistry
+from app.interfaces.http.chat import chat_messages
+from app.interfaces.schemas import ChatMessageRequest
 from app.shared.errors.base import ConflictError
 from fastapi import Response
 
@@ -92,7 +92,7 @@ async def test_blocking_persists_start_then_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """blocking：路由先落 processing（query），回合结束更新 thinking/answer，锁释放。"""
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_normal)
     services, history, registry = _services()
     resp = await chat_messages(
         ChatMessageRequest(query="你好", response_mode="blocking"),
@@ -119,7 +119,7 @@ async def test_streaming_start_turn_at_route_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """streaming：路由层（响应体消费前）即落 processing 记录；流结束后锁释放。"""
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_normal)
     services, history, registry = _services()
     resp = await chat_messages(
         ChatMessageRequest(query="你好", response_mode="streaming"),
@@ -144,7 +144,7 @@ async def test_conflict_when_turn_running_no_processing_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """同会话已有运行中回合 → 409 且不落 processing 记录（被拒回合未发起）。"""
-    monkeypatch.setattr("app.interfaces.http.chat._run_turn_events", _fake_events_normal)
+    monkeypatch.setattr("app.application.chat.turn_lifecycle.run_turn_events", _fake_events_normal)
     services, history, registry = _services()
     turn = ActiveTurn(message_id="m1")
     assert registry.register(_CONVERSATION_ID, turn) is True

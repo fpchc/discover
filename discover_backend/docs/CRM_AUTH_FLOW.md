@@ -2,7 +2,7 @@
 
 > **适用场景**：对接方（CRM / 前端 / 联调同学）需要理解「携带 CRM 签发的令牌访问本平台业务接口」这条链路的完整行为——令牌怎么校验、用户是谁、账号从哪来、失败时返回什么。
 > **不适用场景**：本文不描述本平台的登录接口（手机号+密码、token+uid 统一登录）与其 Redis 会话/刷新/登出机制；那两条属于「本平台自己发令牌」，见 `docs/ARCHITECTURE.md` 账号认证条目。
-> **职责边界与权威来源**：本文是流程说明，事实源为代码 `app/domain/auth/`（`security.py` / `service.py`）+ `app/interfaces/http/deps.py`。行为有出入时以代码为准，并回改本文。
+> **职责边界与权威来源**：本文是流程说明，事实源为代码 `app/domain/identity/`（领域词汇 + 端口）、`app/infrastructure/crypto/security.py`（验签实现）、`app/application/identity/service.py`（用例）+ `app/interfaces/http/deps.py`。行为有出入时以代码为准，并回改本文。
 
 平台共支持三套进入方式，**本文只讲第三套**：
 
@@ -34,7 +34,7 @@ CRM 用共享密钥签发的 JWT（HS256），本平台**只验签**：
 校验项（**全部通过才放行**，任一失败即 401）：
 验签 → `exp` → `aud` → `iss` → `type == "access"` → `sub` 非空。
 
-实现：`JwtService.decode_platform_token()`（`app/domain/auth/security.py`），返回 `PlatformTokenClaims(user_id, sid, jti)`。
+实现：`JwtService.decode_platform_token()`（`app/infrastructure/crypto/security.py`），返回 `PlatformTokenClaims(user_id, sid, jti)`（载荷词汇在 `app/domain/identity/models.py`）。
 
 > **无网络、无 Redis**：整个校验过程是本地的纯计算，不会回调 CRM，也不读写 Redis。
 
@@ -48,7 +48,7 @@ CRM 用共享密钥签发的 JWT（HS256），本平台**只验签**：
 Authorization: Bearer <CRM 签发的 access_token>
 ```
 
-处理链路（`app/interfaces/http/deps.py` → `app/domain/auth/service.py`）：
+处理链路（`app/interfaces/http/deps.py` → `app/application/identity/service.py`）：
 
 ```
 客户端 ── Bearer <CRM token> ──► 业务接口
@@ -127,7 +127,7 @@ Authorization: Bearer <CRM 签发的 access_token>
 `GET /api/v1/users`（全量账号 token 用量）要求 `is_system=true`。CRM 令牌不携带权限码，因此**平台侧的管理员身份不会自动映射**；需要把某个平台 `user_id` 绑定到本地管理员账号（运维 CLI）：
 
 ```bash
-python -m app.domain.auth.provision --phone <已有账号手机号> --auth-user-id <平台 user_id> --superuser
+python -m app.application.identity.provision --phone <已有账号手机号> --auth-user-id <平台 user_id> --superuser
 ```
 
 绑定后，该平台 `user_id` 登录即命中这条本地账号，历史数据（按本地 uuid 聚合）自然延续。
@@ -143,7 +143,6 @@ python -m app.domain.auth.provision --phone <已有账号手机号> --auth-user-
 | `conversations` | `from_account_id` | 本地账号 uuid |
 | `messages` | `created_by` | 本地账号 uuid |
 | `upload_files` | `created_by` | 本地账号 uuid |
-| `dedup_clues` | `created_by` | 本地账号 uuid（组合主键首列） |
 
 会话列表 / 消息 / 删除按账号过滤，跨账号一律 404（不泄露存在性）；token 用量按 `created_by` 聚合。
 
@@ -248,9 +247,9 @@ python -m app.domain.auth.provision --phone <已有账号手机号> --auth-user-
 | 位置 | 职责 |
 |---|---|
 | `app/interfaces/http/deps.py` | `_bearer_token` 提取、`get_current_account` / `get_current_account_id` / `require_superuser` |
-| `app/domain/auth/security.py` | `JwtService.decode_platform_token`（验签 + 五项校验） |
-| `app/domain/auth/service.py` | `validate_platform_token`（取 `user_id`）、`resolve_current_account`（区分两种令牌）、`resolve_user`（find-or-create 本地账号） |
-| `app/interfaces/schemas/auth.py` | `PlatformTokenClaims`、`AccountRecord`、`UserType.unified` |
+| `app/infrastructure/crypto/security.py` | `JwtService.decode_platform_token`（验签 + 五项校验） |
+| `app/application/identity/service.py` | `validate_platform_token`（取 `user_id`）、`resolve_current_account`（区分两种令牌）、`resolve_user`（find-or-create 本地账号） |
+| `app/domain/identity/models.py` + `app/application/dto/auth.py` | `PlatformTokenClaims` / `UserType.unified`（领域词汇）+ `AccountRecord`（跨边界 DTO） |
 | `app/infrastructure/database/models.py` | `Account`（`auth_user_id` 唯一索引、`user_type`） |
 | `app/interfaces/middleware/exceptions.py` | 统一错误响应形状与状态码映射 |
 | `tests/unit/test_auth_platform_token.py` | 校验矩阵单测（正常 / 过期 / aud / iss / type / 篡改 / 缺 sub / 缺 aud·iss） |

@@ -8,18 +8,20 @@
 
 from fastapi import APIRouter, Depends, Query
 
-from app.bootstrap.container import AppServices, get_services
-from app.domain.conversation.service import ConversationService
-from app.interfaces.http.deps import get_current_account_id
-from app.interfaces.schemas.conversations import ConversationRecord, MessageRecord
+from app.application.conversation.service import ConversationService
+from app.application.dto.conversations import ConversationRecord, MessageRecord
+from app.application.services import AppServices
+from app.interfaces.http.auth_guard import LoginRoute, login_required
+from app.interfaces.http.deps import get_current_account_id, get_services
 from app.shared.errors.base import NotFoundError
 
-router = APIRouter(prefix="/conversations", tags=["conversations"])
+router = APIRouter(prefix="/conversations", tags=["conversations"], route_class=LoginRoute)
 
 _PAGE_LIMIT_MAX = 200
 
 
 @router.get("")
+@login_required
 async def list_conversations(
     limit: int = Query(default=50, ge=1, le=_PAGE_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
@@ -32,6 +34,7 @@ async def list_conversations(
 
 
 @router.get("/{conversation_id}/messages")
+@login_required
 async def get_messages(
     conversation_id: str,
     limit: int = Query(default=50, ge=1, le=_PAGE_LIMIT_MAX),
@@ -45,6 +48,7 @@ async def get_messages(
 
 
 @router.delete("/{conversation_id}", status_code=204)
+@login_required
 async def delete_conversation(
     conversation_id: str,
     account_id: str = Depends(get_current_account_id),

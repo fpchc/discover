@@ -46,7 +46,7 @@ OUTPUT_DIR = WORKSPACE_DIR / "output"
 
 # 工具名泄漏检查（P1 保留，命中即警告）
 TOOL_LEAK_PATTERNS: list[tuple[str, str]] = [
-    (r"score_calculator\.py|render_report\.py|dedup_manager\.py|cfr\.html", "系统内部工具"),
+    (r"score_calculator\.py|render_report\.py|cfr\.html", "系统内部工具"),
     (r"\bmaimai\b|\bmaimai-prospect\b|\b脉脉\b", "公开职业社交平台"),
     (r"xxxx+[^;]|X{4,}|占位|待填|placeholder|\[TBD\]|\[TODO\]", "填充文字/占位符（报告不完整）"),
     (r"bocha|bocha_web_search|bocha_ai_search", "行业公开搜索"),

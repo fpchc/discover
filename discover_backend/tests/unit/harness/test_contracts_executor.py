@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.capabilities.tools.broker import ToolResult
+from app.environment.tools.broker import ToolResult
 from app.harness.contracts.executor import (
     ContractContext,
     EvidenceContractExecutor,

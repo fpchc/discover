@@ -1,5 +1,19 @@
-"""Tool Runtime 管线（execution/pipeline.py）。"""
+"""工具运行时管线（preflight / 副作用 / 幂等键 / broker / normalize / 产物登记）。"""
 
-from app.harness.execution.pipeline import ToolExecutionRequest, ToolExecutionResult, ToolRuntime
+from app.harness.execution.pipeline import (
+    ArtifactRegistrar,
+    BrokerPort,
+    CheckpointPort,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolRuntime,
+)
 
-__all__ = ["ToolExecutionRequest", "ToolExecutionResult", "ToolRuntime"]
+__all__ = [
+    "ArtifactRegistrar",
+    "BrokerPort",
+    "CheckpointPort",
+    "ToolExecutionRequest",
+    "ToolExecutionResult",
+    "ToolRuntime",
+]
