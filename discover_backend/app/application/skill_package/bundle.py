@@ -75,22 +75,27 @@ def write_overlay(root: Path, files: dict[str, str]) -> None:
         destination.write_text(content, encoding="utf-8")
 
 
-def read_editable_files(agent_dir: Path) -> dict[str, str]:
-    """读取代码包中可由管理员编辑的文件（AGENT/SKILL/references/templates）。
-
-    scripts 与 schemas 由代码发布，不进入可编辑集合。
-    """
+def read_package_files(package_dir: Path) -> dict[str, str]:
+    """读取包目录中的全部普通文件（排除 Python 编译产物）。"""
+    if not package_dir.is_dir():
+        raise ValueError(f"技能包模板不存在：{package_dir}")
     files: dict[str, str] = {}
-    for path in sorted(agent_dir.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts:
+    for path in sorted(package_dir.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts or path.suffix == ".pyc":
             continue
-        parts = path.relative_to(agent_dir).parts
-        if any(part in _CODE_DIRS for part in parts):
-            continue
-        files[path.relative_to(agent_dir).as_posix()] = path.read_text(
+        files[path.relative_to(package_dir).as_posix()] = path.read_text(
             encoding="utf-8", errors="replace"
         )
     return files
+
+
+def read_editable_files(agent_dir: Path) -> dict[str, str]:
+    """读取可由管理员编辑的文件（AGENT/SKILL/references/templates）。"""
+    return {
+        path: content
+        for path, content in read_package_files(agent_dir).items()
+        if not any(part in _CODE_DIRS for part in Path(path).parts)
+    }
 
 
 def read_bundle_marker(marker: Path, checksum: str) -> bool:
@@ -109,6 +114,7 @@ __all__ = [
     "copy_tree",
     "read_bundle_marker",
     "read_editable_files",
+    "read_package_files",
     "unzip_to",
     "write_bundle_marker",
     "write_overlay",

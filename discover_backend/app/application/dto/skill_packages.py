@@ -1,6 +1,6 @@
 """技能包管理跨边界 DTO（管理员在线修改/调试）。
 
-持久化载体为 ORM `agent_packages` / `agent_package_files`，字节 bundle 在存储层；
+持久化载体为 ORM `agent_packages` / `agent_package_entries`，字节 bundle 在存储层；
 本文件只承载对外请求/响应契约与服务返回模型。
 """
 
@@ -55,6 +55,8 @@ class CreateDraftRequest(BaseModel):
     """创建草稿请求。"""
 
     version: str
+    template_id: str = "standard"
+    display_name: str | None = None
 
 
 class SaveFileRequest(BaseModel):

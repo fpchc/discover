@@ -34,7 +34,8 @@ export function PackageList({ onOpen }: PackageListProps) {
   const [list, setList] = useState<PackageSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
-  const [draftAgentId, setDraftAgentId] = useState('discover')
+  const [draftAgentId, setDraftAgentId] = useState('')
+  const [draftDisplayName, setDraftDisplayName] = useState('')
   const [draftVersion, setDraftVersion] = useState('')
   const [creating, setCreating] = useState(false)
   const [rollbackTarget, setRollbackTarget] = useState<PackageSummary | null>(null)
@@ -72,7 +73,7 @@ export function PackageList({ onOpen }: PackageListProps) {
     }
     setCreating(true)
     try {
-      const detail = await createPackageDraft(agentId, version)
+      const detail = await createPackageDraft(agentId, version, draftDisplayName.trim())
       toast.success(`已创建草稿 ${detail.agent_id}@${detail.version}`)
       onOpen(detail.package_id)
     } catch (error) {
@@ -107,14 +108,20 @@ export function PackageList({ onOpen }: PackageListProps) {
       <section className="rounded-xl border border-border bg-surface-1 p-4 shadow-card">
         <h2 className="text-[14px] font-semibold text-text-1">创建草稿</h2>
         <p className="mt-1 text-[12px] leading-relaxed text-text-3">
-          从代码仓库 agents/ 下已有智能体目录生成可编辑草稿；scripts/ 与 schemas/ 不进入草稿。
+          使用标准包模板创建独立的 AGENT.md、示例技能、参考文档和输出模板。
         </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_160px_auto]">
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_160px_auto]">
           <Input
             value={draftAgentId}
             onChange={(event) => setDraftAgentId(event.target.value)}
-            placeholder="agent_id，如 discover"
+            placeholder="agent_id，如 sales-research"
             aria-label="创建草稿 agent_id"
+          />
+          <Input
+            value={draftDisplayName}
+            onChange={(event) => setDraftDisplayName(event.target.value)}
+            placeholder="显示名称，可选"
+            aria-label="创建草稿显示名称"
           />
           <Input
             value={draftVersion}

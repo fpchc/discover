@@ -36,6 +36,8 @@ class TurnContextRequest(BaseModel):
     phase_instance_id: str = ""
     # 专家 ReAct 路径使用专家上下文预算；通用对话沿用完整历史窗口
     expert: bool = False
+    # 调试预览等无持久化会话场景关闭历史查询
+    load_history: bool = True
 
 
 class TurnContext(BaseModel):
@@ -70,9 +72,12 @@ async def build_turn_context(services: AppServices, request: TurnContextRequest)
     装配器缺失有两种情况：容器未启动（测试替身 / 无 DB 环境），或未来装配层
     改为按需注入；两种都退化为「无历史上下文」，不阻断回合执行。
     """
-    assembler: ContextAssembler | None = getattr(services, "context_assembler", None)
-    if assembler is None:
-        assembler = ContextAssembler()
+    if not request.load_history:
+        assembler = ContextAssembler(options=_options(services.settings, expert=request.expert))
+    else:
+        configured = getattr(services, "context_assembler", None)
+        assembler = configured if isinstance(configured, ContextAssembler) else ContextAssembler()
+
     context = await assembler.assemble(
         ContextIdentity(
             run_id=request.run_id,

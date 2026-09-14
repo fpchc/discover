@@ -367,7 +367,27 @@ export type PackageErrorCategory =
   | 'mcp'
   | 'conflict'
 
-/** 技能包内单个可编辑文件 */
+/** 技能包树节点类型：目录或文件 */
+export type PackageEntryType = 'directory' | 'file'
+
+/** 技能包树节点（后端 agent_package_entries 契约） */
+export interface PackageEntry {
+  /** 稳定节点 ID：选择、折叠、编辑应优先使用 */
+  entry_id: number
+  /** 父节点 ID；包根节点为 null */
+  parent_id: number | null
+  entry_type: PackageEntryType
+  /** 当前层级名称，不包含父目录 */
+  name: string
+  /** 后端计算的完整展示路径，不作为层级事实源 */
+  path: string
+  /** 文件内容；目录节点固定为 null */
+  content: string | null
+  /** 同目录下排序值 */
+  sort_order: number
+}
+
+/** 技能包内单个可编辑文件（过渡期兼容字段） */
 export interface PackageFile {
   /** 相对路径，如 AGENT.md、client-finder/SKILL.md */
   path: string
@@ -386,14 +406,20 @@ export interface PackageSummary {
   updated_at: string
 }
 
-/** 技能包详情（GET /admin/packages/{package_id}、创建草稿响应） */
+/**
+ * 技能包详情（GET /admin/packages/{package_id}、创建草稿响应）。
+ * entries 为新树事实源；files 仅为旧接口兼容字段。
+ */
 export interface PackageDetail {
   package_id: string
   agent_id: string
   version: string
   status: PackageStatus
   enabled: boolean
-  files: PackageFile[]
+  /** 新树节点集合；存在时优先于 files */
+  entries?: PackageEntry[]
+  /** 旧扁平文件集合；仅 entries 缺失时用于兼容投影 */
+  files?: PackageFile[]
   published_at: string | null
   updated_at: string
 }
@@ -443,6 +469,8 @@ export interface ToolSmokeResult {
 
 /** 创建草稿请求体 */
 export interface CreatePackageDraftRequest {
+  template_id: 'standard'
+  display_name: string | null
   version: string
 }
 

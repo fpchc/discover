@@ -191,7 +191,7 @@ bootstrap/ config/ shared/             组合根与跨层
 |------|------|
 | SQLAlchemy 声明式基类 + 命名约定 + 本地时间 | `app/infrastructure/database/base.py` |
 | 异步引擎 + 会话工厂（连接池配置驱动） | `app/infrastructure/database/engine.py` |
-| ORM 模型（accounts / conversations / messages / upload_files） | `app/infrastructure/database/models.py` |
+| ORM 模型（accounts / conversations / messages / upload_files / agent_packages / agent_package_entries） | `app/infrastructure/database/models.py` |
 | 数据库访问器（get_database） | `app/infrastructure/database/accessors.py` |
 | Redis 客户端 + Cache/Lock 封装 + 访问器 | `app/infrastructure/redis/client.py` |
 | 登录会话存储实现（RedisSessionStore，fail-closed 异常边界） | `app/infrastructure/redis/session_store.py` |
@@ -218,6 +218,7 @@ bootstrap/ config/ shared/             组合根与跨层
 | credit-period 智能体包 | `agents/credit-period/` |
 | 本地自建 MCP 服务聚合包（tencent_mcp + eastmoney_mcp） | `local_mcp/` |
 | MCP 服务注册表 / LLM 提供方注册表 | `config/mcp-servers.yaml`、`config/llm-providers.yaml`（example 可提交） |
+| 管理端技能包标准模板（AGENT/SKILL/references/templates） | `agent_package_templates/standard/` |
 | 环境变量模板 | `.env.example` |
 | 单元测试（无网络 / 无 DB；含边界守卫 `test_layering.py`） | `tests/unit/` |
 | 集成测试（依赖本地 PostgreSQL） | `tests/integration/` |

@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     agent_workspace_root_dir: Path = Path("workspaces")
     # 技能包管理 bundle 物化缓存根目录（版本化 zip 解包到此处供加载/执行）
     agent_package_bundle_dir: Path = Path("storage/packages")
+    agent_package_template_dir: Path = Path("agent_package_templates")
 
     # ---- 持久化（PostgreSQL + SQLAlchemy async） ----
     # 连接参数分字段配置（DB_USERNAME / DB_PASSWORD / DB_HOST / DB_PORT /

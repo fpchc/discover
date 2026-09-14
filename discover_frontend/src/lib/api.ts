@@ -376,9 +376,17 @@ export async function fetchAdminPackages(agentId = ''): Promise<PackageSummary[]
   return data
 }
 
-/** 从代码包种子创建草稿（响应含可编辑文件全集） */
-export async function createPackageDraft(agentId: string, version: string): Promise<PackageDetail> {
-  const body: CreatePackageDraftRequest = { version }
+/** 从标准模板创建草稿（响应含完整 entries 文件树，并保留兼容 files） */
+export async function createPackageDraft(
+  agentId: string,
+  version: string,
+  displayName = '',
+): Promise<PackageDetail> {
+  const body: CreatePackageDraftRequest = {
+    version,
+    template_id: 'standard',
+    display_name: displayName === '' ? null : displayName,
+  }
   const { data } = await httpClient.post<PackageDetail>(
     `/admin/packages/${encodeURIComponent(agentId)}/drafts`,
     body,
@@ -386,7 +394,7 @@ export async function createPackageDraft(agentId: string, version: string): Prom
   return data
 }
 
-/** 读取技能包详情 */
+/** 读取技能包详情（entries 为树事实源，files 为兼容字段） */
 export async function fetchPackageDetail(packageId: string): Promise<PackageDetail> {
   const { data } = await httpClient.get<PackageDetail>(
     `/admin/packages/${encodeURIComponent(packageId)}`,
@@ -394,7 +402,7 @@ export async function fetchPackageDetail(packageId: string): Promise<PackageDeta
   return data
 }
 
-/** 保存单个文件（新建或覆盖） */
+/** 保存单个文件（过渡期 path 接口；后端自动补齐父目录） */
 export async function savePackageFile(
   packageId: string,
   path: string,
@@ -408,7 +416,7 @@ export async function savePackageFile(
   return data
 }
 
-/** 删除单个文件（path 为完整相对路径，可含 /） */
+/** 删除单个文件（过渡期 path 接口；后端自动清理空目录） */
 export async function deletePackageFile(
   packageId: string,
   path: string,

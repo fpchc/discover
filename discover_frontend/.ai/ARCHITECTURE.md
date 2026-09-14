@@ -151,11 +151,13 @@ light `#FAFAFA` 极简冷白）；玻璃拟态工具类（`glass-panel / glass-s
 **不在 v1**：ToolCallCard / ArtifactLink 高级事件卡片——工具 / 产物事件仍为后端内部事件，不进入
 对外正文（见关键契约确认）；若后端后续开放，再按 feature 开关接入。
 
-## 管理端技能包（2026-09-13 更新）
+## 管理端技能包（2026-09-14 更新）
 - 路由新增 `/admin/packages`，懒加载 `src/components/admin/AdminPackagesPage.tsx`。
 - `src/lib/api.ts` 新增 `/admin/packages` 接口封装：list / create / detail / save / delete / validate / publish / rollback / debug preview / debug tool。
-- `src/types.ts` 新增 PackageStatus / PackageFile / PackageSummary / PackageDetail / PublishedPackage / ValidateResult / PreviewResult / ToolSmokeResult 及请求体类型。
+- `src/types.ts` 新增 PackageStatus / PackageEntry / PackageFile / PackageSummary / PackageDetail / PublishedPackage / ValidateResult / PreviewResult / ToolSmokeResult 及请求体类型。
 - `src/lib/admin-packages.ts` 新增错误分类文案与时间格式化。
 - `src/components/admin/` 新增列表、编辑器、预览调试、工具冒烟、状态胶囊。
 - `src/env.ts` 新增 `ADMIN_DEBUG_TIMEOUT_MS` 与 `FEATURE_ADMIN_PACKAGES`。
 - Sidebar 底部新增「技能包管理」入口。
+- 草稿不再复制现有 Agent 代码包，后端从 `agent_package_templates/standard/` 标准模板初始化 AGENT.md、示例技能、参考文档和输出模板。
+- 技能包文件树以 `PackageEntry.entry_id / parent_id` 为唯一层级事实源（`src/lib/package-tree.ts` + `PackageFileTree.tsx`）；path 仅用于展示与旧文件接口定位，旧 files 仅在 entries 缺失时兼容投影。

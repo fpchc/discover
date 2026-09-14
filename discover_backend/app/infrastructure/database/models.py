@@ -17,7 +17,18 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -162,8 +173,8 @@ class UploadFileRecord(Base):
 class AgentPackageRecord(Base):
     """技能包管理（管理员在线修改/调试）：一次发布一个 agent 级版本化 bundle。
 
-    bundle 字节在存储层（zip），元数据入库；可编辑文件在 agent_package_files。
-    脚本与 schemas 仍由代码发布，发布时从代码包拷入 bundle。
+    bundle 字节在存储层（zip），元数据入库；文件树节点在
+    agent_package_entries，使用 parent_id + name 显式表达目录层级。
     """
 
     __tablename__ = "agent_packages"
@@ -171,7 +182,7 @@ class AgentPackageRecord(Base):
     package_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64))
     version: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), default="draft")
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -194,18 +205,50 @@ class AgentPackageRecord(Base):
     )
 
 
-class AgentPackageFileRecord(Base):
-    """技能包可编辑文件（AGENT/SKILL 正文、references、templates）。"""
+class AgentPackageEntryRecord(Base):
+    """技能包文件树节点：目录与文件共享邻接表，父节点由 parent_id 显式表达。"""
 
-    __tablename__ = "agent_package_files"
+    __tablename__ = "agent_package_entries"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    package_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
-    path: Mapped[str] = mapped_column(String(512))
-    content: Mapped[str] = mapped_column(Text)
+    package_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_packages.package_id", ondelete="CASCADE"),
+        index=True,
+    )
+    parent_id: Mapped[int | None] = mapped_column(BigInteger)
+    entry_type: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(default=0)
 
     __table_args__ = (
-        Index("uq_agent_package_files_package_path", "package_id", "path", unique=True),
+        UniqueConstraint(
+            "package_id",
+            "id",
+            name="uq_agent_package_entries_package_node",
+        ),
+        ForeignKeyConstraint(
+            ["package_id", "parent_id"],
+            ["agent_package_entries.package_id", "agent_package_entries.id"],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "(entry_type = 'directory' AND content IS NULL) OR "
+            "(entry_type = 'file' AND content IS NOT NULL)",
+            name="content",
+        ),
+        Index(
+            "uq_agent_package_entries_sibling",
+            "package_id",
+            "parent_id",
+            "name",
+            unique=True,
+        ),
+        Index(
+            "uq_agent_package_entries_root",
+            "package_id",
+            unique=True,
+            postgresql_where=parent_id.is_(None),
+        ),
     )
-
-

@@ -6,6 +6,11 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from app.application.chat.turn_context import TurnContextRequest, build_turn_context
+from app.application.dto.conversations import ConversationSession
+from app.config.settings import Settings
 from app.environment.context import (
     ContextAssembler,
     ContextAssemblyOptions,
@@ -172,3 +177,28 @@ async def test_attachments_loaded_only_when_file_ids_declared() -> None:
     declared = await assembler.assemble(_identity(), CurrentInput(text="看附件", file_ids=["f1"]))
     assert [file.file_id for file in declared.attachments.files] == ["f1"]
     assert attachments.calls == [["f1"]]
+
+
+class _UnexpectedAssembler:
+    async def assemble(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("debug 模式不应访问持久化会话历史")
+
+
+async def test_turn_context_can_disable_history_for_debug_session() -> None:
+    services = SimpleNamespace(
+        settings=Settings(_env_file=None),
+        context_assembler=_UnexpectedAssembler(),
+    )
+    request = TurnContextRequest(
+        session=ConversationSession(conversation_id="debug-session", account_id="account"),
+        user_input="找客户",
+        run_id="run",
+        phase_instance_id="example-skill",
+        expert=True,
+        load_history=False,
+    )
+
+    turn = await build_turn_context(services, request)  # type: ignore[arg-type]
+
+    assert turn.context.conversation.recent_messages == []
+    assert turn.context.current_input.text == "找客户"

@@ -127,6 +127,8 @@ config/ + shared/         跨层共享：config/（Settings + 注册表 yaml）�
 
 | **核心边界定稿：LLM + Harness + Environment（2026-09-12）** | 目录结构回归项目**核心边界**——`LLM + Harness + Environment = Agent System`，DDD 只承载业务 CRUD。① `app/llm/`（模型接入）、`app/harness/`（驱动）、`app/environment/`（工具 / MCP / 上下文 / 工作区 / 存储 / 记忆）成为顶层一等包；② 同日早先那版「把 harness/capabilities 拆进 DDD 四层」的做法被推翻：`harness/` 全量重建（模型 + decision/progress + policy/ + contracts/ + react/ + graph + execution/pipeline + workflow/ + resolver/ + service + turn + events/ + checkpoint/ + wiring），技能包归 `harness/skill/`（技能包定义 harness 行为），助手目标词汇归 `harness/targets.py`；③ 新增 `environment/tools/plan.py` 的 `ToolActivationPlan` 作为跨支柱契约，由 `AssemblyPlan.tool_plan()` 投影，**断开 harness ⇄ environment 双向依赖**（跨支柱只允许 harness → environment）；④ 上下文平面归 `environment/context/`，其业务侧适配器留在 `application/context/adapters.py`；⑤ `infrastructure/` 收敛为共享技术底座（database / redis / crypto / sso / logging），storage 归 environment、去重历史归 environment/memory；⑥ 保留此前正确部分：跨边界 DTO 在 `application/dto/`、接入层只做协议适配（`turn_context` / 回合生命周期在 `application/chat/`）、AST 边界守卫测试改写为三支柱矩阵。实测：三支柱零反向依赖、`domain` 零跨层 import、ruff/mypy 绿（除 2 处既有问题）、tests/unit 560 通过 | 用户决策 2026-09-12 |
 
+| **技能包草稿标准模板（2026-09-14）** | `create_draft` 不再复制 `agents/{agent_id}`，改为从 `agent_package_templates/standard/` 渲染独立标准模板；草稿完整文件集合入 `agent_package_entries`（`parent_id + name + entry_type + content` 邻接表，目录也持久化），校验/发布/预览均从节点树物化，不再叠加代码包。API 为兼容前端仍返回物化 path，前端折叠树展示。原因：旧实现会把 discover 等现有技能包直接变成新草稿，既无法新建规范包，也让“编辑”缺少明确结构与边界 | 用户反馈 2026-09-14 |
+
 ## 技术债（演进方向）
 
 1. **messages 单行拍平**：query/answer/thinking 同行耦合「一问一答」范式；工具调用明细

@@ -151,6 +151,7 @@ async def run_draft_preview(
                 run_id=run_id,
                 phase_instance_id=assembled.plan.skill_id,
                 expert=True,
+                load_history=False,
             ),
         )
         request = PhaseExecutionRequest(

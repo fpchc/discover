@@ -1,14 +1,16 @@
 """技能包管理服务：草稿编辑、校验、发布、回滚、物化。
 
-存储模型：可编辑面（AGENT.md / SKILL.md / references / templates）以文件行
-存库（agent_package_files）；scripts 与 schemas 仍由代码发布，发布时从代码包
-拷入 bundle。一次发布产出**一个 agent 级 zip bundle**（Blob 原子对象），
-DB 记录版本 / 状态 / checksum / 归属账号。
+存储模型：草稿由独立标准模板初始化，完整包文件以 path + content 行存入
+agent_package_entries；目录层级由 path 确定性投影，发布时直接从草稿文件构建
+bundle，不再复制或叠加代码仓库中的现有 Agent。一次发布产出一个 agent 级
+zip bundle（Blob 原子对象），DB 记录版本 / 状态 / checksum / 归属账号。
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 import shutil
 import uuid
 from collections.abc import Sequence
@@ -28,9 +30,8 @@ from app.application.dto.skill_packages import (
 )
 from app.application.skill_package.bundle import (
     BUNDLE_MARKER,
-    copy_tree,
     read_bundle_marker,
-    read_editable_files,
+    read_package_files,
     unzip_to,
     write_bundle_marker,
     write_overlay,
@@ -42,10 +43,12 @@ from app.harness.skill.definition import AgentPackage
 from app.harness.skill.loader import AgentLoader
 from app.infrastructure.database.base import local_now
 from app.infrastructure.database.engine import Database
-from app.infrastructure.database.models import AgentPackageFileRecord, AgentPackageRecord
+from app.infrastructure.database.models import AgentPackageEntryRecord, AgentPackageRecord
 from app.shared.errors.base import BadRequestError, NotFoundError, RegistryValidationError
 
 _CODE_DIRS: frozenset[str] = frozenset({"scripts", "schemas"})
+_ENTRY_DIRECTORY = "directory"
+_ENTRY_FILE = "file"
 
 
 def _sha256(data: bytes) -> str:
@@ -62,11 +65,10 @@ class SkillPackageService:
         storage: BaseStorage,
         loader: AgentLoader,
     ) -> None:
-        self._settings = settings
         self._db = db
         self._storage = storage
         self._loader = loader
-        self._agents_root = settings.agents_root_dir.resolve()
+        self._template_root = settings.agent_package_template_dir.resolve()
         self._bundle_dir = settings.agent_package_bundle_dir
         self._max_bytes = settings.agent_package_bundle_max_bytes
 
@@ -89,8 +91,8 @@ class SkillPackageService:
             file_rows = (
                 (
                     await session.execute(
-                        select(AgentPackageFileRecord).where(
-                            AgentPackageFileRecord.package_id == package_id
+                        select(AgentPackageEntryRecord).where(
+                            AgentPackageEntryRecord.package_id == package_id
                         )
                     )
                 )
@@ -117,8 +119,11 @@ class SkillPackageService:
         return [self._published(row) for row in rows]
 
     async def materialize(self, package: PublishedPackage) -> Path:
-        """下载 bundle 并物化到本地缓存目录（幂等：校验和一致复用）。"""
-        target = (self._bundle_dir / package.agent_id / package.version).resolve()
+        """下载 bundle 并物化为可加载的 agent 目录（幂等：校验和一致复用）。"""
+        package_root = (
+            self._bundle_dir / "_published" / package.agent_id / package.version
+        ).resolve()
+        target = (package_root / package.agent_id).resolve()
         self._ensure_within_bundle_dir(target)
         marker = target / BUNDLE_MARKER
         if await anyio.to_thread.run_sync(read_bundle_marker, marker, package.checksum):
@@ -129,20 +134,41 @@ class SkillPackageService:
         return target
 
     async def load_draft_package(self, package_id: uuid.UUID) -> AgentPackage:
-        """把草稿物化为可加载的智能体包（代码包脚本 + 草稿编辑面合并）。"""
-        detail = await self.get_package(package_id)
-        files = {item.path: item.content for item in detail.files}
-        workdir = self._bundle_dir / "_draft" / str(package_id)
-        await anyio.to_thread.run_sync(copy_tree, self._agent_dir(detail.agent_id), workdir)
+        """从草稿的完整文件集合物化并加载智能体包。"""
+        package = await self._get_package_record(package_id)
+        files = await self._load_file_map(package_id)
+        workdir = self._bundle_dir / "_draft" / str(package_id) / package.agent_id
+        await anyio.to_thread.run_sync(shutil.rmtree, workdir, True)
         await anyio.to_thread.run_sync(write_overlay, workdir, files)
         return await self._loader.load_package_dir(workdir)
 
     # ---- 草稿编辑 ----
-    async def create_draft(self, *, account_id: str, agent_id: str, version: str) -> PackageDetail:
-        """从代码包种子创建草稿：可编辑文件来自 agents/{agent}（不含脚本/schema）。"""
-        agent_dir = self._agent_dir(agent_id)
+    async def create_draft(
+        self,
+        *,
+        account_id: str,
+        agent_id: str,
+        version: str,
+        template_id: str = "standard",
+        display_name: str | None = None,
+    ) -> PackageDetail:
+        """从标准模板创建草稿，不再复制现有代码仓库中的技能包。"""
+        self._validate_agent_id(agent_id)
         self._validate_version(version)
-        editable = await anyio.to_thread.run_sync(read_editable_files, agent_dir)
+        template_dir = self._template_dir(template_id)
+        template_files = await anyio.to_thread.run_sync(read_package_files, template_dir)
+        resolved_display_name = (
+            display_name.strip() if display_name is not None and display_name.strip() else agent_id
+        )
+        files = {
+            path: self._render_template(
+                content,
+                agent_id=agent_id,
+                version=version,
+                display_name=resolved_display_name,
+            )
+            for path, content in template_files.items()
+        }
         now = local_now()
         row = AgentPackageRecord(
             agent_id=agent_id,
@@ -157,80 +183,49 @@ class SkillPackageService:
         async with self._db.session_factory() as session:
             session.add(row)
             await session.flush()
-            for path, content in editable.items():
-                session.add(
-                    AgentPackageFileRecord(package_id=row.package_id, path=path, content=content)
-                )
+            await self._create_entry_tree(session, row.package_id, files)
             await session.commit()
         return await self.get_package(row.package_id)
 
     async def save_file(
         self, package_id: uuid.UUID, *, path: str, content: str, account_id: str
     ) -> PackageFile:
-        """保存单个可编辑文件（新建或覆盖）。"""
+        """保存单个可编辑文件（新建或覆盖目录树叶子）。"""
         self._validate_file_path(path)
         async with self._db.session_factory() as session:
             row = await self._require_package(session, package_id)
-            file_row = (
-                (
-                    await session.execute(
-                        select(AgentPackageFileRecord).where(
-                            AgentPackageFileRecord.package_id == package_id,
-                            AgentPackageFileRecord.path == path,
-                        )
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if file_row is None:
-                file_row = AgentPackageFileRecord(package_id=package_id, path=path, content=content)
-                session.add(file_row)
-            else:
-                file_row.content = content
+            await self._upsert_file_entry(session, package_id, path, content)
             row.updated_by = account_id
             row.updated_at = local_now()
             await session.commit()
         return PackageFile(path=path, content=content)
 
     async def delete_file(self, package_id: uuid.UUID, *, path: str, account_id: str) -> None:
-        """删除单个可编辑文件。"""
+        """删除单个可编辑文件，并清理因此变为空目录的祖先节点。"""
+        self._validate_file_path(path)
         async with self._db.session_factory() as session:
             row = await self._require_package(session, package_id)
-            file_row = (
-                (
-                    await session.execute(
-                        select(AgentPackageFileRecord).where(
-                            AgentPackageFileRecord.package_id == package_id,
-                            AgentPackageFileRecord.path == path,
-                        )
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if file_row is not None:
-                await session.delete(file_row)
+            if await self._delete_file_entry(session, package_id, path):
                 row.updated_by = account_id
                 row.updated_at = local_now()
                 await session.commit()
 
     # ---- 校验 / 发布 / 回滚 ----
     async def validate(self, package_id: uuid.UUID) -> ValidateResult:
-        """静态校验草稿：代码包脚本 + 草稿可编辑文件合并后走 AgentLoader。"""
-        detail = await self.get_package(package_id)
-        files = {item.path: item.content for item in detail.files}
-        errors = await self._validate_files(detail.agent_id, files)
+        """使用草稿的完整文件集合执行静态校验。"""
+        package = await self._get_package_record(package_id)
+        files = await self._load_file_map(package_id)
+        errors = await self._validate_files(package.agent_id, files)
         return ValidateResult(ok=not errors, errors=errors)
 
     async def publish(self, package_id: uuid.UUID, *, account_id: str) -> PublishedPackage:
-        """发布草稿：校验通过后打包上传，置为当前生效版本（其余已发布停用）。"""
-        detail = await self.get_package(package_id)
-        files = {item.path: item.content for item in detail.files}
-        errors = await self._validate_files(detail.agent_id, files)
+        """校验并直接从草稿文件构建 bundle，不叠加代码仓库中的旧技能包。"""
+        package = await self._get_package_record(package_id)
+        files = await self._load_file_map(package_id)
+        errors = await self._validate_files(package.agent_id, files)
         if errors:
             raise RegistryValidationError("发布失败，技能包校验未通过：" + "; ".join(errors))
-        data = await self._build_bundle(detail.agent_id, files)
+        data = await self._build_bundle(package.agent_id, files)
         checksum = _sha256(data)
         storage_key = f"{uuid.uuid4().hex}.zip"
         await self._storage.save(storage_key, data)
@@ -278,35 +273,253 @@ class SkillPackageService:
             return self._published(row)
 
     # ---- 内部工具 ----
-    def _agent_dir(self, agent_id: str) -> Path:
-        agent_dir = self._agents_root / agent_id
-        if not agent_dir.is_dir():
-            raise NotFoundError(f"未知智能体：{agent_id}")
-        return agent_dir
+    async def _get_package_record(self, package_id: uuid.UUID) -> AgentPackageRecord:
+        async with self._db.session_factory() as session:
+            return await self._require_package(session, package_id)
+
+    async def _load_file_map(self, package_id: uuid.UUID) -> dict[str, str]:
+        async with self._db.session_factory() as session:
+            rows = await self._load_entry_rows(session, package_id)
+        return self._entries_to_file_map(rows)
+
+    async def _create_entry_tree(
+        self,
+        session: AsyncSession,
+        package_id: uuid.UUID,
+        files: dict[str, str],
+    ) -> None:
+        root = await self._ensure_root(session, package_id)
+        directories: dict[str, AgentPackageEntryRecord] = {"": root}
+        for path, content in sorted(files.items()):
+            parts = Path(path).parts
+            parent = root
+            directory_path = ""
+            for name in parts[:-1]:
+                directory_path = f"{directory_path}/{name}".strip("/")
+                directory = directories.get(directory_path)
+                if directory is None:
+                    directory = AgentPackageEntryRecord(
+                        package_id=package_id,
+                        parent_id=parent.id,
+                        entry_type=_ENTRY_DIRECTORY,
+                        name=name,
+                        content=None,
+                    )
+                    session.add(directory)
+                    await session.flush()
+                    directories[directory_path] = directory
+                parent = directory
+            session.add(
+                AgentPackageEntryRecord(
+                    package_id=package_id,
+                    parent_id=parent.id,
+                    entry_type=_ENTRY_FILE,
+                    name=parts[-1],
+                    content=content,
+                )
+            )
+
+    async def _upsert_file_entry(
+        self,
+        session: AsyncSession,
+        package_id: uuid.UUID,
+        path: str,
+        content: str,
+    ) -> None:
+        root = await self._ensure_root(session, package_id)
+        rows = await self._load_entry_rows(session, package_id)
+        nodes = {(row.parent_id, row.name): row for row in rows}
+        parent = root
+        directory_path = ""
+        for name in Path(path).parts[:-1]:
+            directory_path = f"{directory_path}/{name}".strip("/")
+            node = nodes.get((parent.id, name))
+            if node is None:
+                node = AgentPackageEntryRecord(
+                    package_id=package_id,
+                    parent_id=parent.id,
+                    entry_type=_ENTRY_DIRECTORY,
+                    name=name,
+                    content=None,
+                )
+                session.add(node)
+                await session.flush()
+                nodes[(parent.id, name)] = node
+            elif node.entry_type != _ENTRY_DIRECTORY:
+                raise BadRequestError(f"路径冲突：{directory_path}")
+            parent = node
+        name = Path(path).parts[-1]
+        node = nodes.get((parent.id, name))
+        if node is None:
+            session.add(
+                AgentPackageEntryRecord(
+                    package_id=package_id,
+                    parent_id=parent.id,
+                    entry_type=_ENTRY_FILE,
+                    name=name,
+                    content=content,
+                )
+            )
+        elif node.entry_type == _ENTRY_FILE:
+            node.content = content
+        else:
+            raise BadRequestError(f"路径冲突：{path}")
+
+    async def _delete_file_entry(
+        self,
+        session: AsyncSession,
+        package_id: uuid.UUID,
+        path: str,
+    ) -> bool:
+        rows = await self._load_entry_rows(session, package_id)
+        files = self._entries_to_file_map(rows)
+        if path not in files:
+            return False
+        rows_by_id = {row.id: row for row in rows}
+        target = next(row for row in rows if self._entry_path(row, rows_by_id) == path)
+        current_parent_id = target.parent_id
+        await session.delete(target)
+        deleted_ids = {target.id}
+        while current_parent_id is not None:
+            parent = rows_by_id[current_parent_id]
+            has_other_child = any(
+                row.parent_id == parent.id and row.id not in deleted_ids for row in rows
+            )
+            if has_other_child:
+                break
+            await session.delete(parent)
+            deleted_ids.add(parent.id)
+            current_parent_id = parent.parent_id
+        return True
+
+    async def _ensure_root(
+        self,
+        session: AsyncSession,
+        package_id: uuid.UUID,
+    ) -> AgentPackageEntryRecord:
+        row = (
+            (
+                await session.execute(
+                    select(AgentPackageEntryRecord).where(
+                        AgentPackageEntryRecord.package_id == package_id,
+                        AgentPackageEntryRecord.parent_id.is_(None),
+                        AgentPackageEntryRecord.entry_type == _ENTRY_DIRECTORY,
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if row is not None:
+            return row
+        row = AgentPackageEntryRecord(
+            package_id=package_id,
+            parent_id=None,
+            entry_type=_ENTRY_DIRECTORY,
+            name="",
+            content=None,
+        )
+        session.add(row)
+        await session.flush()
+        return row
+
+    @staticmethod
+    async def _load_entry_rows(
+        session: AsyncSession,
+        package_id: uuid.UUID,
+    ) -> list[AgentPackageEntryRecord]:
+        return list(
+            (
+                await session.execute(
+                    select(AgentPackageEntryRecord).where(
+                        AgentPackageEntryRecord.package_id == package_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    @staticmethod
+    def _entries_to_file_map(rows: Sequence[AgentPackageEntryRecord]) -> dict[str, str]:
+        by_id = {row.id: row for row in rows}
+
+        def resolve(row: AgentPackageEntryRecord) -> str:
+            if row.parent_id is None:
+                return row.name
+            parent = by_id.get(row.parent_id)
+            if parent is None:
+                raise RegistryValidationError(f"技能包目录树损坏：缺少父节点 {row.parent_id}")
+            parent_path = resolve(parent)
+            return f"{parent_path}/{row.name}".strip("/")
+
+        return {resolve(row): row.content or "" for row in rows if row.entry_type == _ENTRY_FILE}
+
+    @staticmethod
+    def _entry_path(
+        row: AgentPackageEntryRecord,
+        rows_by_id: dict[int, AgentPackageEntryRecord],
+    ) -> str:
+        segments = [row.name]
+        parent_id = row.parent_id
+        while parent_id is not None:
+            parent = rows_by_id[parent_id]
+            if parent.parent_id is None:
+                break
+            segments.append(parent.name)
+            parent_id = parent.parent_id
+        return "/".join(reversed(segments))
 
     async def _validate_files(self, agent_id: str, files: dict[str, str]) -> list[str]:
-        workdir = self._bundle_dir / "_draft" / uuid.uuid4().hex
+        workdir = self._bundle_dir / "_draft" / uuid.uuid4().hex / agent_id
         try:
-            await anyio.to_thread.run_sync(copy_tree, self._agent_dir(agent_id), workdir)
             await anyio.to_thread.run_sync(write_overlay, workdir, files)
             await self._loader.load_package_dir(workdir)
         except (RegistryValidationError, ValueError, OSError) as exc:
             return [str(exc)]
         finally:
-            await anyio.to_thread.run_sync(shutil.rmtree, workdir, True)
+            await anyio.to_thread.run_sync(shutil.rmtree, workdir.parent, True)
         return []
 
     async def _build_bundle(self, agent_id: str, files: dict[str, str]) -> bytes:
-        workdir = self._bundle_dir / "_build" / uuid.uuid4().hex
+        workdir = self._bundle_dir / "_build" / uuid.uuid4().hex / agent_id
         try:
-            await anyio.to_thread.run_sync(copy_tree, self._agent_dir(agent_id), workdir)
             await anyio.to_thread.run_sync(write_overlay, workdir, files)
             data = await anyio.to_thread.run_sync(zip_dir, workdir)
         finally:
-            await anyio.to_thread.run_sync(shutil.rmtree, workdir, True)
+            await anyio.to_thread.run_sync(shutil.rmtree, workdir.parent, True)
         if len(data) > self._max_bytes:
             raise RegistryValidationError(f"技能包 bundle 超过大小上限（{self._max_bytes} 字节）")
         return data
+
+    def _template_dir(self, template_id: str) -> Path:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", template_id):
+            raise BadRequestError(f"非法模板 ID：{template_id}")
+        candidate = (self._template_root / template_id).resolve()
+        if not candidate.is_relative_to(self._template_root) or not candidate.is_dir():
+            raise BadRequestError(f"技能包模板不存在：{template_id}")
+        return candidate
+
+    @staticmethod
+    def _render_template(content: str, *, agent_id: str, version: str, display_name: str) -> str:
+        replacements = {
+            "agent_id": agent_id,
+            "version": json.dumps(version, ensure_ascii=False),
+            "display_name": json.dumps(display_name, ensure_ascii=False),
+        }
+        rendered = content
+        for key, value in replacements.items():
+            rendered = rendered.replace("{{" + key + "}}", value)
+        if re.search(r"\{\{[a-z_]+\}\}", rendered):
+            raise RegistryValidationError("标准模板包含未解析的占位符")
+        return rendered
+
+    @staticmethod
+    def _validate_agent_id(agent_id: str) -> None:
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", agent_id):
+            raise BadRequestError("agent_id 必须为 kebab-case")
+        if agent_id == "generic":
+            raise BadRequestError("agent_id 不能使用保留字 generic")
 
     async def _require_package(
         self, session: AsyncSession, package_id: uuid.UUID
@@ -376,12 +589,13 @@ class SkillPackageService:
 
     @staticmethod
     def _detail(
-        row: AgentPackageRecord, file_rows: Sequence[AgentPackageFileRecord]
+        row: AgentPackageRecord, file_rows: Sequence[AgentPackageEntryRecord]
     ) -> PackageDetail:
-        files = sorted(
-            (PackageFile(path=item.path, content=item.content) for item in file_rows),
-            key=lambda item: item.path,
-        )
+        files = [
+            PackageFile(path=path, content=content)
+            for path, content in sorted(SkillPackageService._entries_to_file_map(file_rows).items())
+        ]
+
         return PackageDetail(
             package_id=str(row.package_id),
             agent_id=row.agent_id,

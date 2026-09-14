@@ -54,12 +54,14 @@ async def create_draft(
     account: AccountRecord = Depends(require_superuser),
     services: AppServices = Depends(get_services),
 ) -> PackageDetail:
-    """从代码包种子创建草稿。"""
+    """从标准模板创建草稿。"""
     assert services.skill_packages is not None
     return await services.skill_packages.create_draft(
         account_id=account.account_id,
         agent_id=agent_id,
         version=request.version,
+        template_id=request.template_id,
+        display_name=request.display_name,
     )
 
 

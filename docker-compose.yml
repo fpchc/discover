@@ -5,6 +5,12 @@ x-common-env: &common-env
   LLM_PROVIDERS_PATH: ${LLM_PROVIDERS_PATH:-config/llm-providers.yaml}
   AGENT_WORKSPACE_ROOT_DIR: ${AGENT_WORKSPACE_ROOT_DIR:-workspaces}
 
+  # ---------- 技能包管理 ----------
+  AGENT_PACKAGE_SOURCE: ${AGENT_PACKAGE_SOURCE:-database}
+  AGENT_PACKAGE_TEMPLATE_DIR: ${AGENT_PACKAGE_TEMPLATE_DIR:-agent_package_templates}
+  AGENT_PACKAGE_BUNDLE_DIR: ${AGENT_PACKAGE_BUNDLE_DIR:-storage/packages}
+  AGENT_PACKAGE_BUNDLE_MAX_BYTES: ${AGENT_PACKAGE_BUNDLE_MAX_BYTES:-8388608}
+
   # ---------- 持久化（PostgreSQL） ----------
   DB_USERNAME: ${DB_USERNAME:-postgres}
   DB_PASSWORD: ${DB_PASSWORD:-v7Hf}
