@@ -157,3 +157,55 @@ class UploadFileRecord(Base):
     used: Mapped[bool] = mapped_column(default=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
+
+
+class AgentPackageRecord(Base):
+    """技能包管理（管理员在线修改/调试）：一次发布一个 agent 级版本化 bundle。
+
+    bundle 字节在存储层（zip），元数据入库；可编辑文件在 agent_package_files。
+    脚本与 schemas 仍由代码发布，发布时从代码包拷入 bundle。
+    """
+
+    __tablename__ = "agent_packages"
+
+    package_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    version: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    storage_key: Mapped[str | None] = mapped_column(String(64))
+    checksum: Mapped[str | None] = mapped_column(String(128))
+    # 草稿基版本：草稿从某个已发布 bundle 派生，装配/校验/发布时以该 bundle 为底座
+    base_storage_key: Mapped[str | None] = mapped_column(String(64))
+    base_checksum: Mapped[str | None] = mapped_column(String(128))
+    created_by: Mapped[str] = mapped_column(String(64))
+    updated_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_agent_packages_agent_status", "agent_id", "status"),
+        Index(
+            "uq_agent_packages_agent_version_status", "agent_id", "version", "status", unique=True
+        ),
+    )
+
+
+class AgentPackageFileRecord(Base):
+    """技能包可编辑文件（AGENT/SKILL 正文、references、templates）。"""
+
+    __tablename__ = "agent_package_files"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    package_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    path: Mapped[str] = mapped_column(String(512))
+    content: Mapped[str] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("uq_agent_package_files_package_path", "package_id", "path", unique=True),
+    )
+
+

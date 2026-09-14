@@ -6,7 +6,7 @@
  * 让 axios 按请求体自动推断：JSON 对象 → application/json，FormData → 浏览器补 multipart。
  */
 import axios, { type InternalAxiosRequestConfig, isAxiosError } from 'axios'
-import { API_BASE_URL, REQUEST_TIMEOUT_MS } from '@/env'
+import { ADMIN_DEBUG_TIMEOUT_MS, API_BASE_URL, REQUEST_TIMEOUT_MS } from '@/env'
 import {
   clearStoredTokens,
   readStoredRefreshToken,
@@ -24,13 +24,25 @@ import type {
   ChatRequest,
   ChatStopResponse,
   ConversationRecord,
+  CreatePackageDraftRequest,
+  DebugPreviewRequest,
+  DebugToolRequest,
   LoginRequest,
   LoginResponse,
   MessageRecord,
+  PackageDetail,
+  PackageFile,
+  PackageSummary,
+  PreviewResult,
+  PublishedPackage,
+  RollbackPackageRequest,
+  SavePackageFileRequest,
+  ToolSmokeResult,
   UpdateAccountRequest,
   UploadConfig,
   UploadedFile,
   UsageDaily,
+  ValidateResult,
 } from '@/types'
 
 export const httpClient = axios.create({
@@ -344,4 +356,121 @@ export async function uploadFile(file: File): Promise<UploadedFile> {
 /** 文件预览 / 下载共用 URL（服务端 inline，加 download 属性才触发下载） */
 export function filePreviewUrl(fileId: string): string {
   return `${API_BASE_URL}/files/${fileId}/preview`
+}
+
+// ===================== 管理端技能包（/admin/packages） =====================
+
+/** 文件 path 可含 `/`（如 client-finder/references/a.md）；逐段编码，保留 / 分隔符 */
+function encodePackageFilePath(path: string): string {
+  return path
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}
+
+/** 列出技能包（agentId 为空 = 返回全部） */
+export async function fetchAdminPackages(agentId = ''): Promise<PackageSummary[]> {
+  const { data } = await httpClient.get<PackageSummary[]>('/admin/packages', {
+    params: agentId === '' ? undefined : { agent_id: agentId },
+  })
+  return data
+}
+
+/** 从代码包种子创建草稿（响应含可编辑文件全集） */
+export async function createPackageDraft(agentId: string, version: string): Promise<PackageDetail> {
+  const body: CreatePackageDraftRequest = { version }
+  const { data } = await httpClient.post<PackageDetail>(
+    `/admin/packages/${encodeURIComponent(agentId)}/drafts`,
+    body,
+  )
+  return data
+}
+
+/** 读取技能包详情 */
+export async function fetchPackageDetail(packageId: string): Promise<PackageDetail> {
+  const { data } = await httpClient.get<PackageDetail>(
+    `/admin/packages/${encodeURIComponent(packageId)}`,
+  )
+  return data
+}
+
+/** 保存单个文件（新建或覆盖） */
+export async function savePackageFile(
+  packageId: string,
+  path: string,
+  content: string,
+): Promise<PackageFile> {
+  const body: SavePackageFileRequest = { path, content }
+  const { data } = await httpClient.put<PackageFile>(
+    `/admin/packages/${encodeURIComponent(packageId)}/files`,
+    body,
+  )
+  return data
+}
+
+/** 删除单个文件（path 为完整相对路径，可含 /） */
+export async function deletePackageFile(
+  packageId: string,
+  path: string,
+): Promise<{ deleted: boolean }> {
+  const { data } = await httpClient.delete<{ deleted: boolean }>(
+    `/admin/packages/${encodeURIComponent(packageId)}/files/${encodePackageFilePath(path)}`,
+  )
+  return data
+}
+
+/** 静态校验（不发布） */
+export async function validatePackage(packageId: string): Promise<ValidateResult> {
+  const { data } = await httpClient.post<ValidateResult>(
+    `/admin/packages/${encodeURIComponent(packageId)}/validate`,
+  )
+  return data
+}
+
+/** 发布草稿为当前生效版本（发布成功自动停用该 agent 其他已发布版本） */
+export async function publishPackage(packageId: string): Promise<PublishedPackage> {
+  const { data } = await httpClient.post<PublishedPackage>(
+    `/admin/packages/${encodeURIComponent(packageId)}/publish`,
+    {},
+  )
+  return data
+}
+
+/** 回滚到指定已发布版本 */
+export async function rollbackPackage(agentId: string, version: string): Promise<PublishedPackage> {
+  const body: RollbackPackageRequest = { version }
+  const { data } = await httpClient.post<PublishedPackage>(
+    `/admin/packages/${encodeURIComponent(agentId)}/rollback`,
+    body,
+  )
+  return data
+}
+
+/** 草稿预览对话（真实 LLM + 真实数据源；耗时长，使用独立超时） */
+export async function previewPackageDraft(
+  packageId: string,
+  userInput: string,
+): Promise<PreviewResult> {
+  const body: DebugPreviewRequest = { user_input: userInput }
+  const { data } = await httpClient.post<PreviewResult>(
+    `/admin/packages/${encodeURIComponent(packageId)}/debug/preview`,
+    body,
+    { timeout: ADMIN_DEBUG_TIMEOUT_MS },
+  )
+  return data
+}
+
+/** 工具冒烟测试（对草稿版本执行一次真实工具调用） */
+export async function smokeTestPackageTool(
+  packageId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<ToolSmokeResult> {
+  const body: DebugToolRequest = { tool_name: toolName, arguments: args }
+  const { data } = await httpClient.post<ToolSmokeResult>(
+    `/admin/packages/${encodeURIComponent(packageId)}/debug/tool`,
+    body,
+    { timeout: ADMIN_DEBUG_TIMEOUT_MS },
+  )
+  return data
 }

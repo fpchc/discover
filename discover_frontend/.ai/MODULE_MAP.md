@@ -62,3 +62,15 @@
 | 架构规范（依赖方向 / 边界） | `.claude/commands/architecture.md` |
 | 性能与状态粒度红线（SSE 高频路径） | `.claude/commands/performance.md` |
 | 需求文档 / API 契约 | `.claude/feature/REQUIREMENTS.md` / `.claude/feature/API.md` |
+
+## 管理端技能包模块（2026-09-13 更新）
+| 职责 | 文件 |
+|---|---|
+| 管理端技能包页路由壳（/admin/packages） | `src/components/admin/AdminPackagesPage.tsx` |
+| 技能包列表（筛选 / 刷新 / 创建草稿 / 回滚） | `src/components/admin/PackageList.tsx` |
+| 技能包编辑器（文件选择 / 保存 / 删除 / 校验 / 发布） | `src/components/admin/PackageEditor.tsx` |
+| 草稿预览对话调试 | `src/components/admin/PackageDebugPreview.tsx` |
+| 工具冒烟测试调试 | `src/components/admin/PackageDebugTool.tsx` |
+| 技能包状态胶囊 | `src/components/admin/PackageStatusPill.tsx` |
+| 管理端错误分类文案 / 时间格式化 | `src/lib/admin-packages.ts` |
+| shadcn 风格文本域 | `src/components/ui/textarea.tsx` |

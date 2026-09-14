@@ -150,3 +150,12 @@ light `#FAFAFA` 极简冷白）；玻璃拟态工具类（`glass-panel / glass-s
 
 **不在 v1**：ToolCallCard / ArtifactLink 高级事件卡片——工具 / 产物事件仍为后端内部事件，不进入
 对外正文（见关键契约确认）；若后端后续开放，再按 feature 开关接入。
+
+## 管理端技能包（2026-09-13 更新）
+- 路由新增 `/admin/packages`，懒加载 `src/components/admin/AdminPackagesPage.tsx`。
+- `src/lib/api.ts` 新增 `/admin/packages` 接口封装：list / create / detail / save / delete / validate / publish / rollback / debug preview / debug tool。
+- `src/types.ts` 新增 PackageStatus / PackageFile / PackageSummary / PackageDetail / PublishedPackage / ValidateResult / PreviewResult / ToolSmokeResult 及请求体类型。
+- `src/lib/admin-packages.ts` 新增错误分类文案与时间格式化。
+- `src/components/admin/` 新增列表、编辑器、预览调试、工具冒烟、状态胶囊。
+- `src/env.ts` 新增 `ADMIN_DEBUG_TIMEOUT_MS` 与 `FEATURE_ADMIN_PACKAGES`。
+- Sidebar 底部新增「技能包管理」入口。

@@ -13,6 +13,9 @@ const AccountLayout = lazy(() =>
 const ProfilePage = lazy(() =>
   import('@/components/ProfilePage').then((module) => ({ default: module.ProfilePage })),
 )
+const AdminPackagesPage = lazy(() =>
+  import('@/components/admin/AdminPackagesPage').then((module) => ({ default: module.default })),
+)
 const UsagePage = lazy(() =>
   import('@/components/UsagePage').then((module) => ({ default: module.UsagePage })),
 )
@@ -36,9 +39,10 @@ function RequireGuest({ children }: { children: ReactNode }) {
 
 /**
  * 应用路由表（纯客户端 SPA，BrowserRouter 由 main.tsx 包裹；CLAUDE.md 第 1 节）。
- * 五条页面路由：
+ * 页面路由：
  * - `/login` 登录页；`/` 新对话页；`/conversations/:conversationId` 会话页（URL 携带会话 ID）；
  * - `/profile` 个人中心、`/usage` 用量为独立页面（共享 AccountLayout 左导航，路径级懒加载）；
+ * - `/admin/packages` 技能包管理（仅超级用户，后端校验 403）。
  * - 其余路径重定向 `/`。
  */
 export default function App() {
@@ -78,6 +82,14 @@ export default function App() {
           }
         />
       </Route>
+      <Route
+        path="/admin/packages"
+        element={
+          <Suspense fallback={<PageLoading />}>
+            <AdminPackagesPage />
+          </Suspense>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

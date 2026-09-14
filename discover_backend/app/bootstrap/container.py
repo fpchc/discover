@@ -19,6 +19,7 @@ from app.application.conversation.service import ConversationService
 from app.application.file.service import FileService
 from app.application.identity.service import AuthService
 from app.application.services import AppServices
+from app.application.skill_package import DatabasePackageSource, SkillPackageService
 from app.bootstrap.extensions import shutdown_extensions, startup_extensions
 from app.environment.context import ContextAssembler
 from app.environment.mcp.accessors import get_manager, get_registry
@@ -26,6 +27,7 @@ from app.environment.storage.accessors import get_storage
 from app.environment.tools.script_executor import ScriptExecutor
 from app.environment.workspace.service import WorkspaceManager
 from app.harness.skill.hot_reload import HotReloader
+from app.harness.skill.loader import AgentLoader
 from app.harness.skill.registry import AgentRegistry
 from app.infrastructure.database.accessors import get_database
 from app.infrastructure.database.engine import Database
@@ -78,7 +80,23 @@ def _build_services(services: AppServices, database: Database) -> None:
     services.script_executor = ScriptExecutor(services.settings)
     services.workspaces = WorkspaceManager(services.settings)
     services.files = FileService(services.settings, database, services.storage)
-    services.registry = AgentRegistry(services.settings, get_registry())
+    mcp_registry = get_registry()
+    if services.settings.agent_package_source == "database":
+        loader = AgentLoader(services.settings, mcp_registry)
+        services.skill_packages = SkillPackageService(
+            services.settings, database, services.storage, loader
+        )
+        services.registry = AgentRegistry(
+            services.settings,
+            mcp_registry,
+            source=DatabasePackageSource(
+                loader,
+                services.skill_packages,
+                services.settings.agents_root_dir.resolve(),
+            ),
+        )
+    else:
+        services.registry = AgentRegistry(services.settings, mcp_registry)
     services.catalog = AssistantCatalog(services.registry)
     services.conversation_service = ConversationService(
         database, services.settings, services.catalog

@@ -132,6 +132,10 @@ class AgentLoader:
             packages[package.manifest.agent_id] = package
         return AgentRegistrySnapshot(packages=packages, failures=failures)
 
+    async def load_package_dir(self, agent_dir: Path) -> AgentPackage:
+        """加载单个已物化/已存在的智能体目录（供数据库源复用）。"""
+        return await anyio.to_thread.run_sync(self._load_package_sync, agent_dir)
+
     async def _load_package(self, agent_dir: Path) -> AgentPackage:
         return await anyio.to_thread.run_sync(self._load_package_sync, agent_dir)
 

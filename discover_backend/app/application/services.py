@@ -17,6 +17,7 @@ from app.application.assistant.catalog import AssistantCatalog
 from app.application.conversation.service import ConversationService
 from app.application.file.service import FileService
 from app.application.identity.service import AuthService
+from app.application.skill_package.service import SkillPackageService
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
 from app.environment.context import ContextAssembler
@@ -51,6 +52,7 @@ class AppServices:
         self.storage: BaseStorage | None = None
         self.workspaces: WorkspaceManager | None = None
         self.files: FileService | None = None
+        self.skill_packages: SkillPackageService | None = None
         self.catalog: AssistantCatalog | None = None
         self.conversation_service: ConversationService | None = None
         # Agent 上下文装配器（agent-context-plane-spec §5.1）：只注入来源端口适配器，

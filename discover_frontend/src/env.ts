@@ -63,3 +63,15 @@ export const FEATURE_BLOCKING_FALLBACK: boolean = parseBool(
   import.meta.env.VITE_FEATURE_BLOCKING_FALLBACK,
   true,
 )
+
+/** 管理端调试接口超时（毫秒）；/debug/preview 会跑真实 LLM + 真实数据源，建议 ≥ 60s */
+export const ADMIN_DEBUG_TIMEOUT_MS: number = parsePositiveInt(
+  import.meta.env.VITE_ADMIN_DEBUG_TIMEOUT_MS,
+  120_000,
+)
+
+/** 是否开放技能包管理页（超级用户功能） */
+export const FEATURE_ADMIN_PACKAGES: boolean = parseBool(
+  import.meta.env.VITE_FEATURE_ADMIN_PACKAGES,
+  true,
+)

@@ -29,6 +29,7 @@ from app.harness.react.state import ReactGraphState
 from app.harness.resolver.assistant import AssistantResolver, ExplicitSelectionResolver
 from app.harness.resolver.skill import SkillResolutionContext, SkillResolver
 from app.harness.skill.assemble import AssemblyPlan
+from app.harness.skill.definition import AgentPackage
 from app.harness.skill.registry import AgentRegistry
 from app.harness.targets import AssistantTarget, TargetType
 from app.harness.workflow.compiler import WorkflowRunner
@@ -165,6 +166,47 @@ class AgentAssembler:
         plan = self._registry.assemble(target.id or "", skill_id)
         skill_dir = package.root / skill_id
         workspace = await self._workspaces.create(target.id or "")
+        broker = ToolBroker(
+            settings=self._settings, mcp_manager=self._mcp, script_executor=self._script
+        )
+        activation = await broker.activate(
+            plan=plan.tool_plan(),
+            skill_dir=skill_dir,
+            workspace=workspace.root,
+            session_id=session_id,
+            account_id=account_id,
+        )
+        if not activation.ok:
+            raise ConfigError(f"必需 MCP 依赖不可用：{', '.join(activation.failed_required)}")
+        return AssemblyResult(broker=broker, workspace=workspace, plan=plan)
+
+    async def assemble_from_package(
+        self,
+        *,
+        package: AgentPackage,
+        account_id: str,
+        session_id: str,
+    ) -> AssemblyResult:
+        """从一个已加载的智能体包直接装配（草稿预览 / 调试路径）。
+
+        与 resolve_and_assemble 的唯一差异：跳过目录解析，显式注入 package。
+        """
+        skill_ids = tuple(package.skills.keys())
+        if not skill_ids:
+            raise ConfigError("技能包无可用技能")
+        context = SkillResolutionContext(
+            skill_ids=skill_ids,
+            default_skill=package.manifest.default_skill,
+            explicit_skill=None,
+        )
+        skill_id = self._skill_resolver.resolve(context)
+        if skill_id is None:
+            raise ConfigError("无法解析技能")
+        if self._mcp is None or self._script is None:
+            raise ConfigError("MCP 管理器或脚本执行器未初始化，无法装配智能体")
+        plan = self._registry.assemble_package(package, skill_id)
+        skill_dir = package.root / skill_id
+        workspace = await self._workspaces.create(package.manifest.agent_id)
         broker = ToolBroker(
             settings=self._settings, mcp_manager=self._mcp, script_executor=self._script
         )

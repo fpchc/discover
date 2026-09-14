@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     mcp_registry_path: Path = Path("config/mcp-servers.yaml")
     llm_providers_path: Path = Path("config/llm-providers.yaml")
     agent_workspace_root_dir: Path = Path("workspaces")
+    # 技能包管理 bundle 物化缓存根目录（版本化 zip 解包到此处供加载/执行）
+    agent_package_bundle_dir: Path = Path("storage/packages")
 
     # ---- 持久化（PostgreSQL + SQLAlchemy async） ----
     # 连接参数分字段配置（DB_USERNAME / DB_PASSWORD / DB_HOST / DB_PORT /
@@ -227,6 +229,10 @@ class Settings(BaseSettings):
     # ---- 功能开关（{module}_enabled 命名） ----
     hot_reload_enabled: bool = False
     hot_reload_interval_seconds: float = 30.0
+    # 技能包来源："filesystem" 本地 agents/ 目录（默认）；"database" 走 DB+Blob 管理
+    agent_package_source: Literal["filesystem", "database"] = "filesystem"
+    # 单个技能包 bundle 大小上限（字节，8 MiB）
+    agent_package_bundle_max_bytes: int = 8 * 1024 * 1024
 
     # ---- 插件开关（{plugin}_enabled 命名，插件系统统一加载） ----
     # Redis 无开关恒启用：认证会话层硬依赖（登录会话 / 令牌过期 / 撤销 / 续期以 Redis 为准）

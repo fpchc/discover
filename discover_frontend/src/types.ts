@@ -333,3 +333,137 @@ export type SseStreamFrame =
   | SseThinkingEndedFrame
   | SsePingFrame
   | SseErrorFrame
+
+// ---- 管理端技能包（API 文档：/api/v1/admin/packages；仅超级用户） ----
+
+/** 技能包状态：草稿 / 已发布 / 已归档 */
+export type PackageStatus = 'draft' | 'published' | 'archived'
+
+/** 草稿预览对话的回合结果类型 */
+export type PackageOutcomeType =
+  | 'FINAL_PROPOSED'
+  | 'CANDIDATE_COMPLETED'
+  | 'INPUT_REQUIRED'
+  | 'PARTIAL_NO_PROGRESS'
+  | 'PARTIAL_BUDGET'
+  | 'FAILED'
+
+/** 冒烟测试错误分类（与后端 error_category 对齐） */
+export type PackageErrorCategory =
+  | 'config'
+  | 'connection'
+  | 'timeout'
+  | 'rate_limit'
+  | 'server'
+  | 'auth'
+  | 'billing'
+  | 'bad_request'
+  | 'content_filter'
+  | 'stream_interrupted'
+  | 'not_found'
+  | 'invalid_argument'
+  | 'denied'
+  | 'script'
+  | 'mcp'
+  | 'conflict'
+
+/** 技能包内单个可编辑文件 */
+export interface PackageFile {
+  /** 相对路径，如 AGENT.md、client-finder/SKILL.md */
+  path: string
+  /** 文件全文 */
+  content: string
+}
+
+/** 技能包列表项（GET /admin/packages） */
+export interface PackageSummary {
+  package_id: string
+  agent_id: string
+  version: string
+  status: PackageStatus
+  /** 是否当前生效版本 */
+  enabled: boolean
+  updated_at: string
+}
+
+/** 技能包详情（GET /admin/packages/{package_id}、创建草稿响应） */
+export interface PackageDetail {
+  package_id: string
+  agent_id: string
+  version: string
+  status: PackageStatus
+  enabled: boolean
+  files: PackageFile[]
+  published_at: string | null
+  updated_at: string
+}
+
+/** 发布 / 回滚成功响应 */
+export interface PublishedPackage {
+  agent_id: string
+  version: string
+  storage_key: string
+  checksum: string
+}
+
+/** 静态校验结果（POST /validate） */
+export interface ValidateResult {
+  ok: boolean
+  errors: string[]
+}
+
+/** 草稿预览调试 trace 事件 */
+export interface DebugRunEvent {
+  seq: number
+  event_type: string
+  payload: Record<string, unknown>
+}
+
+/** 草稿预览对话结果（POST /debug/preview） */
+export interface PreviewResult {
+  answer: string
+  outcome_type: PackageOutcomeType | null
+  thinking: string
+  events: DebugRunEvent[]
+}
+
+/** 工具冒烟测试结果（POST /debug/tool） */
+export interface ToolSmokeResult {
+  call_id: string
+  tool_name: string
+  ok: boolean
+  content: string
+  error_category: PackageErrorCategory | null
+  message: string
+  suggestion: string | null
+  duration_ms: number
+  truncated: boolean
+  produced_files: string[]
+}
+
+/** 创建草稿请求体 */
+export interface CreatePackageDraftRequest {
+  version: string
+}
+
+/** 保存单个文件请求体 */
+export interface SavePackageFileRequest {
+  path: string
+  content: string
+}
+
+/** 回滚请求体 */
+export interface RollbackPackageRequest {
+  version: string
+}
+
+/** 草稿预览调试请求体 */
+export interface DebugPreviewRequest {
+  user_input: string
+}
+
+/** 工具冒烟测试请求体 */
+export interface DebugToolRequest {
+  tool_name: string
+  arguments: Record<string, unknown>
+}

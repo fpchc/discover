@@ -3,6 +3,7 @@
 所有路由一律收拢在本目录下；需要分层时在 api/ 内部建子目录。
 """
 
+from app.interfaces.http.admin_packages import router as admin_packages_router
 from app.interfaces.http.assistants import router as assistants_router
 from app.interfaces.http.auth import router as auth_router
 from app.interfaces.http.chat import router as chat_router
@@ -10,6 +11,7 @@ from app.interfaces.http.conversations import router as conversations_router
 from app.interfaces.http.files import router as files_router
 
 __all__ = [
+    "admin_packages_router",
     "assistants_router",
     "auth_router",
     "chat_router",

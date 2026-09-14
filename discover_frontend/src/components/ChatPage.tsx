@@ -256,6 +256,10 @@ export function ChatPage() {
             setSidebarOpen(false)
             navigate('/profile')
           }}
+          onOpenAdmin={() => {
+            setSidebarOpen(false)
+            navigate('/admin/packages')
+          }}
           onToggleTheme={theme.toggle}
           onLogout={logout}
         />

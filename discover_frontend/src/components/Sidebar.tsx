@@ -2,6 +2,7 @@ import {
   LogOut,
   MessageSquare,
   Moon,
+  Package,
   PanelLeftClose,
   Plus,
   Sparkles,
@@ -47,6 +48,8 @@ interface SidebarProps {
   onSelectAssistant: (id: string) => void
   /** 点击账号区 → 进入个人中心页（/profile） */
   onOpenProfile: () => void
+  /** 打开管理端技能包页（/admin/packages） */
+  onOpenAdmin: () => void
   onToggleTheme: () => void
   /** 退出登录（清令牌并回到登录页） */
   onLogout: () => void
@@ -79,6 +82,7 @@ export function Sidebar({
   onCollapse,
   onSelectAssistant,
   onOpenProfile,
+  onOpenAdmin,
   onToggleTheme,
   onLogout,
 }: SidebarProps) {
@@ -242,6 +246,14 @@ export function Sidebar({
               {APP_ENV}
             </span>
           )}
+          <button
+            type="button"
+            title="技能包管理"
+            onClick={onOpenAdmin}
+            className="flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-3 transition-colors hover:bg-surface-hover hover:text-text-1"
+          >
+            <Package className="h-4 w-4" />
+          </button>
           <button
             type="button"
             title={isDark ? '切换为浅色模式' : '切换为深色模式'}

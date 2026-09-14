@@ -11,13 +11,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from types import TracebackType
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from app.application.services import AppServices
 from app.bootstrap.container import start_services, stop_services
 from app.bootstrap.extensions import initialize_extensions
 from app.config.settings import Settings
 from app.interfaces.http import (
+    admin_packages_router,
     assistants_router,
     auth_router,
     chat_router,
@@ -56,9 +57,17 @@ def _make_lifespan(services: AppServices) -> Callable[[FastAPI], AppLifespan]:
     return factory
 
 
-def _register_routes(app: FastAPI) -> None:
+def _register_routes(app: FastAPI, settings: Settings) -> None:
     prefix = "/api/v1"
-    routers = (auth_router, chat_router, files_router, conversations_router, assistants_router)
+    routers: list[APIRouter] = [
+        auth_router,
+        chat_router,
+        files_router,
+        conversations_router,
+        assistants_router,
+    ]
+    if settings.agent_package_source == "database":
+        routers.append(admin_packages_router)
     # 登录声明校验：漏标 / 标记与鉴权依赖不一致 → 启动即失败（不静默放行）
     verify_route_guards(routers)
     for router in routers:
@@ -83,5 +92,5 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.services = services
     initialize_extensions(app, settings=settings)
     _register_middleware(app, settings)
-    _register_routes(app)
+    _register_routes(app, settings)
     return app
