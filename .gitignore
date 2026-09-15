@@ -3,6 +3,10 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+# 打包产物（体积大，走存储桶分发，不入库）
+*.tar
+*.tar.gz
+*.tgz
 
 # ---- 类型检查 / 静态分析 / 测试 ----
 coverage/
