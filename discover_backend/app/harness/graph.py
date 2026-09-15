@@ -28,7 +28,6 @@ def build_react_subgraph(
     graph.add_node("validate_decision", executor.validate_decision)
     graph.add_node("preflight_action", executor.preflight_action)
     graph.add_node("execute_tool", executor.execute_tool)
-    graph.add_node("normalize_observation", executor.normalize_observation)
     graph.add_node("evaluate_progress", executor.evaluate_progress)
     graph.add_node("phase_contract", executor.phase_contract)
     graph.add_node("output_contract", executor.output_contract)
@@ -55,8 +54,7 @@ def build_react_subgraph(
         },
     )
     graph.add_edge("preflight_action", "execute_tool")
-    graph.add_edge("execute_tool", "normalize_observation")
-    graph.add_edge("normalize_observation", "evaluate_progress")
+    graph.add_edge("execute_tool", "evaluate_progress")
     graph.add_conditional_edges(
         "evaluate_progress",
         route_from_evaluate,

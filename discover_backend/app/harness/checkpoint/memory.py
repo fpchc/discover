@@ -38,10 +38,11 @@ class MemoryEventLog(EventLog):
     def __init__(self) -> None:
         self._events: dict[str, list[RunEvent]] = {}
 
-    async def append(self, event: RunEvent) -> None:
+    async def append(self, event: RunEvent) -> int:
         seq = await self.last_seq(event.run_id) + 1
         stored = event.model_copy(update={"seq": seq})
         self._events.setdefault(event.run_id, []).append(stored)
+        return seq
 
     async def events_after(self, run_id: str, seq: int) -> list[RunEvent]:
         events = self._events.get(run_id, [])

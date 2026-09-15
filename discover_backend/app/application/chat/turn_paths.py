@@ -7,10 +7,16 @@ SSE 帧与落库。
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from app.application.agent.capability import CapabilityActivator
 from app.application.chat.turn_context import TurnContextRequest, build_turn_context
 from app.application.dto import ConversationSession
+from app.application.file.service import FileService
+from app.application.run.persistence import PostgresActionCheckpoint
 from app.application.services import AppServices
 from app.config.settings import Settings
+from app.environment.context.models import ArtifactRef
 from app.harness.agent_runner import (
     AgentAssembler,
     build_agent_budget,
@@ -20,13 +26,35 @@ from app.harness.agent_runner import (
 )
 from app.harness.events.emitter import QueueEmitter
 from app.harness.events.run_events import LLMUsageUpdated
+from app.harness.execution.pipeline import ToolRuntime
 from app.harness.models import PhaseExecutionOutcome, PhaseExecutionRequest
+from app.harness.policy.authorization import AuthorizationContext, PolicyAuthorizer
 from app.harness.react.prompt import build_phase_system_prompt
 from app.harness.skill.manifest import ThinkingPreference
-from app.harness.wiring import LLMRunner, ToolRunner
+from app.harness.wiring import ActionGateway, LLMRunner
 from app.llm.chunks import TextChunk, ThinkingChunk, UsageChunk
 from app.llm.models import ChatRequest
 from app.shared.errors.base import ErrorCategory, PlatformError
+
+
+class _ArtifactRegistrar:
+    """FileService.register → ToolRuntime.ArtifactRegistrar 适配。"""
+
+    def __init__(self, files: FileService) -> None:
+        self._files = files
+
+    async def register(self, *, source_path: Path, filename: str, created_by: str) -> ArtifactRef:
+        record = await self._files.register(
+            source_path=source_path,
+            filename=filename,
+            created_by=created_by,
+        )
+        return ArtifactRef(
+            artifact_id=record.artifact_id,
+            name=record.filename,
+            media_type=record.media_type,
+        )
+
 
 # 直接流式路径的通用系统提示词（不走 ReAct 子图 / 技能包装配）
 _GENERIC_SYSTEM_PROMPT = "你是通用对话助手，直接回答用户的问题。"
@@ -82,15 +110,18 @@ async def _run_agent_react(
     assert services.resolve_api_key is not None
     assembler = AgentAssembler(
         registry=services.registry,
-        workspaces=services.workspaces,
-        mcp_manager=services.mcp_manager,
-        script_executor=services.script_executor,
-        settings=services.settings,
+        capabilities=CapabilityActivator(
+            settings=services.settings,
+            workspaces=services.workspaces,
+            mcp_manager=services.mcp_manager,
+            script_executor=services.script_executor,
+        ),
     )
     result = await assembler.resolve_and_assemble(
         assistant_target=session.assistant_target,
         account_id=session.account_id,
         session_id=session.conversation_id,
+        run_id=run_id,
     )
     if result is None:
         raise PlatformError("智能体或技能装配失败", category=ErrorCategory.SERVER, retryable=False)
@@ -102,11 +133,36 @@ async def _run_agent_react(
             resolve_api_key=services.resolve_api_key,
             settings=services.settings,
         )
-        tools = ToolRunner(broker)
+        authorizer = (
+            PolicyAuthorizer(
+                approval_required=set(services.settings.action_approval_required_side_effects)
+            )
+            if services.settings.action_authorization_enabled
+            else None
+        )
+        runtime = ToolRuntime(
+            broker=broker,
+            emit=emitter.emit,
+            checkpoint=(PostgresActionCheckpoint(services.db) if services.db is not None else None),
+            artifacts=_ArtifactRegistrar(services.files) if services.files is not None else None,
+            authorizer=authorizer,
+            progress_threshold=3,
+            idempotency_prefix="tool",
+        )
+        actions = ActionGateway(
+            broker=broker,
+            runtime=runtime,
+            workspace=result.workspace_root,
+            created_by=session.account_id,
+            authorization=AuthorizationContext(
+                account_id=session.account_id,
+                superuser=session.superuser,
+            ),
+        )
         # 阶段白名单取目录全集（Tier 0 + Tier 1 + Tier 2），而非仅已暴露集合：
         # describe_tool 只是按需展开参数约束，不是调用授权；否则懒加载的 Tier 2 工具
         # 会被 preflight 误判为「不在阶段白名单」，模型陷入盲搜死循环、正文始终为空。
-        allowed_tools = tools.catalog_tool_names()
+        allowed_tools = actions.catalog_tool_names()
         # 结构化上下文装配（agent-context-plane-spec §5.1/§5.4）：历史以 role
         # 语义进入消息序列，当前用户输入独立成 role=user，摘要仅作兼容字段。
         turn = await build_turn_context(
@@ -146,7 +202,7 @@ async def _run_agent_react(
         if workflow is not None:
             return await run_skill_workflow(
                 llm=llm,
-                tools=tools,
+                actions=actions,
                 events=emitter,
                 request=request,
                 definition=workflow,
@@ -155,7 +211,7 @@ async def _run_agent_react(
             )
         return await run_agent_turn(
             llm=llm,
-            tools=tools,
+            actions=actions,
             events=emitter,
             request=request,
             display_text=emitter.text_delta,

@@ -4,10 +4,13 @@
 写循环消费 get()，客户端断开时取消 run()，资源随任务组释放。
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from collections import deque
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import anyio
 
@@ -17,8 +20,12 @@ from app.harness.events.run_events import (
     RunEvent,
     TextDelta,
     ThinkingDelta,
+    should_persist_in_emitter,
 )
 from app.shared.utils.graphemes import split_graphemes
+
+if TYPE_CHECKING:
+    from app.harness.checkpoint.protocol import EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +138,9 @@ class _TypewriterChannel:
 class QueueEmitter:
     """会话级事件发射器。seq 由本类统一分配，保证单调递增。"""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, event_log: EventLog | None = None) -> None:
         self._settings = settings
+        self._event_log = event_log
         self._queue = _BoundedEventQueue(settings.sse_queue_max_events)
         self._seq = 0
         self._text = _TypewriterChannel(
@@ -221,11 +229,13 @@ class QueueEmitter:
                 await self._stamp_and_put(event)
 
     async def _stamp_and_put(self, event: RunEvent) -> None:
-        await self._queue.put(self._stamp(event))
-
-    def _stamp(self, event: RunEvent) -> RunEvent:
-        self._seq += 1
-        return event.model_copy(update={"seq": self._seq})
+        if self._event_log is not None and should_persist_in_emitter(event):
+            seq = await self._event_log.append(event)
+            stamped = event.model_copy(update={"seq": seq})
+        else:
+            self._seq += 1
+            stamped = event.model_copy(update={"seq": self._seq})
+        await self._queue.put(stamped)
 
     async def _tick(self, channel: _TypewriterChannel) -> None:
         """单次节拍：从通道取一帧，非空则入队。"""

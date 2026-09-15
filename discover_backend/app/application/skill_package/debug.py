@@ -11,6 +11,7 @@ import json
 import uuid
 from typing import Protocol
 
+from app.application.agent.capability import CapabilityActivator
 from app.application.chat.turn_context import TurnContextRequest, build_turn_context
 from app.application.chat.turn_paths import _resolve_thinking_budget
 from app.application.dto.conversations import ConversationSession
@@ -29,15 +30,16 @@ from app.harness.agent_runner import (
     run_skill_workflow,
 )
 from app.harness.events.run_events import RunEvent
+from app.harness.execution.pipeline import ToolRuntime
 from app.harness.models import PhaseExecutionOutcome, PhaseExecutionRequest
 from app.harness.react.prompt import build_phase_system_prompt
 from app.harness.targets import AssistantTarget, TargetType
-from app.harness.wiring import LLMRunner, ToolRunner
+from app.harness.wiring import ActionGateway, LLMRunner
 from app.shared.errors.base import BadRequestError, NotFoundError
 
 
 class _SmokeCatalog(Protocol):
-    """冒烟测试所需的工具目录查询能力（ToolBroker / ToolRunner 均满足）。"""
+    """冒烟测试所需的工具目录查询能力（ToolBroker 满足）。"""
 
     def get_descriptor(self, qualified_name: str) -> ToolDescriptor | None: ...
     def catalog_tool_names(self) -> list[str]: ...
@@ -119,10 +121,12 @@ async def run_draft_preview(
     package = await services.skill_packages.load_draft_package(package_id)
     assembler = AgentAssembler(
         registry=services.registry,
-        workspaces=services.workspaces,
-        mcp_manager=services.mcp_manager,
-        script_executor=services.script_executor,
-        settings=services.settings,
+        capabilities=CapabilityActivator(
+            settings=services.settings,
+            workspaces=services.workspaces,
+            mcp_manager=services.mcp_manager,
+            script_executor=services.script_executor,
+        ),
     )
     run_id = f"debug-{uuid.uuid4().hex}"
     session_id = f"debug-{uuid.uuid4().hex}"
@@ -137,7 +141,6 @@ async def run_draft_preview(
             resolve_api_key=services.resolve_api_key,
             settings=services.settings,
         )
-        tools = ToolRunner(broker)
         session = ConversationSession(
             conversation_id=session_id,
             account_id=account_id,
@@ -161,7 +164,7 @@ async def run_draft_preview(
             system_prompt=assembled.plan.system_prompt,
             phase_input={"user_goal": user_input},
             context_summary=turn.history_summary,
-            allowed_tools=tools.catalog_tool_names(),
+            allowed_tools=broker.catalog_tool_names(),
             thinking_enabled=(
                 services.settings.thinking_enabled and assembled.plan.thinking_preference != "off"
             ),
@@ -177,12 +180,16 @@ async def run_draft_preview(
             }
         )
         sink = _CollectingSink()
+        actions = ActionGateway(
+            broker=broker,
+            runtime=ToolRuntime(broker=broker, emit=sink.emit),
+        )
         thinking: list[str] = []
         workflow = build_workflow_definition(assembled.plan)
         if workflow is not None:
             outcome = await run_skill_workflow(
                 llm=llm,
-                tools=tools,
+                actions=actions,
                 events=sink,
                 request=request,
                 definition=workflow,
@@ -192,7 +199,7 @@ async def run_draft_preview(
         else:
             outcome = await run_agent_turn(
                 llm=llm,
-                tools=tools,
+                actions=actions,
                 events=sink,
                 request=request,
                 display_text=None,
@@ -222,10 +229,12 @@ async def run_tool_smoke(
     package = await services.skill_packages.load_draft_package(package_id)
     assembler = AgentAssembler(
         registry=services.registry,
-        workspaces=services.workspaces,
-        mcp_manager=services.mcp_manager,
-        script_executor=services.script_executor,
-        settings=services.settings,
+        capabilities=CapabilityActivator(
+            settings=services.settings,
+            workspaces=services.workspaces,
+            mcp_manager=services.mcp_manager,
+            script_executor=services.script_executor,
+        ),
     )
     assembled = await assembler.assemble_from_package(
         package=package, account_id="debug", session_id=f"debug-{uuid.uuid4().hex}"

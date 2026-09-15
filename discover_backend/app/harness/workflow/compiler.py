@@ -12,11 +12,19 @@ Contract 接入契约上下文由 W5 体系复用。
 from __future__ import annotations
 
 import json
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 from app.harness.contracts.executor import ContractContext, GateRunnerPort, ScriptGateExecutor
-from app.harness.contracts.models import ContractDefinition, ContractType, ContractVerdict
+from app.harness.contracts.models import (
+    ContractDefinition,
+    ContractResult,
+    ContractType,
+    ContractVerdict,
+)
+from app.harness.contracts.registry import decide_repair
+from app.harness.contracts.structural import has_structural_contract, structural_failures
 from app.harness.models import (
     BudgetState,
     PhaseExecutionOutcome,
@@ -24,6 +32,7 @@ from app.harness.models import (
     PhaseExecutionRequest,
     PhaseOutput,
 )
+from app.harness.policy.models import PolicyDecisionType
 from app.harness.workflow.definition import PhaseDefinition, WorkflowDefinition
 from app.harness.workflow.executors import PhaseExecutorRegistry
 from app.llm.models import ChatMessage
@@ -42,6 +51,24 @@ class WorkflowRunResult(BaseModel):
 
     phases: list[PhaseRun] = Field(default_factory=list)
     completed_phase_ids: list[str] = Field(default_factory=list)
+    final_outcome: PhaseExecutionOutcome | None = None
+    reason_code: str = ""
+
+
+class _SettleAction(StrEnum):
+    """阶段转换决策（内部）。"""
+
+    ADVANCE = "advance"
+    DEGRADE = "degrade"
+    TERMINATE = "terminate"
+
+
+class _Settlement(BaseModel):
+    """阶段转换结果（内部值对象）：动作 + 外层循环所需的下标/上下文/终态。"""
+
+    action: _SettleAction
+    next_index: int = 0
+    fallback_context: str = ""
     final_outcome: PhaseExecutionOutcome | None = None
     reason_code: str = ""
 
@@ -107,17 +134,33 @@ class WorkflowRunner:
                 tool_message_max_chars=tool_message_max_chars,
                 budget=budget,
                 contract_refs=phase.contract_refs,
+                output_schema=phase.output_schema,
             )
             outcome = await self._executors.resolve(phase.executor_type).execute(phase, request)
 
             if outcome.outcome_type == PhaseExecutionOutcomeType.CANDIDATE_COMPLETED:
-                phase_output = self._to_output(phase, outcome)
-                outputs[phase.phase_id] = phase_output
-                result.completed_phase_ids.append(phase.phase_id)
-                result.phases.append(PhaseRun(phase=phase, outcome=outcome, output=phase_output))
-                index += 1
-                fallback_context = ""
-                continue
+                settlement = await self._settle_candidate(
+                    definition,
+                    phase,
+                    request,
+                    outcome,
+                    index=index,
+                    outputs=outputs,
+                    result=result,
+                )
+                if settlement.action == _SettleAction.ADVANCE:
+                    index += 1
+                    fallback_context = ""
+                    continue
+                if settlement.action == _SettleAction.DEGRADE:
+                    index = settlement.next_index
+                    fallback_context = settlement.fallback_context
+                    continue
+                result.final_outcome = settlement.final_outcome
+                result.reason_code = settlement.reason_code
+                final_phase = phase
+                final_request = request
+                break
 
             fallback_phase = phase.fallback_phase
             fallback_index = self._find_phase_index(definition, fallback_phase)
@@ -176,6 +219,85 @@ class WorkflowRunner:
             limitations=list(outcome.limitations),
         )
 
+    async def _settle_candidate(
+        self,
+        definition: WorkflowDefinition,
+        phase: PhaseDefinition,
+        request: PhaseExecutionRequest,
+        outcome: PhaseExecutionOutcome,
+        *,
+        index: int,
+        outputs: dict[str, PhaseOutput],
+        result: WorkflowRunResult,
+    ) -> _Settlement:
+        """CANDIDATE_COMPLETED 阶段转换点：结构契约闸门 + decide_repair 有界修复。
+
+        - 无结构契约或通过 → 固化 PhaseOutput，推进下一阶段（ADVANCE）；
+        - 失败且可重试 → 同阶段带修复说明重跑（受 max_repair_attempts 约束）；
+        - 重试耗尽且有 fallback → 确定性降级跳转（DEGRADE）；
+        - 无路可走 → 终止（TERMINATE），final_outcome 交下游 Verifier 兜底判定。
+        """
+        repair_attempts = 0
+        while True:
+            failures = (
+                structural_failures(outcome.output_schema, outcome.candidate_output)
+                if has_structural_contract(outcome.output_schema)
+                else []
+            )
+            if not failures:
+                phase_output = self._to_output(phase, outcome)
+                outputs[phase.phase_id] = phase_output
+                result.completed_phase_ids.append(phase.phase_id)
+                result.phases.append(PhaseRun(phase=phase, outcome=outcome, output=phase_output))
+                return _Settlement(action=_SettleAction.ADVANCE)
+
+            decision = decide_repair(
+                ContractResult(
+                    contract_id=phase.phase_id,
+                    contract_type=ContractType.STRUCTURAL,
+                    verdict=ContractVerdict.FAIL,
+                    failures=failures,
+                    retryable=True,
+                    fallback=phase.fallback_phase or "",
+                ),
+                repair_attempts=repair_attempts,
+                max_repair_attempts=self._max_repair_attempts,
+            )
+            if decision.decision == PolicyDecisionType.RETRY:
+                repair_attempts += 1
+                request = request.model_copy(
+                    update={
+                        "phase_goal": self._repair_goal(phase.goal, failures),
+                        "attempt": request.attempt + 1,
+                    }
+                )
+                outcome = await self._executors.resolve(phase.executor_type).execute(phase, request)
+                continue
+            if decision.decision == PolicyDecisionType.DEGRADE:
+                fallback_index = self._find_phase_index(definition, decision.fallback_phase)
+                if fallback_index is not None and fallback_index > index:
+                    result.phases.append(PhaseRun(phase=phase, outcome=outcome))
+                    return _Settlement(
+                        action=_SettleAction.DEGRADE,
+                        next_index=fallback_index,
+                        fallback_context=outcome.context_payload,
+                    )
+            result.phases.append(PhaseRun(phase=phase, outcome=outcome))
+            return _Settlement(
+                action=_SettleAction.TERMINATE,
+                final_outcome=outcome,
+                reason_code=f"contract_failed:{phase.phase_id}",
+            )
+
+    @staticmethod
+    def _repair_goal(phase_goal: str, failures: list[str]) -> str:
+        """契约失败 → 回填阶段目标的修复说明，供结构闸门与输出门禁共用。"""
+        return (
+            f"{phase_goal}\n\n"
+            "上一版输出未通过契约校验，请按以下问题修复后重新输出：\n"
+            f"{_remediation_text(failures)}"
+        )
+
     async def _enforce_output_contracts(
         self,
         workflow: WorkflowDefinition,
@@ -184,7 +306,11 @@ class WorkflowRunner:
         final_phase: PhaseDefinition,
         final_request: PhaseExecutionRequest,
     ) -> WorkflowRunResult:
-        """render 等收尾阶段产出后，确定性执行输出门禁并做有界修复（§9.4）。"""
+        """render 等收尾阶段产出后，确定性执行输出门禁并做有界修复（§9.4）。
+
+        与阶段转换结构闸门（_settle_candidate）共用 decide_repair 作为唯一
+        FAIL→路径 决策源；本处无 fallback，重试耗尽即 TERMINATE。
+        """
         if not workflow.output_contract_refs or self._gate_runner is None:
             return result
         outcome = result.final_outcome
@@ -192,30 +318,33 @@ class WorkflowRunner:
             return result
         executor = ScriptGateExecutor(self._gate_runner)
         data = self._contract_data(final_request, outcome.answer)
-        for attempt in range(self._max_repair_attempts + 1):
-            failures = await self._run_output_contracts(
+        repair_attempts = 0
+        while True:
+            aggregate = await self._run_output_contracts(
                 workflow.output_contract_refs, executor, data
             )
-            if not failures:
+            if aggregate.verdict == ContractVerdict.PASS:
                 result.reason_code = outcome.reason_code or "output_contract_passed"
                 return result
-            if attempt >= self._max_repair_attempts:
-                result.reason_code = "output_contract_failed:" + ",".join(
-                    workflow.output_contract_refs
-                )
-                return result
-            repair_goal = (
-                f"{final_request.phase_goal}\n\n"
-                "上一版未通过输出门禁，请按以下问题修复后重新输出：\n"
-                f"{_remediation_text(failures)}"
+            decision = decide_repair(
+                aggregate,
+                repair_attempts=repair_attempts,
+                max_repair_attempts=self._max_repair_attempts,
             )
-            repair_request = final_request.model_copy(update={"phase_goal": repair_goal})
+            if decision.decision != PolicyDecisionType.RETRY:
+                result.reason_code = decision.reason_code
+                return result
+            repair_attempts += 1
+            repair_request = final_request.model_copy(
+                update={
+                    "phase_goal": self._repair_goal(final_request.phase_goal, aggregate.failures)
+                }
+            )
             outcome = await self._executors.resolve(final_phase.executor_type).execute(
                 final_phase, repair_request
             )
             data = self._contract_data(final_request, outcome.answer)
             result.final_outcome = outcome
-            result.reason_code = outcome.reason_code or "render_repaired"
         return result
 
     async def _run_output_contracts(
@@ -223,8 +352,8 @@ class WorkflowRunner:
         refs: list[str],
         executor: ScriptGateExecutor,
         data: dict[str, object],
-    ) -> list[str]:
-        """逐条执行输出门禁，返回全部失败项（空 = 全部通过）。"""
+    ) -> ContractResult:
+        """逐条执行输出门禁，聚合为单个 ContractResult（任一 gate 失败即 FAIL）。"""
         failures: list[str] = []
         for ref in refs:
             definition = ContractDefinition(
@@ -235,7 +364,13 @@ class WorkflowRunner:
             contract_result = await executor.execute(definition, ContractContext(data=data))
             if contract_result.verdict == ContractVerdict.FAIL:
                 failures.extend(contract_result.failures or [contract_result.remediation])
-        return failures
+        return ContractResult(
+            contract_id=",".join(refs),
+            contract_type=ContractType.QUALITY,
+            verdict=ContractVerdict.FAIL if failures else ContractVerdict.PASS,
+            failures=failures,
+            retryable=True,
+        )
 
     @staticmethod
     def _contract_data(request: PhaseExecutionRequest, answer: str) -> dict[str, object]:

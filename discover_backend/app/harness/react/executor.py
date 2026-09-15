@@ -22,30 +22,23 @@ from app.harness.decision import (
     parse_decision,
 )
 from app.harness.events.run_events import (
-    ActionProposed,
     LLMCallStarted,
     LLMUsageUpdated,
 )
+from app.harness.execution.pipeline import ToolExecutionRequest
 from app.harness.models import (
-    ActionRecord,
-    ActionStatus,
-    ObservationRecord,
     PhaseExecutionOutcome,
     PhaseExecutionOutcomeType,
 )
-from app.harness.policy.action import check_action
 from app.harness.policy.budget import check_budget
-from app.harness.policy.models import PolicyDecisionType
 from app.harness.progress import (
     action_fingerprint,
     evaluate_progress,
-    observation_fingerprint,
 )
-from app.harness.react.ports import EventSinkPort, LLMRunnerPort, ToolRunnerPort
+from app.harness.react.ports import ActionGatewayPort, EventSinkPort, LLMRunnerPort
 from app.harness.react.prompt import (
     _budget_termination,
     _context_payload,
-    _observation_status,
     _parse_call_args,
     _repair_messages,
     _to_chat_tool_call,
@@ -89,7 +82,7 @@ class BoundedReActExecutor:
         self,
         *,
         llm: LLMRunnerPort,
-        tools: ToolRunnerPort,
+        actions: ActionGatewayPort,
         events: EventSinkPort,
         progress_threshold: int = 3,
         max_repair_attempts: int = 1,
@@ -97,7 +90,7 @@ class BoundedReActExecutor:
         display_thinking: Callable[[str], None] | None = None,
     ) -> None:
         self._llm = llm
-        self._tools = tools
+        self._actions = actions
         self._events = events
         self._progress_threshold = progress_threshold
         self._max_repair_attempts = max_repair_attempts
@@ -212,7 +205,7 @@ class BoundedReActExecutor:
         }
 
     def _all_tool_specs(self) -> list[ChatToolSpec]:
-        return [*control_tool_specs(), *self._tools.exposed_tools()]
+        return [*control_tool_specs(), *self._actions.exposed_tools()]
 
     @staticmethod
     def _add_usage(acc: dict[str, int], chunk: UsageChunk) -> dict[str, int]:
@@ -251,70 +244,51 @@ class BoundedReActExecutor:
 
     # ---- 节点：preflight_action ----
     async def preflight_action(self, state: ReactGraphState) -> dict[str, object]:
-        """Action Policy 预检：白名单 + schema + 重复无进展过滤，产出 ActionRecord。
+        """Action Gateway 预检：白名单 + schema + 重复无进展过滤。
 
-        被 Policy 拒绝的调用也回写为 ``role="tool"`` 消息，保证上一轮 assistant 的
+        被拒绝的调用也回写为 ``role="tool"`` 消息，保证上一轮 assistant 的
         每个 ``tool_calls`` id 都有对应回复（OpenAI 兼容协议要求 tool_call_id 成对）。
         """
         decision = state.decision
         if decision is None or decision.decision_type != AgentDecisionType.CALL_TOOLS:
             return {"pending_calls": []}
-        allowed: list[ToolCallRequest] = []
-        records: list[ActionRecord] = []
-        rejected_messages: list[ChatMessage] = []
-        for index, call in enumerate(decision.tool_calls):
-            fingerprint = action_fingerprint(
-                call.tool_name, call.arguments, phase_id=state.request.phase_instance_id
-            )
-            await self._events.emit(
-                ActionProposed(
-                    run_id=state.request.run_id,
-                    phase_id=state.request.phase_instance_id,
-                    tool_name=call.tool_name,
-                    args_summary=str(call.arguments)[:200],
-                    fingerprint=fingerprint,
-                )
-            )
-            check = check_action(
-                descriptor=self._tools.get_descriptor(call.tool_name),
-                arguments=call.arguments,
-                allowed_tools=state.request.allowed_tools,
-                recent_actions=state.action_records,
-                progress=state.progress,
-                progress_threshold=self._progress_threshold,
-            )
-            record = ActionRecord(
-                action_id=f"{state.request.phase_instance_id}.{state.iteration}.{index}",
-                step_id=f"{state.iteration}.{index}",
-                tool_name=call.tool_name,
-                arguments=dict(call.arguments),
-                arguments_fingerprint=fingerprint,
-                status=(
-                    ActionStatus.ALLOWED
-                    if check.decision == PolicyDecisionType.ALLOW
-                    else ActionStatus.REJECTED
-                ),
-            )
-            records.append(record)
-            if check.decision == PolicyDecisionType.ALLOW:
-                allowed.append(call)
-            else:
-                rejected_messages.append(
-                    ChatMessage(
-                        role="tool",
-                        tool_call_id=call.call_id,
-                        content=check.display_message or check.reason_code or "调用被拒绝",
-                    )
-                )
+        request = ToolExecutionRequest(
+            run_id=state.request.run_id,
+            phase_id=state.request.phase_instance_id,
+            iteration=state.iteration,
+            calls=decision.tool_calls,
+            allowed_tools=state.request.allowed_tools,
+            budget=state.budget,
+            progress=state.progress,
+        )
+        preflight = await self._actions.preflight(request)
+        rejected_messages = [
+            ChatMessage(role="tool", tool_call_id=item.call.call_id, content=item.message)
+            for item in preflight.rejections
+        ]
         return {
-            "pending_calls": allowed,
-            "action_records": [*state.action_records, *records],
+            "pending_calls": preflight.pending,
+            "action_records": [*state.action_records, *preflight.action_records],
             "messages": [*state.messages, *rejected_messages],
         }
 
     # ---- 节点：execute_tool ----
     async def execute_tool(self, state: ReactGraphState) -> dict[str, object]:
-        results = await self._tools.execute(state.pending_calls)
+        """经 Action Gateway 执行已预检通过的工具调用并归一 Observation。
+
+        副作用预记录、真实执行、Observation 归一与产物登记均在 Gateway 内完成；
+        本节点只负责把结果映射回图状态与 OpenAI 工具消息。
+        """
+        request = ToolExecutionRequest(
+            run_id=state.request.run_id,
+            phase_id=state.request.phase_instance_id,
+            iteration=state.iteration,
+            calls=state.pending_calls,
+            allowed_tools=state.request.allowed_tools,
+            budget=state.budget,
+            progress=state.progress,
+        )
+        execution = await self._actions.execute_batch(request)
         fingerprints = [
             action_fingerprint(
                 call.tool_name, call.arguments, phase_id=state.request.phase_instance_id
@@ -329,58 +303,21 @@ class BoundedReActExecutor:
                     result, max_chars=state.request.tool_message_max_chars
                 ),
             )
-            for result in results
+            for result in execution.results
         ]
-        return {
-            "last_results": results,
-            "last_action_fingerprint": "|".join(fingerprints),
-            "pending_calls": [],
-            "messages": [*state.messages, *tool_messages],
-        }
-
-    # ---- 节点：normalize_observation ----
-    async def normalize_observation(self, state: ReactGraphState) -> dict[str, object]:
-        """ToolResult → ObservationRecord（指纹 / 状态 / 错误分类），并做进展增量统计。
-
-        新增证据只在 Observation 指纹与上次不同时计数（§12.4「没有新增证据」判定）；
-        相同结果的重复返回不视为新证据，否则 no_progress 永不触发。
-        """
-        records: list[ObservationRecord] = []
-        new_artifacts = 0
-        obs_fps: list[str] = []
-        for result in state.last_results:
-            status = _observation_status(result)
-            fingerprint = observation_fingerprint(
-                ok=result.ok,
-                content_summary=result.content,
-                error_category=result.error_category,
-                artifact_summary=",".join(result.produced_files),
-            )
-            records.append(
-                ObservationRecord(
-                    observation_id=f"{state.request.phase_instance_id}.{state.iteration}.{result.call_id}",
-                    step_id=f"{state.iteration}.{result.call_id}",
-                    action_id=result.call_id,
-                    status=status,
-                    content_summary=result.content[:500],
-                    observation_fingerprint=fingerprint,
-                    error_category=result.error_category,
-                    artifact_ids=list(result.produced_files),
-                    truncated=result.truncated,
-                    progress_delta=1 if result.ok and result.content else 0,
-                )
-            )
-            obs_fps.append(fingerprint)
-            if result.produced_files:
-                new_artifacts += len(result.produced_files)
-        joined = "|".join(obs_fps) if obs_fps else ""
+        joined = "|".join(record.observation_fingerprint for record in execution.observations)
         new_evidence = (
-            sum(1 for result in state.last_results if result.ok and result.content)
+            sum(1 for result in execution.results if result.ok and result.content)
             if joined != state.last_observation_fingerprint
             else 0
         )
+        new_artifacts = sum(len(result.produced_files) for result in execution.results)
         return {
-            "observation_records": [*state.observation_records, *records],
+            "last_results": execution.results,
+            "last_action_fingerprint": "|".join(fingerprints),
+            "pending_calls": [],
+            "messages": [*state.messages, *tool_messages],
+            "observation_records": [*state.observation_records, *execution.observations],
             "last_observation_fingerprint": joined,
             "new_evidence_count": new_evidence,
             "new_artifact_count": new_artifacts,
@@ -417,6 +354,7 @@ class BoundedReActExecutor:
             observation_ids=[record.observation_id for record in state.observation_records],
             limitations=params.limitations if params is not None else [],
             reason_code="candidate_completed",
+            output_schema=state.request.output_schema,
         )
         return {"outcome": outcome}
 
@@ -434,6 +372,7 @@ class BoundedReActExecutor:
             observation_ids=[record.observation_id for record in state.observation_records],
             limitations=params.limitations if params is not None else [],
             reason_code="final_proposed",
+            output_schema=state.request.output_schema,
         )
         return {"outcome": outcome}
 

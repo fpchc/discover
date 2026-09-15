@@ -66,13 +66,16 @@ def map_run_event(
     - 未知事件 → None（保守丢弃，不破坏既有流）。
     """
     if isinstance(event, RunStarted):
-        return _message_end(message_id, conversation_id, created_at, {"phase": "started"})
+        return _message_end(
+            message_id, conversation_id, created_at, {"phase": "started"}, run_id=event.run_id
+        )
     if isinstance(event, PhaseStarted):
         return _message_end(
             message_id,
             conversation_id,
             created_at,
             {"phase": event.phase_name or "phase", "attempt": event.attempt},
+            run_id=event.run_id,
         )
     if isinstance(event, RunInputRequested):
         return _message_end(
@@ -84,6 +87,7 @@ def map_run_event(
                 "question": event.question,
                 "missing_fields": event.missing_fields,
             },
+            run_id=event.run_id,
         )
     if isinstance(event, RunCompleted):
         return _message_end(
@@ -96,6 +100,7 @@ def map_run_event(
                 "limitations": event.limitations,
                 "unfinished_phases": event.unfinished_phases,
             },
+            run_id=event.run_id,
             usage=usage,
             assistant=assistant,
         )
@@ -105,6 +110,7 @@ def map_run_event(
             conversation_id,
             created_at,
             {"status": "cancelled", "reason": event.termination_reason.value},
+            run_id=event.run_id,
             usage=usage,
             assistant=assistant,
         )
@@ -113,6 +119,7 @@ def map_run_event(
             status=_http_status(event),
             code=_error_code(event),
             message=event.message or "执行失败",
+            run_id=event.run_id,
         )
     if isinstance(event, ThinkingStarted):
         return ThinkingStartFrame(
@@ -153,6 +160,7 @@ def _message_end(
     created_at: int,
     metadata: dict[str, object],
     *,
+    run_id: str = "",
     usage: dict[str, int] | None = None,
     assistant: dict[str, str | None] | None = None,
 ) -> MessageEndEvent:
@@ -165,6 +173,7 @@ def _message_end(
         conversation_id=conversation_id,
         metadata=metadata,
         created_at=created_at,
+        run_id=run_id,
     )
 
 

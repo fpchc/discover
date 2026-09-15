@@ -13,6 +13,12 @@ import pytest
 from app.environment.tools.broker import ToolCallRequest, ToolResult
 from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.events.run_events import RunEvent
+from app.harness.execution.pipeline import (
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolPreflightResult,
+    ToolRuntime,
+)
 from app.harness.graph import build_react_subgraph
 from app.harness.models import (
     BudgetLimits,
@@ -21,7 +27,7 @@ from app.harness.models import (
     PhaseExecutionRequest,
 )
 from app.harness.react.executor import AgentDurationExceeded, BoundedReActExecutor
-from app.harness.react.ports import LLMRunnerPort, ToolRunnerPort
+from app.harness.react.ports import ActionGatewayPort, LLMRunnerPort
 from app.harness.react.state import ReactGraphState
 from app.llm.models import ChatToolSpec, ToolFunction
 from app.llm.stream_parser import (
@@ -53,8 +59,8 @@ class _FakeLLM(LLMRunnerPort):
             yield chunk
 
 
-class _FakeTools(ToolRunnerPort):
-    """脚本化 ToolRunner：按调用序号产出 ToolResult（无真实执行）。"""
+class _FakeTools:
+    """脚本化工具：按调用序号产出 ToolResult（无真实执行）。"""
 
     def __init__(
         self,
@@ -92,6 +98,36 @@ class _FakeTools(ToolRunnerPort):
         results = [self._respond(call, self.calls) for call in calls]
         self.calls += 1
         return results
+
+
+class _FakeActions(ActionGatewayPort):
+    """把 _FakeTools 包装为 ActionGatewayPort（经 ToolRuntime 走真实管线边界）。"""
+
+    def __init__(self, tools: _FakeTools, progress_threshold: int = 3) -> None:
+        self._tools = tools
+        self._progress_threshold = progress_threshold
+
+    def _runtime(self) -> ToolRuntime:
+        async def _noop(_event: RunEvent) -> None:
+            return None
+
+        return ToolRuntime(
+            broker=self._tools,
+            emit=_noop,
+            progress_threshold=self._progress_threshold,
+        )
+
+    def exposed_tools(self) -> list[ChatToolSpec]:
+        return self._tools.exposed_tools()
+
+    def get_descriptor(self, name: str) -> ToolDescriptor | None:
+        return self._tools.get_descriptor(name)
+
+    async def preflight(self, request: ToolExecutionRequest) -> ToolPreflightResult:
+        return await self._runtime().preflight(request)
+
+    async def execute_batch(self, request: ToolExecutionRequest) -> ToolExecutionResult:
+        return await self._runtime().execute_prepared(request, request.calls, [])
 
 
 class _FakeEvents:
@@ -134,7 +170,7 @@ def _executor(
 ) -> BoundedReActExecutor:
     return BoundedReActExecutor(
         llm=llm,
-        tools=tools,
+        actions=_FakeActions(tools, progress_threshold),
         events=_FakeEvents(),
         progress_threshold=progress_threshold,
     )
@@ -168,7 +204,7 @@ async def test_expert_react_does_not_display_intermediate_text() -> None:
     )
     executor = BoundedReActExecutor(
         llm=_FakeLLM(respond),
-        tools=tools,
+        actions=_FakeActions(tools),
         events=_FakeEvents(),
         display_text=displayed_text.append,
         display_thinking=displayed_thinking.append,

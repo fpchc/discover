@@ -106,10 +106,30 @@ Broker 不实现远程协议、不拉起脚本、不决定业务重试。所有�
 
 失败结果至少包含调用 ID、工具名、错误类别、面向模型的建议和耗时；成功结果包含内容与截断标志。错误建议必须具体可执行，禁止只有“失败”或裸异常字符串。
 
-## 10. 本规范专属检查
+## 10. 行动授权与审批
+
+工具执行前，除 Action Policy（存在性 / 白名单 / schema / 重复无进展）外，还须经过
+一层独立的**行动授权**：回答「当前账号是否有权触发此类副作用」。二者正交——Policy 判
+参数合法性，Authorizer 判身份与风险；禁止把身份检查塞进 `check_action` 使其膨胀。
+
+- 授权上下文（AuthorizationContext）：account_id、roles、superuser、data_scope、
+  approval_state。首期只消费 superuser；roles / data_scope / approval_state 为端口
+  预留，权限码体系与 HITL 审批流接入后再参与判定。
+- 判定结论（AuthorizationDecision）：ALLOW / DENY。DENY 携带 reason_code 区分
+  `approval_required`（需审批但未获授权）与 `missing_identity`（缺授权上下文）。
+- 审批矩阵配置驱动：`action_approval_required_side_effects`（默认 publish、delete）。
+  read_only / write_file / network 默认放行——write_file 受运行级工作区隔离约束，
+  network 为 MCP 工具的宽泛标记（当前无法区分网络读 / 网络写，收紧需先细化副作用分类）。
+- 超级用户（is_system）旁路审批矩阵。
+- fail-closed：一旦接入 Authorizer 却拿不到授权上下文（request.authorization 为
+  None），一律 DENY，不得静默放行。
+- 首期无审批流：`approval_required` 直接 DENY；HITL 审批挂起在 Run 恢复 / 续传阶段接入。
+
+## 11. 本规范专属检查
 
 - [ ] 模型只收到 Tier 0、Tier 1 与已显式展开的 Tier 2
 - [ ] 限定名唯一且集中生成，短名未用于直接分发
 - [ ] Broker 未承担 MCP、脚本或业务策略职责
 - [ ] 批量调用受双层并发、取消和副作用策略控制
 - [ ] read_reference 无路径穿越，所有结果已截断和脱敏
+- [ ] 工具执行前先过行动授权（身份 + 副作用审批矩阵），缺上下文 fail-closed

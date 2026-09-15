@@ -311,6 +311,8 @@ class PhaseExecutionRequest(BaseModel):
     tool_message_max_chars: int = 2000
     budget: BudgetState
     contract_refs: list[str] = Field(default_factory=list)
+    # 阶段输出结构契约（JSON Schema 子集，PhaseDefinition.output_schema）：供 Verifier 校验
+    output_schema: dict[str, object] = Field(default_factory=dict)
     used_usage: BudgetUsage = Field(default_factory=BudgetUsage)
     recent_observations: list[ObservationRecord] = Field(default_factory=list)
     resume: bool = False
@@ -342,6 +344,8 @@ class PhaseExecutionOutcome(BaseModel):
     artifact_ids: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     reason_code: str = ""
+    # 随 outcome 携带的结构契约，供 Verifier 校验 candidate_output（缺省空 = 无结构契约）
+    output_schema: dict[str, object] = Field(default_factory=dict)
 
 
 class PhaseOutput(BaseModel):

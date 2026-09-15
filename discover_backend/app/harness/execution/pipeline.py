@@ -39,6 +39,12 @@ from app.harness.models import (
     ProgressState,
 )
 from app.harness.policy.action import check_action
+from app.harness.policy.authorization import (
+    ActionAuthorizer,
+    AuthorizationContext,
+    AuthorizationDecision,
+    AuthorizationDecisionType,
+)
 from app.harness.policy.models import PolicyDecisionType
 from app.harness.progress import (
     action_fingerprint,
@@ -76,6 +82,7 @@ def side_effect_class(side_effect: SideEffectType) -> SideEffectClass:
 class PlannedAction(BaseModel):
     """副作用工具执行前保存的检查点（§15.2 / §16.2-5）：幂等键 + 参数指纹。"""
 
+    run_id: str
     action_id: str
     tool_name: str
     arguments: dict[str, object] = Field(default_factory=dict)
@@ -86,9 +93,11 @@ class PlannedAction(BaseModel):
 
 
 class CheckpointPort(Protocol):
-    """副作用 Checkpoint 抽象（W6-W7 接持久化 store；None 时跳过）。"""
+    """副作用 Checkpoint 抽象：planned → executed/failed 状态机，None 时跳过。"""
 
     async def save_planned_action(self, planned: PlannedAction) -> None: ...
+    async def mark_executed(self, run_id: str, action_id: str, *, ok: bool) -> None: ...
+    async def load_pending(self, run_id: str) -> list[PlannedAction]: ...
 
 
 class ArtifactRegistrar(Protocol):
@@ -112,6 +121,7 @@ class ToolExecutionRequest(BaseModel):
     account_id: str = ""
     workspace: Path | None = None
     created_by: str = "agent"
+    authorization: AuthorizationContext | None = None
 
 
 class ToolExecutionResult(BaseModel):
@@ -120,8 +130,24 @@ class ToolExecutionResult(BaseModel):
     observations: list[ObservationRecord] = Field(default_factory=list)
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     action_records: list[ActionRecord] = Field(default_factory=list)
+    results: list[ToolResult] = Field(default_factory=list)
     budget: BudgetState
     progress: ProgressState
+
+
+class ToolRejection(BaseModel):
+    """preflight 拒绝项：调用 + 面向模型的拒绝说明。"""
+
+    call: ToolCallRequest
+    message: str
+
+
+class ToolPreflightResult(BaseModel):
+    """preflight 输出：允许执行集合 + ActionRecord + 拒绝说明。"""
+
+    pending: list[ToolCallRequest] = Field(default_factory=list)
+    action_records: list[ActionRecord] = Field(default_factory=list)
+    rejections: list[ToolRejection] = Field(default_factory=list)
 
 
 class ToolRuntime:
@@ -134,6 +160,7 @@ class ToolRuntime:
         emit: Callable[[RunEvent], Awaitable[None]],
         checkpoint: CheckpointPort | None = None,
         artifacts: ArtifactRegistrar | None = None,
+        authorizer: ActionAuthorizer | None = None,
         progress_threshold: int = 3,
         idempotency_prefix: str = "tool",
     ) -> None:
@@ -141,29 +168,52 @@ class ToolRuntime:
         self._emit_fn = emit
         self._checkpoint = checkpoint
         self._artifacts = artifacts
+        self._authorizer = authorizer
         self._progress_threshold = progress_threshold
         self._idempotency_prefix = idempotency_prefix
 
-    async def execute(self, request: ToolExecutionRequest) -> ToolExecutionResult:
-        """执行一批工具调用，返回归一后的观察与状态更新。"""
+    async def preflight(self, request: ToolExecutionRequest) -> ToolPreflightResult:
+        """Action 预检：descriptor 存在性 + 阶段白名单 + schema + 重复无进展。
+
+        只判定不执行（Action Policy），返回允许执行集合、ActionRecord 与拒绝说明。
+        """
         records: list[ActionRecord] = []
         pending: list[ToolCallRequest] = []
+        rejections: list[ToolRejection] = []
         for call in request.calls:
             descriptor = self._broker.get_descriptor(call.tool_name)
             if descriptor is None:
                 records.append(self._rejected(call))
+                rejections.append(ToolRejection(call=call, message="请求的工具不在目录中"))
                 continue
+            fingerprint = action_fingerprint(
+                call.tool_name, call.arguments, phase_id=request.phase_id
+            )
             await self._emit_fn(
                 ActionProposed(
                     run_id=request.run_id,
                     phase_id=request.phase_id,
                     tool_name=call.tool_name,
                     args_summary=str(call.arguments)[:200],
-                    fingerprint=action_fingerprint(
-                        call.tool_name, call.arguments, phase_id=request.phase_id
-                    ),
+                    fingerprint=fingerprint,
                 )
             )
+            auth = self._authorize(request, descriptor, call)
+            if auth.decision != AuthorizationDecisionType.ALLOW:
+                records.append(
+                    ActionRecord(
+                        action_id=self._action_id(request, call),
+                        step_id=f"{request.iteration}.{call.call_id}",
+                        tool_name=call.tool_name,
+                        arguments=dict(call.arguments),
+                        arguments_fingerprint=fingerprint,
+                        status=ActionStatus.REJECTED,
+                    )
+                )
+                rejections.append(
+                    ToolRejection(call=call, message=auth.display_message or "操作未获授权")
+                )
+                continue
             check = check_action(
                 descriptor=descriptor,
                 arguments=call.arguments,
@@ -171,9 +221,6 @@ class ToolRuntime:
                 recent_actions=records,
                 progress=request.progress,
                 progress_threshold=self._progress_threshold,
-            )
-            fingerprint = action_fingerprint(
-                call.tool_name, call.arguments, phase_id=request.phase_id
             )
             allowed = check.decision == PolicyDecisionType.ALLOW
             records.append(
@@ -188,14 +235,47 @@ class ToolRuntime:
             )
             if allowed:
                 pending.append(call)
-        if not pending:
+            else:
+                rejections.append(
+                    ToolRejection(
+                        call=call,
+                        message=check.display_message or check.reason_code or "调用被拒绝",
+                    )
+                )
+        return ToolPreflightResult(pending=pending, action_records=records, rejections=rejections)
+
+    async def execute(self, request: ToolExecutionRequest) -> ToolExecutionResult:
+        """执行一批工具调用：preflight + execute_prepared。"""
+        preflight = await self.preflight(request)
+        if not preflight.pending:
             return ToolExecutionResult(
                 observations=[],
                 artifacts=[],
-                action_records=records,
+                action_records=preflight.action_records,
                 budget=request.budget,
                 progress=request.progress,
             )
+        return await self.execute_prepared(request, preflight.pending, preflight.action_records)
+
+    async def execute_prepared(
+        self,
+        request: ToolExecutionRequest,
+        pending: list[ToolCallRequest],
+        records: list[ActionRecord],
+    ) -> ToolExecutionResult:
+        """执行已预检通过的调用：副作用预记录 → broker → normalize → 产物登记。"""
+        # 副作用预记录必须先于任何外部执行：崩溃后恢复可据此判断是否已发生。
+        planned_ids: set[str] = set()
+        for call in pending:
+            descriptor = self._broker.get_descriptor(call.tool_name)
+            klass = (
+                side_effect_class(descriptor.side_effect)
+                if descriptor is not None
+                else SideEffectClass.READ_ONLY
+            )
+            if klass != SideEffectClass.READ_ONLY:
+                await self._save_planned(request, call, klass)
+                planned_ids.add(self._action_id(request, call))
         for call in pending:
             await self._emit_fn(
                 ToolCallStarted(
@@ -211,19 +291,14 @@ class ToolRuntime:
         observations: list[ObservationRecord] = []
         artifacts: list[ArtifactRef] = []
         for call, result in zip(pending, results, strict=True):
-            descriptor = self._broker.get_descriptor(call.tool_name)
-            klass = (
-                side_effect_class(descriptor.side_effect)
-                if descriptor is not None
-                else SideEffectClass.READ_ONLY
-            )
-            if klass != SideEffectClass.READ_ONLY:
-                await self._save_planned(call, klass)
+            action_id = self._action_id(request, call)
+            if action_id in planned_ids:
+                await self._mark_executed(request, call, result)
             await self._emit_fn(
                 ToolCallCompleted(
                     run_id=request.run_id,
                     phase_id=request.phase_id,
-                    action_id=self._action_id(request, call),
+                    action_id=action_id,
                     call_id=result.call_id,
                     tool_name=result.tool_name,
                     ok=result.ok,
@@ -241,12 +316,33 @@ class ToolRuntime:
             observations=observations,
             artifacts=artifacts,
             action_records=records,
+            results=results,
             budget=request.budget,
             progress=request.progress,
         )
 
     def _action_id(self, request: ToolExecutionRequest, call: ToolCallRequest) -> str:
         return f"{request.phase_id}.{request.iteration}.{call.call_id}"
+
+    def _authorize(
+        self, request: ToolExecutionRequest, descriptor: ToolDescriptor, call: ToolCallRequest
+    ) -> AuthorizationDecision:
+        """行动授权判定：接入 Authorizer 却拿不到身份即 fail-closed（DENY）。"""
+        if self._authorizer is None:
+            return AuthorizationDecision(
+                decision=AuthorizationDecisionType.ALLOW, reason_code="authorization_disabled"
+            )
+        if request.authorization is None:
+            return AuthorizationDecision(
+                decision=AuthorizationDecisionType.DENY,
+                reason_code="missing_identity",
+                display_message="缺少授权上下文，无法判定该操作权限",
+            )
+        return self._authorizer.authorize(
+            ctx=request.authorization,
+            side_effect=descriptor.side_effect,
+            tool_name=call.tool_name,
+        )
 
     @staticmethod
     def _rejected(call: ToolCallRequest) -> ActionRecord:
@@ -258,23 +354,37 @@ class ToolRuntime:
             status=ActionStatus.REJECTED,
         )
 
-    async def _save_planned(self, call: ToolCallRequest, klass: SideEffectClass) -> None:
+    async def _save_planned(
+        self, request: ToolExecutionRequest, call: ToolCallRequest, klass: SideEffectClass
+    ) -> None:
         if self._checkpoint is None:
             return
         await self._checkpoint.save_planned_action(
             PlannedAction(
-                action_id=call.call_id,
+                run_id=request.run_id,
+                action_id=self._action_id(request, call),
                 tool_name=call.tool_name,
                 arguments=dict(call.arguments),
                 arguments_fingerprint=action_fingerprint(call.tool_name, call.arguments),
                 idempotency_key=self._idempotency_key(call.tool_name, call.arguments),
                 side_effect_class=klass,
+                planned_at=datetime.now(),
             )
         )
 
     def _idempotency_key(self, tool_name: str, arguments: dict[str, object]) -> str:
         seed = repr(sorted(arguments.items(), key=lambda item: item[0]))
         return f"{self._idempotency_prefix}:{tool_name}:{uuid.uuid5(uuid.NAMESPACE_URL, seed)}"
+
+    async def _mark_executed(
+        self, request: ToolExecutionRequest, call: ToolCallRequest, result: ToolResult
+    ) -> None:
+        """副作用动作执行后落 executed/failed 状态（关 Checkpoint 状态机）。"""
+        if self._checkpoint is None:
+            return
+        await self._checkpoint.mark_executed(
+            request.run_id, self._action_id(request, call), ok=result.ok
+        )
 
     def _normalize(
         self, request: ToolExecutionRequest, call: ToolCallRequest, result: ToolResult

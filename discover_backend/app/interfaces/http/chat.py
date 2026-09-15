@@ -21,10 +21,11 @@ from fastapi.responses import StreamingResponse
 
 from app.application.chat.turn_lifecycle import collect_turn, iter_turn_events, start_turn
 from app.application.dto import ConversationSession
+from app.application.dto.auth import AccountRecord
 from app.application.services import AppServices
 from app.harness.turn import ActiveTurn
 from app.interfaces.http.auth_guard import LoginRoute, login_required
-from app.interfaces.http.deps import get_current_account_id, get_services
+from app.interfaces.http.deps import get_current_account, get_current_account_id, get_services
 from app.interfaces.schemas import (
     ChatMessageRequest,
     ChatMessageResponse,
@@ -33,11 +34,14 @@ from app.interfaces.schemas import (
     MessageEndEvent,
     MessageEvent,
     PingEvent,
+    RunReplayResponse,
+    RunResumeResponse,
     ThinkingDeltaFrame,
     ThinkingEndFrame,
     ThinkingStartFrame,
 )
 from app.interfaces.sse.frames import map_run_event
+from app.shared.errors.base import NotFoundError
 
 router = APIRouter(tags=["chat"], route_class=LoginRoute)
 
@@ -59,6 +63,7 @@ async def chat_messages(
     body: ChatMessageRequest,
     response: Response,
     account_id: str = Depends(get_current_account_id),
+    account: AccountRecord = Depends(get_current_account),
     services: AppServices = Depends(get_services),
 ) -> StreamingResponse | ChatMessageResponse:
     """对话：会话缺省自动创建（归属当前账号），续聊带 conversation_id。
@@ -73,6 +78,8 @@ async def chat_messages(
         agent_id=body.agent_id,
         query=body.query,
     )
+    if account.is_system:
+        session = session.model_copy(update={"superuser": True})
     conversation_id = session.conversation_id
     response.headers["X-Conversation-Id"] = conversation_id
     message_id = uuid.uuid4().hex
@@ -118,6 +125,84 @@ async def stop_chat_message(
         await services.run_service.cancel(turn.run_id, source="user_stop")
     return ChatStopResponse(
         conversation_id=conversation_id, status="stopping", message_id=turn.message_id
+    )
+
+
+@router.get("/chat-messages/{conversation_id}/runs/{run_id}", response_model=RunReplayResponse)
+@login_required
+async def get_run_replay(
+    conversation_id: str,
+    run_id: str,
+    after_seq: int = 0,
+    account_id: str = Depends(get_current_account_id),
+    services: AppServices = Depends(get_services),
+) -> RunReplayResponse:
+    """断线续传：查询 Run 快照 + after_seq 之后的持久事件（SSE 重连续传）。
+
+    快照含终态与最终正文；事件含工具调用 / 用量 / 终态审计。展示增量
+    （正文/思考打字机）不落持久日志，不在此重放（§16.1）。
+    """
+    assert services.conversation_service is not None
+    await services.conversation_service.require_owned(account_id, conversation_id)
+    result = await services.run_service.query(run_id, after_seq=after_seq)
+    if (
+        result is None
+        or result.state.identity.account_id != account_id
+        or result.state.identity.conversation_id != conversation_id
+    ):
+        raise NotFoundError(f"未知运行：{run_id}")
+    state = result.state
+    reason = state.termination.reason.value if state.termination.reason is not None else None
+    return RunReplayResponse(
+        run_id=run_id,
+        status=state.termination.status.value,
+        reason=reason,
+        final_output=state.output.final_draft,
+        last_seq=result.last_seq,
+        events=[event.model_dump() for event in result.events],
+    )
+
+
+@router.post(
+    "/chat-messages/{conversation_id}/runs/{run_id}/resume", response_model=RunResumeResponse
+)
+@login_required
+async def resume_run(
+    conversation_id: str,
+    run_id: str,
+    after_seq: int = 0,
+    account_id: str = Depends(get_current_account_id),
+    services: AppServices = Depends(get_services),
+) -> RunResumeResponse:
+    """断线续传恢复：重新获取执行租约 + 返回快照/事件 + 未闭环副作用 action。
+
+    轻量 resume（不做整图恢复）：`resume()` 重新获取租约（同进程仍持有时 best-effort
+    返回 None），`query()` 取快照与 after_seq 之后事件；`pending_actions` 暴露副作用
+    action 完成状态，供调用方判断是否有「已计划但未落 executed/failed」的动作。
+    """
+    assert services.conversation_service is not None
+    await services.conversation_service.require_owned(account_id, conversation_id)
+    lease_reacquired = (await services.run_service.resume(run_id)) is not None
+    result = await services.run_service.query(run_id, after_seq=after_seq)
+    if (
+        result is None
+        or result.state.identity.account_id != account_id
+        or result.state.identity.conversation_id != conversation_id
+    ):
+        raise NotFoundError(f"未知运行：{run_id}")
+    pending = await services.run_service.pending_actions(run_id)
+    state = result.state
+    reason = state.termination.reason.value if state.termination.reason is not None else None
+    return RunResumeResponse(
+        run_id=run_id,
+        status=state.termination.status.value,
+        reason=reason,
+        final_output=state.output.final_draft,
+        last_seq=result.last_seq,
+        lease_reacquired=lease_reacquired,
+        has_inflight_side_effects=bool(pending),
+        pending_actions=[action.model_dump(mode="json") for action in pending],
+        events=[event.model_dump() for event in result.events],
     )
 
 
@@ -186,6 +271,8 @@ def sse_frame(event: _StreamFrame) -> str:
 
 __all__ = [
     "chat_messages",
+    "get_run_replay",
+    "resume_run",
     "router",
     "run_blocking",
     "sse_frame",

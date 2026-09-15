@@ -6,6 +6,8 @@ from app.harness.execution.pipeline import (
     CheckpointPort,
     ToolExecutionRequest,
     ToolExecutionResult,
+    ToolPreflightResult,
+    ToolRejection,
     ToolRuntime,
 )
 
@@ -15,5 +17,7 @@ __all__ = [
     "CheckpointPort",
     "ToolExecutionRequest",
     "ToolExecutionResult",
+    "ToolPreflightResult",
+    "ToolRejection",
     "ToolRuntime",
 ]

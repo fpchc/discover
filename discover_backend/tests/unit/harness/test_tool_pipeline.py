@@ -46,13 +46,21 @@ class _FakeBroker(BrokerPort):
 
 
 class _FakeCheckpoint:
-    """记录 Planned Action 的 Checkpoint 桩。"""
+    """记录 Planned Action 与 executed 状态的 Checkpoint 桩。"""
 
     def __init__(self) -> None:
         self.planned: list[PlannedAction] = []
+        self.executed: list[tuple[str, str, bool]] = []
 
     async def save_planned_action(self, planned: PlannedAction) -> None:
         self.planned.append(planned)
+
+    async def mark_executed(self, run_id: str, action_id: str, *, ok: bool) -> None:
+        self.executed.append((run_id, action_id, ok))
+
+    async def load_pending(self, run_id: str) -> list[PlannedAction]:
+        del run_id
+        return []
 
 
 class _FakeArtifacts:
@@ -189,9 +197,29 @@ async def test_pipeline_checkpoints_side_effect_tool_with_idempotency_key() -> N
     _result, _recorder = await _execute(broker=broker, request=request, checkpoint=checkpoint)
     assert len(checkpoint.planned) == 1
     planned = checkpoint.planned[0]
+    assert planned.run_id == "run-1"
     assert planned.side_effect_class == "workspace_write"
     assert planned.idempotency_key
     assert planned.arguments_fingerprint
+
+
+async def test_pipeline_marks_side_effect_executed() -> None:
+    broker = _FakeBroker(
+        descriptors={
+            "tool.write": _descriptor("tool.write", side_effect=SideEffectType.WRITE_FILE)
+        },
+        results={
+            "tool.write": _ok(ToolCallRequest(call_id="c1", tool_name="tool.write"), "写入成功")
+        },
+    )
+    checkpoint = _FakeCheckpoint()
+    request = _request(broker)
+    request.calls = [
+        ToolCallRequest(call_id="c1", tool_name="tool.write", arguments={"f": "a.txt"})
+    ]
+    request.allowed_tools = ["tool.write"]
+    _result, _recorder = await _execute(broker=broker, request=request, checkpoint=checkpoint)
+    assert checkpoint.executed == [("run-1", "p1.0.c1", True)]
 
 
 # ---- 副作用分类映射 ----
@@ -237,3 +265,45 @@ async def test_pipeline_normalizes_failure_observation() -> None:
     result, _recorder = await _execute(broker=broker, request=_request(broker))
     assert result.observations[0].status == "failed"
     assert result.observations[0].error_category == ErrorCategory.SERVER
+
+
+# ---- 副作用预记录必须早于真实执行（崩溃恢复边界） ----
+async def test_side_effect_checkpoint_happens_before_broker_execute() -> None:
+    order: list[str] = []
+
+    class _OrderedBroker(_FakeBroker):
+        async def execute(self, calls: list[ToolCallRequest]) -> list[ToolResult]:
+            order.append("execute")
+            return await super().execute(calls)
+
+    class _OrderedCheckpoint:
+        async def save_planned_action(self, planned: PlannedAction) -> None:
+            order.append("checkpoint")
+
+        async def mark_executed(self, run_id: str, action_id: str, *, ok: bool) -> None:
+            del run_id, action_id, ok
+            order.append("mark_executed")
+
+        async def load_pending(self, run_id: str) -> list[PlannedAction]:
+            return []
+
+    broker = _OrderedBroker(
+        descriptors={
+            "tool.write": _descriptor("tool.write", side_effect=SideEffectType.WRITE_FILE)
+        },
+        results={
+            "tool.write": _ok(ToolCallRequest(call_id="c1", tool_name="tool.write"), "写入成功")
+        },
+    )
+    request = _request(broker)
+    request.calls = [
+        ToolCallRequest(call_id="c1", tool_name="tool.write", arguments={"f": "a.txt"})
+    ]
+    request.allowed_tools = ["tool.write"]
+    runtime = ToolRuntime(
+        broker=broker,
+        emit=_Recorder().emit,
+        checkpoint=_OrderedCheckpoint(),
+    )
+    await runtime.execute(request)
+    assert order.index("checkpoint") < order.index("execute") < order.index("mark_executed")

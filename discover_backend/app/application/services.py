@@ -20,7 +20,6 @@ from app.application.identity.service import AuthService
 from app.application.skill_package.service import SkillPackageService
 from app.config.loader import LLMProvider
 from app.config.settings import Settings
-from app.environment.context import ContextAssembler
 from app.environment.mcp.manager import MCPManager
 from app.environment.storage.base import BaseStorage
 from app.environment.tools.script_executor import ScriptExecutor
@@ -30,6 +29,7 @@ from app.harness.checkpoint.memory import (
     MemoryRunLease,
     MemorySnapshotStore,
 )
+from app.harness.context import ContextAssembler
 from app.harness.service import RunService
 from app.harness.skill.registry import AgentRegistry
 from app.harness.turn import ActiveTurnRegistry
@@ -63,7 +63,7 @@ class AppServices:
         self.elecnest: ElecnestSSOClient | None = None
         # SSO 客户端共用的 httpx 连接池（组合根负责关闭）
         self.elecnest_http: httpx.AsyncClient | None = None
-        # Run 生命周期服务（v2 §16/§17）：checkpoint 内存实现，DB/Redis store 接线后替换
+        # Run 生命周期服务（v2 §16/§17）：默认内存实现；生产组合根启动时替换为 PostgreSQL/Redis
         self.run_service = RunService(
             snapshots=MemorySnapshotStore(),
             events=MemoryEventLog(),

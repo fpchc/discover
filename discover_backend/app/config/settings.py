@@ -163,6 +163,8 @@ class Settings(BaseSettings):
     # ---- 对话回合并发锁（ActiveTurnRegistry） ----
     # 进行中回合句柄有效期：未启动且超时视为陈旧自动回收（客户端断连防泄漏锁）
     active_turn_ttl_seconds: float = 120.0
+    # Run 执行租约心跳间隔（Redis lease 续期）
+    run_heartbeat_interval_seconds: float = 30.0
 
     # ---- 控制台客户端 ----
     console_base_url: str = "http://127.0.0.1:9101"
@@ -180,6 +182,16 @@ class Settings(BaseSettings):
     # 重试耗尽仍不可用才拒绝（mcp-integration-spec §8）。
     mcp_acquire_retry_attempts: int = 3
     mcp_acquire_retry_backoff_seconds: float = 1.5
+
+    # ---- 行动授权（P0：身份 + 副作用审批矩阵） ----
+    # 开关（{module}_enabled）：关闭则退化不授权（仅测试/灰度用，生产应开启）
+    action_authorization_enabled: bool = True
+    # 需审批的副作用集合（默认仅 publish/delete；write_file 受工作区隔离、network 为
+    # MCP 宽泛标记暂不收紧）。首期无审批流，命中即 DENY（fail-closed）。
+    action_approval_required_side_effects: list[SideEffectType] = [
+        SideEffectType.PUBLISH,
+        SideEffectType.DELETE,
+    ]
 
     # ---- 脚本执行（本地直跑） ----
     # pragma: 简化 — 可信内部脚本，P1 一律宿主 subprocess 直跑，不做容器隔离；

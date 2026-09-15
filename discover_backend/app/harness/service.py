@@ -21,8 +21,10 @@ from app.harness.events.run_events import (
     RunCompleted,
     RunEvent,
     RunFailed,
+    RunInputRequested,
     RunStarted,
 )
+from app.harness.execution.pipeline import CheckpointPort, PlannedAction
 from app.harness.models import (
     BudgetState,
     CancellationState,
@@ -60,12 +62,19 @@ class RunService:
         lease: RunLease,
         owner_id: str,
         lease_ttl_seconds: float = 120.0,
+        action_checkpoint: CheckpointPort | None = None,
     ) -> None:
         self._snapshots = snapshots
         self._events = events
         self._lease = lease
         self._owner_id = owner_id
         self._lease_ttl_seconds = lease_ttl_seconds
+        self._action_checkpoint = action_checkpoint
+
+    @property
+    def event_log(self) -> EventLog:
+        """实时 emitter 复用的持久事件日志入口。"""
+        return self._events
 
     async def create(
         self,
@@ -136,6 +145,7 @@ class RunService:
         state.control.cancellation = CancellationState(requested=True, source=source)
         await self._snapshots.save(state)
         await self._events.append(RunCancelled(run_id=run_id, message=source))
+        await self._lease.release(run_id, owner_id=self._owner_id)
         return True
 
     async def complete(
@@ -158,6 +168,8 @@ class RunService:
         )
         state.termination.reason = reason
         state.termination.partial = status == "partial"
+        # 快照自包含：最终正文写入 state，使断线续传无需依赖事件即可拿到答案
+        state.output.final_draft = final_output
         await self._snapshots.save(state)
         await self._events.append(
             RunCompleted(
@@ -170,6 +182,7 @@ class RunService:
                 limitations=limitations or [],
             )
         )
+        await self._lease.release(run_id, owner_id=self._owner_id)
         return True
 
     async def fail(
@@ -197,6 +210,36 @@ class RunService:
                 message=message,
             )
         )
+        await self._lease.release(run_id, owner_id=self._owner_id)
+        return True
+
+    async def heartbeat(self, run_id: str) -> bool:
+        """续租执行租约（长回合期间保持唯一执行者所有权）。"""
+        return await self._lease.heartbeat(run_id, owner_id=self._owner_id)
+
+    async def wait_for_input(
+        self,
+        run_id: str,
+        *,
+        question: str = "",
+        missing_fields: list[str] | None = None,
+    ) -> bool:
+        """需要用户补充输入：快照进入 WAITING_INPUT，追加暂停事件并释放租约。"""
+        state = await self._snapshots.load(run_id)
+        if state is None:
+            return False
+        state.termination.status = RunStatus.WAITING_INPUT
+        state.termination.reason = None
+        state.output.final_draft = question
+        await self._snapshots.save(state)
+        await self._events.append(
+            RunInputRequested(
+                run_id=run_id,
+                question=question,
+                missing_fields=missing_fields or [],
+            )
+        )
+        await self._lease.release(run_id, owner_id=self._owner_id)
         return True
 
     async def query(self, run_id: str, *, after_seq: int = 0) -> RunQueryResult | None:
@@ -207,3 +250,15 @@ class RunService:
         events = await self._events.events_after(run_id, after_seq)
         last_seq = await self._events.last_seq(run_id)
         return RunQueryResult(state=state, events=events, last_seq=last_seq)
+
+    async def pending_actions(self, run_id: str) -> list[PlannedAction]:
+        """resume 前的最小 action 完成校验（副作用检查点，§16.2）。
+
+        返回「已计划但未落 executed/failed」的副作用动作。非空意味着进程可能在任意
+        一条计划动作执行前后崩溃，调用方据此判断是否有未闭环副作用、是否安全重跑；
+        当前只暴露状态、不做自动跳过（强恢复能力后续扩展 checkpoint 再实现）。
+        未注入检查点时返回空（无 DB / 测试环境）。
+        """
+        if self._action_checkpoint is None:
+            return []
+        return await self._action_checkpoint.load_pending(run_id)

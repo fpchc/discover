@@ -38,6 +38,55 @@ from app.infrastructure.database.base import Base, local_now
 SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000001"
 
 
+class RunSnapshotRecord(Base):
+    """Run 权威快照持久化：state_json 存 RunState.model_dump_json()。"""
+
+    __tablename__ = "run_snapshots"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state_json: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
+
+
+class RunEventRecord(Base):
+    """Run 事件日志持久化：append-only（run_id, seq）唯一。"""
+
+    __tablename__ = "run_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    seq: Mapped[int] = mapped_column(BigInteger)
+    event_type: Mapped[str] = mapped_column(String(64))
+    payload_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
+
+    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_run_events_run_seq"),)
+
+
+class RunActionRecord(Base):
+    """Run 副作用 Action 检查点：planned → executed/failed 状态机（崩溃恢复）。"""
+
+    __tablename__ = "run_action_records"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    action_id: Mapped[str] = mapped_column(String(128))
+    tool_name: Mapped[str] = mapped_column(String(255))
+    arguments_json: Mapped[str] = mapped_column(Text)
+    arguments_fingerprint: Mapped[str] = mapped_column(String(255), default="")
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    side_effect_class: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="planned")
+    planned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=local_now)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "action_id", name="uq_run_action_records_run_action"),
+    )
+
+
 class Account(Base):
     """登录账号（accounts 表，用户 DDL 2026-08-28）。
 

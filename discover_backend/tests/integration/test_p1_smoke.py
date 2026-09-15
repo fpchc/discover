@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from app.application.agent.capability import CapabilityActivator
 from app.config.loader import (
     load_mcp_servers,
 )
@@ -34,6 +35,7 @@ from app.harness.events.run_events import (
     LLMUsageUpdated,
     RunEvent,
 )
+from app.harness.execution.pipeline import ToolRuntime
 from app.harness.models import (
     PhaseExecutionOutcomeType,
     PhaseExecutionRequest,
@@ -41,7 +43,7 @@ from app.harness.models import (
 from app.harness.skill.loader import _find_absolute_path_literals
 from app.harness.skill.registry import AgentRegistry
 from app.harness.targets import AssistantTarget, TargetType
-from app.harness.wiring import ToolRunner
+from app.harness.wiring import ActionGateway
 from app.llm.stream_parser import (
     FinishChunk,
     SemanticChunk,
@@ -325,10 +327,12 @@ async def test_route_discover_end_to_end(tmp_path: Path) -> None:
     registry = await _discover_registry(tmp_path)
     assembler = AgentAssembler(
         registry=registry,
-        workspaces=WorkspaceManager(settings),
-        mcp_manager=_FakeMCPManager(),  # type: ignore[arg-type]
-        script_executor=_FakeScriptExecutor(),  # type: ignore[arg-type]
-        settings=settings,
+        capabilities=CapabilityActivator(
+            settings=settings,
+            workspaces=WorkspaceManager(settings),
+            mcp_manager=_FakeMCPManager(),  # type: ignore[arg-type]
+            script_executor=_FakeScriptExecutor(),  # type: ignore[arg-type]
+        ),
     )
     result = await assembler.resolve_and_assemble(
         assistant_target=AssistantTarget(type=TargetType.EXPERT, id="discover"),
@@ -339,8 +343,11 @@ async def test_route_discover_end_to_end(tmp_path: Path) -> None:
     assert result.plan.skill_id == "client-finder"
     broker = result.broker
     try:
-        tools = ToolRunner(broker)
         sink = _RecordingSink()
+        actions = ActionGateway(
+            broker=broker,
+            runtime=ToolRuntime(broker=broker, emit=sink.emit),
+        )
         request = PhaseExecutionRequest(
             run_id="smoke-run-1",
             phase_instance_id=result.plan.skill_id,
@@ -348,12 +355,12 @@ async def test_route_discover_end_to_end(tmp_path: Path) -> None:
             system_prompt=result.plan.system_prompt,
             phase_input={"user_goal": "我卖高速背板连接器，帮我找客户"},
             context_summary="",
-            allowed_tools=tools.catalog_tool_names(),
+            allowed_tools=actions.catalog_tool_names(),
             budget=build_agent_budget(settings),
         )
         outcome = await run_agent_turn(
             llm=_FakeLLM(),
-            tools=tools,
+            actions=actions,
             events=sink,
             request=request,
         )

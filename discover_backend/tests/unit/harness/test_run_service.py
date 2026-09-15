@@ -13,7 +13,7 @@ from app.harness.checkpoint.memory import (
     MemoryRunLease,
     MemorySnapshotStore,
 )
-from app.harness.events.run_events import RunCancelled, RunStarted
+from app.harness.events.run_events import RunCancelled, RunInputRequested, RunStarted
 from app.harness.models import (
     BudgetLimits,
     BudgetState,
@@ -75,6 +75,29 @@ async def test_create_persists_snapshot_and_start_event() -> None:
     # 事件日志含 RunStarted
     tail = await events.events_after(state.identity.run_id, 0)
     assert any(isinstance(e, RunStarted) for e in tail)
+
+
+async def test_complete_persists_final_output_in_snapshot() -> None:
+    service, snapshots, _events, _lease = _service()
+    state = await service.create(
+        conversation_id="conv-1",
+        message_id="msg-1",
+        account_id="acct-1",
+        agent_id="agent-x",
+        skill_id=None,
+        user_goal="查一下",
+        budget=_budget(),
+        phases=["p1"],
+    )
+    await service.complete(
+        state.identity.run_id,
+        status="succeeded",
+        reason=TerminationReason.COMPLETED,
+        final_output="最终答案",
+    )
+    restored = await snapshots.load(state.identity.run_id)
+    assert restored is not None
+    assert restored.output.final_draft == "最终答案"
 
 
 async def test_resume_restores_state() -> None:
@@ -183,6 +206,35 @@ async def test_resume_after_cancel_marks_cancelled_terminal() -> None:
     assert resumed.termination.reason == TerminationReason.USER_CANCELLED
 
 
+async def test_wait_for_input_releases_lease_and_persists_state() -> None:
+    """需要用户输入时：快照 WAITING_INPUT + RunInputRequested 事件 + 释放租约。"""
+    service, snapshots, events, _lease = _service()
+    state = await service.create(
+        conversation_id="conv-1",
+        message_id="msg-1",
+        account_id="acct-1",
+        agent_id="agent-x",
+        skill_id="skill-y",
+        user_goal="查一下",
+        budget=_budget(),
+        phases=["p1"],
+    )
+    run_id = state.identity.run_id
+    assert (
+        await service.wait_for_input(run_id, question="请补充时间范围", missing_fields=["range"])
+        is True
+    )
+    restored = await snapshots.load(run_id)
+    assert restored is not None
+    assert restored.termination.status == RunStatus.WAITING_INPUT
+    assert restored.output.final_draft == "请补充时间范围"
+    tail = await events.events_after(run_id, 0)
+    assert any(isinstance(e, RunInputRequested) for e in tail)
+    # 租约已释放：同 owner 可以重新 resume（不再被占用）
+    resumed = await service.resume(run_id)
+    assert resumed is not None
+
+
 async def test_query_returns_snapshot_and_events_after_seq() -> None:
     service, _snapshots, _events, _lease = _service()
     state = await service.create(
@@ -209,6 +261,47 @@ async def test_query_returns_snapshot_and_events_after_seq() -> None:
 async def test_query_unknown_run_returns_none() -> None:
     service, _snapshots, _events, _lease = _service()
     assert await service.query("no-such-run") is None
+
+
+async def test_pending_actions_empty_when_checkpoint_absent() -> None:
+    service, _snapshots, _events, _lease = _service()
+    assert await service.pending_actions("r1") == []
+
+
+async def test_pending_actions_reports_unfinished_side_effects() -> None:
+    from app.harness.execution.pipeline import PlannedAction, SideEffectClass
+
+    class _FakeCheckpoint:
+        async def load_pending(self, run_id: str) -> list[PlannedAction]:
+            del run_id
+            return [
+                PlannedAction(
+                    run_id="r1",
+                    action_id="p1.1.c1",
+                    tool_name="send_email",
+                    arguments={"to": "a@b.c"},
+                    arguments_fingerprint="fp",
+                    idempotency_key="k1",
+                    side_effect_class=SideEffectClass.EXTERNAL_WRITE,
+                )
+            ]
+
+        async def save_planned_action(self, planned: PlannedAction) -> None:
+            del planned
+
+        async def mark_executed(self, run_id: str, action_id: str, *, ok: bool) -> None:
+            del run_id, action_id, ok
+
+    service = RunService(
+        snapshots=MemorySnapshotStore(),
+        events=MemoryEventLog(),
+        lease=MemoryRunLease(),
+        owner_id="owner-1",
+        action_checkpoint=_FakeCheckpoint(),
+    )
+    pending = await service.pending_actions("r1")
+    assert len(pending) == 1
+    assert pending[0].tool_name == "send_email"
 
 
 def test_service_requires_injected_dependencies() -> None:

@@ -18,20 +18,28 @@ from app.application.context.adapters import ConversationContextAdapter
 from app.application.conversation.service import ConversationService
 from app.application.file.service import FileService
 from app.application.identity.service import AuthService
+from app.application.run.persistence import (
+    PostgresActionCheckpoint,
+    PostgresEventLog,
+    PostgresSnapshotStore,
+    RedisRunLease,
+)
 from app.application.services import AppServices
 from app.application.skill_package import DatabasePackageSource, SkillPackageService
 from app.bootstrap.extensions import shutdown_extensions, startup_extensions
-from app.environment.context import ContextAssembler
 from app.environment.mcp.accessors import get_manager, get_registry
 from app.environment.storage.accessors import get_storage
 from app.environment.tools.script_executor import ScriptExecutor
 from app.environment.workspace.service import WorkspaceManager
+from app.harness.context import ContextAssembler
+from app.harness.service import RunService
 from app.harness.skill.hot_reload import HotReloader
 from app.harness.skill.loader import AgentLoader
 from app.harness.skill.registry import AgentRegistry
 from app.infrastructure.database.accessors import get_database
 from app.infrastructure.database.engine import Database
 from app.infrastructure.redis.client import get_cache
+from app.infrastructure.redis.client import get_client as get_redis_client
 from app.infrastructure.redis.session_store import RedisSessionStore
 from app.infrastructure.sso.elecnest import ElecnestSSOClient
 from app.llm.accessors import get_client, get_providers, resolve_api_key
@@ -114,6 +122,15 @@ def _build_services(services: AppServices, database: Database) -> None:
         services.files,
         elecnest=services.elecnest,
         sessions=RedisSessionStore(get_cache()),
+    )
+    # Run 权威状态持久化：PostgreSQL 快照/事件 + Redis 租约/取消/心跳。
+    # 内存实现只保留为 AppServices 默认与无 DB 测试环境。
+    services.run_service = RunService(
+        snapshots=PostgresSnapshotStore(database),
+        events=PostgresEventLog(database),
+        lease=RedisRunLease(get_redis_client()),
+        owner_id="api",
+        action_checkpoint=PostgresActionCheckpoint(database),
     )
 
 

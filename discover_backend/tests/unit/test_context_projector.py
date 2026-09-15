@@ -19,7 +19,7 @@ from app.environment.context import (
     FileRef,
     ObservationRef,
 )
-from app.environment.context.projector import ContextProjector
+from app.harness.context import ContextProjector
 
 
 def _context(

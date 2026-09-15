@@ -17,12 +17,11 @@ from app.application.services import AppServices
 from app.config.settings import Settings
 from app.environment.context import (
     AgentContext,
-    ContextAssembler,
     ContextAssemblyOptions,
     ContextIdentity,
-    ContextProjector,
     CurrentInput,
 )
+from app.harness.context import ContextAssembler, ContextProjector
 from app.llm.models import ChatMessage
 
 

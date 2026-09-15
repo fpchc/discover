@@ -144,6 +144,8 @@ class ConversationSession(BaseModel):
     conversation_id: str
     account_id: str
     assistant_target: AssistantTarget | None = None
+    # 当前账号是否超级用户（is_system）：行动授权旁路依据；默认 False（fail-closed）
+    superuser: bool = False
 
     @property
     def assistant_meta(self) -> dict[str, str | None] | None:

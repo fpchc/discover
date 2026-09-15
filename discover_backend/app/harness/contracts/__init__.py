@@ -16,6 +16,7 @@ from app.harness.contracts.models import (
     ContractVerdict,
 )
 from app.harness.contracts.registry import ContractRegistry, decide_repair
+from app.harness.contracts.structural import has_structural_contract, structural_failures
 
 __all__ = [
     "ContractContext",
@@ -31,4 +32,6 @@ __all__ = [
     "ScriptGateExecutor",
     "StructuralContractExecutor",
     "decide_repair",
+    "has_structural_contract",
+    "structural_failures",
 ]

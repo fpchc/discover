@@ -58,6 +58,8 @@ class MessageEndEvent(BaseModel):
     conversation_id: str
     metadata: dict[str, object] = Field(default_factory=dict)
     created_at: int
+    # 运行标识：断线续传时据此查询 /runs/{run_id} 重放（RunStarted 起即携带）
+    run_id: str = ""
 
 
 class PingEvent(BaseModel):
@@ -73,6 +75,7 @@ class ErrorStreamEvent(BaseModel):
     status: int
     code: str
     message: str
+    run_id: str = ""
 
 
 class ThinkingStartFrame(BaseModel):
@@ -106,3 +109,32 @@ class ThinkingEndFrame(BaseModel):
     conversation_id: str
     duration_ms: int
     created_at: int
+
+
+class RunReplayResponse(BaseModel):
+    """断线续传 / 运行查询响应：快照摘要 + 持久事件 + 最后序号。"""
+
+    run_id: str
+    status: str
+    reason: str | None = None
+    final_output: str = ""
+    last_seq: int = 0
+    events: list[dict[str, object]] = Field(default_factory=list)
+
+
+class RunResumeResponse(BaseModel):
+    """断线续传恢复响应：重新获取租约结果 + 快照摘要 + 副作用 action 状态。
+
+    轻量 resume（不做整图恢复）：返回快照/事件 + 未闭环副作用 action，供调用方判断
+    是否有「已计划但未落 executed/failed」的动作。
+    """
+
+    run_id: str
+    status: str
+    reason: str | None = None
+    final_output: str = ""
+    last_seq: int = 0
+    lease_reacquired: bool = False
+    has_inflight_side_effects: bool = False
+    pending_actions: list[dict[str, object]] = Field(default_factory=list)
+    events: list[dict[str, object]] = Field(default_factory=list)

@@ -9,9 +9,11 @@ record_turn 更新 thinking/answer；streaming 下 message_end 后锁已释放�
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from app.application.dto.auth import AccountRecord
 from app.application.dto.conversations import (
     ConversationSession,
     MessageStatus,
@@ -88,6 +90,12 @@ def _services() -> tuple[SimpleNamespace, _FakeHistory, ActiveTurnRegistry]:
     return services, history, registry
 
 
+def _account(account_id: str) -> AccountRecord:
+    return AccountRecord(
+        account_id=account_id, name="测试", phone="13800000000", created_at=datetime.now()
+    )
+
+
 async def test_blocking_persists_start_then_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -98,6 +106,7 @@ async def test_blocking_persists_start_then_record(
         ChatMessageRequest(query="你好", response_mode="blocking"),
         Response(),
         account_id="acct-1",
+        account=_account("acct-1"),
         services=services,
     )
     # 两段式：先 start（processing 仅 query），后 record（终态 + thinking/answer）
@@ -125,6 +134,7 @@ async def test_streaming_start_turn_at_route_entry(
         ChatMessageRequest(query="你好", response_mode="streaming"),
         Response(),
         account_id="acct-1",
+        account=_account("acct-1"),
         services=services,
     )
     assert len(history.starts) == 1
@@ -155,6 +165,7 @@ async def test_conflict_when_turn_running_no_processing_record(
             ChatMessageRequest(query="你好", response_mode="blocking"),
             Response(),
             account_id="acct-1",
+            account=_account("acct-1"),
             services=services,
         )
     assert history.starts == []

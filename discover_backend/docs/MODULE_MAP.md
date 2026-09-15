@@ -63,8 +63,10 @@ bootstrap/ config/ shared/             组合根与跨层
 | Action/Observation 指纹 + §12.4 六条件无进展判定 | `app/harness/progress.py` |
 | PolicyDecision 模型（7 种结构化枚举） | `app/harness/policy/models.py` |
 | 预算 / 动作 / 观察 / 组合 Policy | `app/harness/policy/{budget,action,observation,composite}.py` |
+| 行动授权（身份 + 副作用审批矩阵，P0 边界） | `app/harness/policy/authorization.py` |
 | Contract 定义/结果模型 + ContractExecutor（含 ScriptGate 抽象） | `app/harness/contracts/{models,executor}.py` |
 | Contract 注册表 + 有界修复（decide_repair） | `app/harness/contracts/registry.py` |
+| 结构契约校验（JSON Schema 子集：required + properties.type，阶段转换点与 Verifier 共用） | `app/harness/contracts/structural.py` |
 
 ### 执行与编排
 
@@ -72,25 +74,29 @@ bootstrap/ config/ shared/             组合根与跨层
 |------|------|
 | 阶段内 Bounded ReAct 执行器（ReactGraphState / BoundedReActExecutor + 端口 Protocol） | `app/harness/react/executor.py` |
 | Bounded ReAct LangGraph 子图拓扑（§10 节点 + 条件边） | `app/harness/graph.py` |
-| Tool Runtime 管线（preflight/副作用/幂等键/broker/normalize/产物） | `app/harness/execution/pipeline.py` |
+| Tool Runtime 管线（preflight / 副作用预记录早于执行 / 幂等键 / broker / normalize / 产物） | `app/harness/execution/pipeline.py` |
 | Workflow 定义模型（WorkflowDefinition / PhaseDefinition / PhaseExecutorType） | `app/harness/workflow/definition.py` |
 | 阶段执行器注册表（ReactPhaseExecutor + RenderPhaseExecutor） | `app/harness/workflow/executors.py` |
-| Workflow 编排（WorkflowRunner 顺序阶段推进 + input_bindings 绑定） | `app/harness/workflow/compiler.py` |
+| Workflow 编排（WorkflowRunner 顺序阶段推进 + input_bindings 绑定 + 阶段转换结构闸门/decide_repair 有界修复） | `app/harness/workflow/compiler.py` |
 | 助手解析（用户显式选择，非 LLM 路由） | `app/harness/resolver/assistant.py` |
 | 技能解析（SkillResolver 确定性策略链：显式→默认→唯一→首个） | `app/harness/resolver/skill.py` |
-| Agent 执行入口（AgentAssembler / build_agent_budget / run_agent_turn / run_skill_workflow） | `app/harness/agent_runner.py` |
+| Agent 执行入口（AgentAssembler 依赖 CapabilityActivatorPort / build_agent_budget / run_agent_turn / run_skill_workflow） | `app/harness/agent_runner.py` |
 
 ### 生命周期、事件与适配
 
 | 职责 | 路径 |
 |------|------|
-| Run Service（create/resume/cancel/query + RunQueryResult） | `app/harness/service.py` |
+| Run Service（create/resume/cancel/query/wait_for_input/pending_actions + RunQueryResult） | `app/harness/service.py` |
+| 模型候选结果验证器（候选 ≠ 完成：PASS / NEEDS_INPUT / PARTIAL / FAIL） | `app/harness/verification.py` |
 | 进行中回合句柄注册表（ActiveTurn / ActiveTurnRegistry：stop 取消、同会话并发 409） | `app/harness/turn.py` |
 | Run 生命周期事件集（RunEvent 18 类 + 终态契约 + is_terminal） | `app/harness/events/run_events.py` |
 | QueueEmitter（seq / 打字机 / 心跳 / 有界队列背压） | `app/harness/events/emitter.py` |
 | Checkpoint 协议（SnapshotStore / EventLog / RunLease） | `app/harness/checkpoint/protocol.py` |
 | 内存 Checkpoint store（测试与无 DB 默认） | `app/harness/checkpoint/memory.py` |
-| 生产适配器（LLMRunner / ToolRunner：抽象端口 → 真实运行组件） | `app/harness/wiring.py` |
+| Run 持久化实现（PostgreSQL 快照/事件/副作用 action 检查点 + Redis 租约/取消/心跳） | `app/application/run/persistence.py` |
+| Run 持久化 ORM 载体（run_snapshots / run_events） | `app/infrastructure/database/models.py` |
+| 生产适配器（LLMRunner / ActionGateway：抽象端口 → 真实运行组件） | `app/harness/wiring.py` |
+| 能力装配端口（ToolBrokerPort / CapabilityActivatorPort，harness 不识别 MCP/Script 具体实现） | `app/harness/contracts/capability.py` |
 | 助手目标词汇（AssistantTarget / TargetType / SelectionSource，保留字 generic） | `app/harness/targets.py` |
 
 ### 技能包（`app/harness/skill`）
@@ -120,20 +126,20 @@ bootstrap/ config/ shared/             组合根与跨层
 | MCP 连接/引用计数管理器（acquire/release/close_idle） | `app/environment/mcp/manager.py` |
 | MCP 生命周期访问器（get_manager / get_registry） | `app/environment/mcp/accessors.py` |
 
-### 上下文平面
+### 上下文平面（P1#9 拆分：事实/来源在 environment，取舍/投影在 harness）
 
 | 职责 | 路径 |
 |------|------|
 | 上下文结构模型（AgentContext / ContextIdentity / ContextMessage / ContextDelta 等） | `app/environment/context/models.py` |
 | 上下文来源端口（ConversationContextPort / AttachmentContextPort） | `app/environment/context/ports.py` |
-| ContextAssembler（唯一装配入口：历史 + 附件 + 确定性裁剪 + 带版本上下文） | `app/environment/context/assembler.py` |
-| ContextProjector（AgentContext → list[ChatMessage]） | `app/environment/context/projector.py` |
+| ContextAssembler（唯一装配入口：历史 + 附件 + 确定性裁剪 + 带版本上下文） | `app/harness/context/assembler.py` |
+| ContextProjector（AgentContext → list[ChatMessage]） | `app/harness/context/projector.py` |
 
 ### 工作区 / 存储
 
 | 职责 | 路径 |
 |------|------|
-| 智能体工作区（创建 / 路径校验 / 防穿越，按 agent 键控） | `app/environment/workspace/service.py` |
+| 智能体工作区（创建 / 路径校验 / 防穿越，按 account/conversation/run 隔离） | `app/environment/workspace/service.py` |
 | 存储端口 + 类型枚举（BaseStorage / StorageType） | `app/environment/storage/{base,types}.py` |
 | LocalStorage（UUID 扁平、anyio 线程池）/ S3 占位 | `app/environment/storage/{local,s3}.py` |
 | 存储访问器（get_storage，按 storage_type 选择后端） | `app/environment/storage/accessors.py` |
@@ -144,7 +150,7 @@ bootstrap/ config/ shared/             组合根与跨层
 
 | 职责 | 路径 |
 |------|------|
-| 对话接口（POST /chat-messages + stop；参数提取、帧编码、响应构造） | `app/interfaces/http/chat.py` |
+| 对话接口（POST /chat-messages + stop + 断线续传 replay/resume；参数提取、帧编码、响应构造） | `app/interfaces/http/chat.py` |
 | 助手目录接口（GET /assistants，只读） | `app/interfaces/http/assistants.py` |
 | 会话接口（/conversations 列表 / 消息 / 软删除） | `app/interfaces/http/conversations.py` |
 | 文件接口（/files 上传 / 预览） | `app/interfaces/http/files.py` |
@@ -166,6 +172,7 @@ bootstrap/ config/ shared/             组合根与跨层
 | 回合生命周期（并发登记 409 / 终态释放锁 / 全路径兜底落库） | `app/application/chat/turn_lifecycle.py` |
 | 回合上下文装配（AppServices + 会话身份 → AgentContext → LLM 消息投影） | `app/application/chat/turn_context.py` |
 | 上下文来源端口适配器（ConversationService → 结构化会话消息；业务侧适配到环境端口） | `app/application/context/adapters.py` |
+| 能力装配适配器（CapabilityActivator：工作区创建 + ToolBroker 激活，实现 CapabilityActivatorPort） | `app/application/agent/capability.py` |
 | 对话历史落库/读取/删除 + 用量聚合（ConversationService，DB 降级内部消化） | `app/application/conversation/service.py` |
 | TurnRecorder（RunEvent 流 → TurnRecord 落库载荷） | `app/application/conversation/recorder.py` |
 | 文件注册表服务（register / upload / 预览 / 使用标记） | `app/application/file/service.py` |
@@ -191,7 +198,7 @@ bootstrap/ config/ shared/             组合根与跨层
 |------|------|
 | SQLAlchemy 声明式基类 + 命名约定 + 本地时间 | `app/infrastructure/database/base.py` |
 | 异步引擎 + 会话工厂（连接池配置驱动） | `app/infrastructure/database/engine.py` |
-| ORM 模型（accounts / conversations / messages / upload_files / agent_packages / agent_package_entries） | `app/infrastructure/database/models.py` |
+| ORM 模型（accounts / conversations / messages / upload_files / agent_packages / agent_package_entries / run_snapshots / run_events / run_action_records） | `app/infrastructure/database/models.py` |
 | 数据库访问器（get_database） | `app/infrastructure/database/accessors.py` |
 | Redis 客户端 + Cache/Lock 封装 + 访问器 | `app/infrastructure/redis/client.py` |
 | 登录会话存储实现（RedisSessionStore，fail-closed 异常边界） | `app/infrastructure/redis/session_store.py` |

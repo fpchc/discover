@@ -263,14 +263,15 @@ AgentContext 可以保存：
 推荐新增一个独立的上下文模型模块，例如：
 
 ```text
-app/environment/context/
+app/environment/context/          # 事实模型 + 来源端口（系统有哪些事实）
     __init__.py
     models.py
     ports.py
+app/harness/context/              # 上下文编译器（本轮取舍/裁剪/投影；P1#9 从 environment 拆出）
+    __init__.py
     assembler.py
-    reducer.py
     projector.py
-    policy.py
+# reducer.py / policy.py 属后续阶段（阶段六 / 契约接线）
 ```
 
 最终模型形态应接近：

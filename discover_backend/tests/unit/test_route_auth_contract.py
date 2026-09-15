@@ -68,6 +68,8 @@ _EXPECTED_GUARDS: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/users"): "login_required",
     ("POST", "/api/v1/chat-messages"): "login_required",
     ("POST", "/api/v1/chat-messages/{conversation_id}/stop"): "login_required",
+    ("GET", "/api/v1/chat-messages/{conversation_id}/runs/{run_id}"): "login_required",
+    ("POST", "/api/v1/chat-messages/{conversation_id}/runs/{run_id}/resume"): "login_required",
     ("GET", "/api/v1/conversations"): "login_required",
     ("GET", "/api/v1/conversations/{conversation_id}/messages"): "login_required",
     ("DELETE", "/api/v1/conversations/{conversation_id}"): "login_required",
@@ -192,7 +194,7 @@ async def test_login_required_routes_reject_anonymous_requests(
     """每个声明的受保护路由都必须在 HTTP 边界 401（不止结构上标了标记）。"""
     _probe, client = probe_client
     probes = _login_required_probes()
-    assert len(probes) == 13  # 与清单快照同源：少了说明遍历失效
+    assert len(probes) == 15  # 与清单快照同源：少了说明遍历失效
     for method, path in probes:
         response = await client.request(method, path)
         assert response.status_code == 401, f"{method} {path} 未拦截匿名请求"

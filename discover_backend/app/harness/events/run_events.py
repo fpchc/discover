@@ -282,3 +282,25 @@ TERMINAL_EVENT_TYPES: frozenset[str] = frozenset({"run_completed", "run_failed",
 def is_terminal(event: RunEvent) -> bool:
     """终态事件判断（领域契约）：HTTP 层据此结束流，生命周期据此释放会话锁。"""
     return event.type in TERMINAL_EVENT_TYPES
+
+
+# 高频展示事件（打字机 / 心跳）：不写持久事件日志，只走实时 SSE。
+_DISPLAY_EVENT_TYPES: frozenset[str] = frozenset(
+    {"text_delta", "thinking_delta", "thinking_started", "thinking_ended", "heartbeat"}
+)
+
+# RunService 负责持久化/更新快照的生命周期事件：不在 emitter 内重复落日志。
+_RUN_SERVICE_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "run_started",
+        "run_completed",
+        "run_failed",
+        "run_cancelled",
+        "run_input_requested",
+    }
+)
+
+
+def should_persist_in_emitter(event: RunEvent) -> bool:
+    """判断领域事件是否应由实时 emitter 同步写入持久事件日志。"""
+    return event.type not in _DISPLAY_EVENT_TYPES and event.type not in _RUN_SERVICE_EVENT_TYPES

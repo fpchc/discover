@@ -25,6 +25,7 @@ from app.harness.events.run_events import (
     RunCompleted,
     RunEvent,
     RunFailed,
+    RunInputRequested,
     ThinkingEnded,
     ThinkingStarted,
 )
@@ -35,6 +36,7 @@ from app.harness.models import (
 )
 from app.harness.targets import TargetType
 from app.harness.turn import ActiveTurn
+from app.harness.verification import VerificationVerdict, verify_agent_outcome
 from app.shared.errors.base import ErrorCategory, PlatformError
 from app.shared.utils.sanitize import sanitize_error_message
 
@@ -56,7 +58,7 @@ async def run_turn_events(
     + 单阶段 Bounded ReAct）；未绑定 / 通用对话 → 直接 LLM 流式（喷 RunEvent 展示
     增量）。共用 emitter 骨架：ThinkingStarted 开头、ThinkingEnded + 终态事件收尾。
     """
-    emitter = QueueEmitter(services.settings)
+    emitter = QueueEmitter(services.settings, event_log=services.run_service.event_log)
     run_done = anyio.Event()
 
     async def run_turn() -> None:
@@ -76,6 +78,8 @@ async def run_turn_events(
             await emitter.finish()
             run_done.set()
 
+    heartbeat_interval = getattr(services.settings, "run_heartbeat_interval_seconds", 30.0)
+    next_heartbeat = time.monotonic() + heartbeat_interval
     async with anyio.create_task_group() as tg:
         tg.start_soon(emitter.run)
         tg.start_soon(run_turn)
@@ -86,6 +90,9 @@ async def run_turn_events(
             except TimeoutError:
                 if run_done.is_set():
                     break
+                if turn.run_id is not None and time.monotonic() >= next_heartbeat:
+                    await services.run_service.heartbeat(turn.run_id)
+                    next_heartbeat = time.monotonic() + heartbeat_interval
                 continue
             except Exception:
                 logger.exception("事件队列读取异常")
@@ -155,6 +162,10 @@ async def _execute_turn(
             if answer:
                 emitter.text_delta(answer)
             await _emit_thinking_ended(emitter, run_id, started)
+            verification = verify_agent_outcome(outcome)
+            if verification.verdict == VerificationVerdict.NEEDS_INPUT:
+                await _emit_input_required(services, emitter, run_id, outcome, answer)
+                return answer
             await _emit_agent_terminal(services, emitter, run_id, outcome, answer)
             return answer
         answer = await _run_generic_llm(services, session, user_input, emitter, run_id)
@@ -200,6 +211,29 @@ async def _emit_agent_terminal(
             completed_phases=completed,
             unfinished_phases=unfinished,
             limitations=limitations,
+        )
+    )
+
+
+async def _emit_input_required(
+    services: AppServices,
+    emitter: QueueEmitter,
+    run_id: str,
+    outcome: PhaseExecutionOutcome | None,
+    answer: str,
+) -> None:
+    """需要用户补充输入：WAITING_INPUT 暂停事件，不是成功终态。"""
+    limitations = outcome.limitations if outcome is not None else []
+    await services.run_service.wait_for_input(
+        run_id,
+        question=answer,
+        missing_fields=limitations,
+    )
+    await emitter.emit(
+        RunInputRequested(
+            run_id=run_id,
+            question=answer,
+            missing_fields=limitations,
         )
     )
 
@@ -279,24 +313,16 @@ def _phase_breakdown(status: Literal["succeeded", "partial"]) -> tuple[list[str]
 def _agent_terminal(
     outcome: PhaseExecutionOutcome | None,
 ) -> tuple[Literal["succeeded", "partial"], TerminationReason, list[str]]:
-    """PhaseExecutionOutcome → Run 终态（status / reason / limitations，§17.1）。"""
-    if outcome is None:
-        return "partial", TerminationReason.NO_PROGRESS, ["无执行结果"]
-    if outcome.outcome_type in (
-        PhaseExecutionOutcomeType.FINAL_PROPOSED,
-        PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
-        PhaseExecutionOutcomeType.INPUT_REQUIRED,
-    ):
-        return "succeeded", TerminationReason.COMPLETED, outcome.limitations
-    if outcome.outcome_type == PhaseExecutionOutcomeType.PARTIAL_NO_PROGRESS:
-        return "partial", TerminationReason.NO_PROGRESS, outcome.limitations or ["无进展，部分完成"]
-    if outcome.outcome_type == PhaseExecutionOutcomeType.PARTIAL_BUDGET:
-        return (
-            "partial",
-            TerminationReason.TOKEN_BUDGET,
-            outcome.limitations or ["预算受限，部分完成"],
-        )
-    return "partial", TerminationReason.CONTRACT_FAILED, outcome.limitations
+    """PhaseExecutionOutcome → Run 终态（Verifier 决定，候选 ≠ 完成）。"""
+    verification = verify_agent_outcome(outcome)
+    if verification.verdict == VerificationVerdict.PASS:
+        return "succeeded", TerminationReason.COMPLETED, verification.limitations
+    if verification.verdict == VerificationVerdict.PARTIAL:
+        reason = TerminationReason.NO_PROGRESS
+        if outcome is not None and outcome.outcome_type == PhaseExecutionOutcomeType.PARTIAL_BUDGET:
+            reason = TerminationReason.TOKEN_BUDGET
+        return "partial", reason, verification.limitations
+    return "partial", TerminationReason.CONTRACT_FAILED, verification.limitations
 
 
 def _outcome_answer(outcome: PhaseExecutionOutcome | None) -> str:

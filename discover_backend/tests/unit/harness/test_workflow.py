@@ -11,8 +11,15 @@ from collections.abc import AsyncIterator, Callable
 from app.environment.tools.broker import ToolCallRequest, ToolResult
 from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.events.run_events import RunEvent
+from app.harness.execution.pipeline import (
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolPreflightResult,
+    ToolRuntime,
+)
 from app.harness.models import BudgetLimits, BudgetState
 from app.harness.react.executor import BoundedReActExecutor
+from app.harness.react.ports import ActionGatewayPort
 from app.harness.workflow.compiler import WorkflowRunner
 from app.harness.workflow.definition import (
     PhaseDefinition,
@@ -43,7 +50,7 @@ class _FakeLLM:
 
 
 class _FakeTools:
-    """脚本化 ToolRunner：tool.a 返回「数据」。"""
+    """脚本化工具代理：tool.a 返回「数据」。"""
 
     def exposed_tools(self) -> list[ChatToolSpec]:
         return [
@@ -68,6 +75,36 @@ class _FakeTools:
             ToolResult(call_id=call.call_id, tool_name=call.tool_name, ok=True, content="数据")
             for call in calls
         ]
+
+
+class _FakeActions(ActionGatewayPort):
+    """把 _FakeTools 包装为 ActionGatewayPort（经 ToolRuntime 走真实管线边界）。"""
+
+    def __init__(self, tools: _FakeTools, progress_threshold: int = 3) -> None:
+        self._tools = tools
+        self._progress_threshold = progress_threshold
+
+    def _runtime(self) -> ToolRuntime:
+        async def _noop(_event: RunEvent) -> None:
+            return None
+
+        return ToolRuntime(
+            broker=self._tools,
+            emit=_noop,
+            progress_threshold=self._progress_threshold,
+        )
+
+    def exposed_tools(self) -> list[ChatToolSpec]:
+        return self._tools.exposed_tools()
+
+    def get_descriptor(self, name: str) -> ToolDescriptor | None:
+        return self._tools.get_descriptor(name)
+
+    async def preflight(self, request: ToolExecutionRequest) -> ToolPreflightResult:
+        return await self._runtime().preflight(request)
+
+    async def execute_batch(self, request: ToolExecutionRequest) -> ToolExecutionResult:
+        return await self._runtime().execute_prepared(request, request.calls, [])
 
 
 class _FakeEvents:
@@ -106,7 +143,7 @@ async def test_workflow_runs_two_phases_in_order() -> None:
 
     llm = _FakeLLM(respond)
     react = ReactPhaseExecutor(
-        BoundedReActExecutor(llm=llm, tools=_FakeTools(), events=_FakeEvents())
+        BoundedReActExecutor(llm=llm, actions=_FakeActions(_FakeTools()), events=_FakeEvents())
     )
     runner = WorkflowRunner(executors=PhaseExecutorRegistry({PhaseExecutorType.REACT: react}))
     definition = WorkflowDefinition(
@@ -329,7 +366,7 @@ async def test_run_skill_workflow_research_then_render() -> None:
     )
     outcome = await run_skill_workflow(
         llm=_FakeLLM(respond),
-        tools=_FakeTools(),
+        actions=_FakeActions(_FakeTools()),
         events=_FakeEvents(),
         request=request,
         definition=definition,
@@ -430,7 +467,7 @@ async def test_workflow_output_contract_exhausts_repairs() -> None:
     result = await runner.run(
         definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
     )
-    assert result.reason_code == "output_contract_failed:final_qa"
+    assert result.reason_code == "contract_failed:final_qa"
     assert render_calls == [1, 1]
     assert result.final_outcome is not None
     assert result.final_outcome.answer == "第2版"
@@ -496,3 +533,282 @@ async def test_workflow_output_contract_receives_bound_input() -> None:
     assert result.final_outcome is not None
     assert result.final_outcome.answer == "报告正文"
     assert received == [{"answer": "报告正文", "report": {"composite_score": 9.5}}]
+
+
+async def test_workflow_repairs_missing_required_field_then_continues() -> None:
+    """中间阶段缺必填字段触发一次结构修复，修复后继续后续阶段。"""
+    from app.harness.models import (
+        PhaseExecutionOutcome,
+        PhaseExecutionOutcomeType,
+        PhaseExecutionRequest,
+    )
+
+    calls: list[tuple[str, int, str]] = []
+
+    class _RepairingReact:
+        def __init__(self) -> None:
+            self._attempts = 0
+
+        async def execute(
+            self, definition: object, request: PhaseExecutionRequest
+        ) -> PhaseExecutionOutcome:
+            phase_id = request.phase_instance_id
+            attempt = request.attempt
+            goal = request.phase_goal
+            calls.append((phase_id, attempt, goal))
+            if phase_id == "p1":
+                self._attempts += 1
+                if self._attempts == 1:
+                    return PhaseExecutionOutcome(
+                        outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                        candidate_output={},
+                        output_schema={"required": ["title"]},
+                    )
+                return PhaseExecutionOutcome(
+                    outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                    candidate_output={"title": "报告"},
+                    output_schema={"required": ["title"]},
+                )
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                candidate_output={"ok": True},
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.REACT: _RepairingReact()}),
+        max_repair_attempts=1,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-repair",
+        phases=[
+            PhaseDefinition(phase_id="p1", goal="g1", output_schema={"required": ["title"]}),
+            PhaseDefinition(phase_id="p2", goal="g2"),
+        ],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.completed_phase_ids == ["p1", "p2"]
+    assert [phase_id for phase_id, _, _ in calls] == ["p1", "p1", "p2"]
+    assert calls[1][1] == 1  # 重跑 attempt=1
+    assert "修复" in calls[1][2]  # 重跑 phase_goal 携带修复说明
+
+
+async def test_workflow_structural_failure_terminates_without_fallback() -> None:
+    """修复耗尽且无 fallback → 终止，reason_code 含 contract_failed。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    class _AlwaysBadReact:
+        async def execute(self, definition: object, request: object) -> PhaseExecutionOutcome:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                candidate_output={},
+                output_schema={"required": ["title"]},
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.REACT: _AlwaysBadReact()}),
+        max_repair_attempts=1,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-structural-fail",
+        phases=[
+            PhaseDefinition(phase_id="p1", goal="g1", output_schema={"required": ["title"]}),
+            PhaseDefinition(phase_id="p2", goal="g2"),
+        ],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.completed_phase_ids == []
+    assert result.final_outcome is not None
+    assert result.final_outcome.outcome_type == PhaseExecutionOutcomeType.CANDIDATE_COMPLETED
+    assert result.reason_code == "contract_failed:p1"
+
+
+async def test_workflow_structural_failure_degrades_to_fallback() -> None:
+    """修复耗尽且有 fallback_phase → 确定性跳转，context_payload 透传。"""
+    from app.harness.models import (
+        PhaseExecutionOutcome,
+        PhaseExecutionOutcomeType,
+        PhaseExecutionRequest,
+    )
+
+    captured: dict[str, object] = {}
+
+    class _BadReactWithFallback:
+        async def execute(self, definition: object, request: object) -> PhaseExecutionOutcome:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                candidate_output={},
+                output_schema={"required": ["title"]},
+                context_payload="采集到的上下文",
+            )
+
+    class _Render:
+        async def execute(
+            self, definition: object, request: PhaseExecutionRequest
+        ) -> PhaseExecutionOutcome:
+            captured["context_summary"] = request.context_summary
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.FINAL_PROPOSED,
+                answer="降级正文",
+                reason_code="render_completed",
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry(
+            {
+                PhaseExecutorType.REACT: _BadReactWithFallback(),
+                PhaseExecutorType.RENDER: _Render(),
+            }
+        ),
+        max_repair_attempts=1,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-structural-degrade",
+        phases=[
+            PhaseDefinition(
+                phase_id="research",
+                executor_type=PhaseExecutorType.REACT,
+                output_schema={"required": ["title"]},
+                fallback_phase="render",
+            ),
+            PhaseDefinition(phase_id="render", executor_type=PhaseExecutorType.RENDER),
+        ],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.final_outcome is not None
+    assert result.final_outcome.answer == "降级正文"
+    assert captured["context_summary"] == "采集到的上下文"
+
+
+async def test_workflow_empty_schema_skips_structural_gate() -> None:
+    """output_schema 为空 → 不触发结构校验，行为与现状一致。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    class _EmptySchemaReact:
+        async def execute(self, definition: object, request: object) -> PhaseExecutionOutcome:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                candidate_output=None,
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.REACT: _EmptySchemaReact()})
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-empty-schema",
+        phases=[PhaseDefinition(phase_id="p1", goal="g1")],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.completed_phase_ids == ["p1"]
+    assert result.final_outcome is None
+
+
+async def test_gate_reads_outcome_schema_not_phase_schema() -> None:
+    """闸门校验源与 Verifier 同源（outcome.output_schema）；执行器不回传时跳过校验。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    class _NoEchoReact:
+        async def execute(self, definition: object, request: object) -> PhaseExecutionOutcome:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.CANDIDATE_COMPLETED,
+                candidate_output={},  # 缺 required.title，但 outcome 未回传 output_schema
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.REACT: _NoEchoReact()}),
+        max_repair_attempts=1,
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-no-echo",
+        phases=[PhaseDefinition(phase_id="p1", goal="g1", output_schema={"required": ["title"]})],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    # phase.output_schema 声明了 required，但 outcome.output_schema 为空 →
+    # 闸门与 Verifier 一致地跳过校验，正常推进。
+    assert result.completed_phase_ids == ["p1"]
+
+
+async def test_workflow_output_contract_aggregates_refs_in_reason() -> None:
+    """多门禁失败聚合后 reason_code 携带全部 refs（decide_repair 收敛）。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    class _AlwaysFailGate:
+        async def run_gate(self, *, gate_id: str, data: dict[str, object]) -> ToolResult:
+            del data
+            return ToolResult(
+                call_id="g",
+                tool_name=f"gate_{gate_id}",
+                ok=False,
+                message='{"passed": false, "errors": ["失败"]}',
+                suggestion="修复",
+            )
+
+    class _Render:
+        async def execute(self, definition: object, request: object) -> PhaseExecutionOutcome:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.FINAL_PROPOSED,
+                answer="正文",
+                reason_code="render_completed",
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.RENDER: _Render()}),
+        max_repair_attempts=1,
+        gate_runner=_AlwaysFailGate(),
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-gate-multi",
+        phases=[PhaseDefinition(phase_id="render", executor_type=PhaseExecutorType.RENDER)],
+        output_contract_refs=["gate_a", "gate_b"],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.reason_code == "contract_failed:gate_a,gate_b"
+
+
+async def test_workflow_output_contract_passed_reason() -> None:
+    """门禁通过且 render 无 reason_code 时，落回 output_contract_passed（非 contract_ok）。"""
+    from app.harness.models import PhaseExecutionOutcome, PhaseExecutionOutcomeType
+
+    class _PassGate:
+        async def run_gate(self, *, gate_id: str, data: dict[str, object]) -> ToolResult:
+            del gate_id, data
+            return ToolResult(call_id="g", tool_name="gate", ok=True, content="通过")
+
+    class _Render:
+        async def execute(self, definition: object, request: object) -> PhaseExecutionOutcome:
+            del definition, request
+            return PhaseExecutionOutcome(
+                outcome_type=PhaseExecutionOutcomeType.FINAL_PROPOSED,
+                answer="正文",
+            )
+
+    runner = WorkflowRunner(
+        executors=PhaseExecutorRegistry({PhaseExecutorType.RENDER: _Render()}),
+        max_repair_attempts=1,
+        gate_runner=_PassGate(),
+    )
+    definition = WorkflowDefinition(
+        workflow_id="wf-gate-pass",
+        phases=[PhaseDefinition(phase_id="render", executor_type=PhaseExecutorType.RENDER)],
+        output_contract_refs=["final_qa"],
+    )
+    result = await runner.run(
+        definition, run_id="r1", phase_input={}, budget=_budget(), allowed_tools=[]
+    )
+    assert result.reason_code == "output_contract_passed"

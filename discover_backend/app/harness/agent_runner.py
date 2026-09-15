@@ -6,25 +6,26 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
 from app.config.settings import Settings
-from app.environment.mcp.manager import MCPManager
-from app.environment.tools.broker import ToolBroker
 from app.environment.tools.models import ToolCallRequest, ToolResult
-from app.environment.tools.script_executor import ScriptExecutor
-from app.environment.workspace.service import Workspace, WorkspaceManager
+from app.harness.contracts.capability import CapabilityActivatorPort, ToolBrokerPort
+from app.harness.execution.pipeline import ToolExecutionRequest
 from app.harness.graph import build_react_subgraph
 from app.harness.models import (
     BudgetLimits,
     BudgetState,
     PhaseExecutionOutcome,
     PhaseExecutionRequest,
+    ProgressState,
 )
 from app.harness.react.executor import BoundedReActExecutor
-from app.harness.react.ports import EventSinkPort, LLMRunnerPort, ToolRunnerPort
+from app.harness.react.ports import ActionGatewayPort, EventSinkPort, LLMRunnerPort
 from app.harness.react.state import ReactGraphState
 from app.harness.resolver.assistant import AssistantResolver, ExplicitSelectionResolver
 from app.harness.resolver.skill import SkillResolutionContext, SkillResolver
@@ -106,31 +107,24 @@ def build_agent_budget(settings: Settings, plan: AssemblyPlan | None = None) -> 
 
 
 class AssemblyResult:
-    """装配结果：已激活的 broker + 工作区 + 装配计划。"""
+    """装配结果：已激活的工具代理（端口）+ 运行工作区根 + 装配计划。"""
 
-    def __init__(self, *, broker: ToolBroker, workspace: Workspace, plan: AssemblyPlan) -> None:
+    def __init__(self, *, broker: ToolBrokerPort, workspace_root: Path, plan: AssemblyPlan) -> None:
         self.broker = broker
-        self.workspace = workspace
+        self.workspace_root = workspace_root
         self.plan = plan
 
 
 class AgentAssembler:
-    """Agent 解析与装配：选定智能体技能、装配计划、激活工具代理。"""
+    """Agent 解析与装配：选定智能体技能、装配计划、经端口激活能力。
 
-    def __init__(
-        self,
-        *,
-        registry: AgentRegistry,
-        workspaces: WorkspaceManager,
-        mcp_manager: MCPManager | None,
-        script_executor: ScriptExecutor | None,
-        settings: Settings,
-    ) -> None:
+    只依赖 `CapabilityActivatorPort`（能力装配端口）：MCP / Script / ToolBroker /
+    Workspace 的具体装配在 application 适配层完成，harness 不识别具体实现（P1#10）。
+    """
+
+    def __init__(self, *, registry: AgentRegistry, capabilities: CapabilityActivatorPort) -> None:
         self._registry = registry
-        self._workspaces = workspaces
-        self._mcp = mcp_manager
-        self._script = script_executor
-        self._settings = settings
+        self._capabilities = capabilities
         self._assistant_resolver: AssistantResolver = ExplicitSelectionResolver()
         self._skill_resolver = SkillResolver()
 
@@ -140,6 +134,7 @@ class AgentAssembler:
         assistant_target: AssistantTarget | None,
         account_id: str,
         session_id: str,
+        run_id: str,
     ) -> AssemblyResult | None:
         target = self._assistant_resolver.resolve(assistant_target)
         if target is None or target.type == TargetType.GENERIC:
@@ -161,24 +156,19 @@ class AgentAssembler:
         skill_id = self._skill_resolver.resolve(context)
         if skill_id is None:
             return None
-        if self._mcp is None or self._script is None:
-            raise ConfigError("MCP 管理器或脚本执行器未初始化，无法装配智能体")
         plan = self._registry.assemble(target.id or "", skill_id)
         skill_dir = package.root / skill_id
-        workspace = await self._workspaces.create(target.id or "")
-        broker = ToolBroker(
-            settings=self._settings, mcp_manager=self._mcp, script_executor=self._script
-        )
-        activation = await broker.activate(
-            plan=plan.tool_plan(),
+        capability = await self._capabilities.activate(
+            agent_id=target.id or "",
             skill_dir=skill_dir,
-            workspace=workspace.root,
-            session_id=session_id,
+            plan=plan,
             account_id=account_id,
+            session_id=session_id,
+            run_id=run_id,
         )
-        if not activation.ok:
-            raise ConfigError(f"必需 MCP 依赖不可用：{', '.join(activation.failed_required)}")
-        return AssemblyResult(broker=broker, workspace=workspace, plan=plan)
+        return AssemblyResult(
+            broker=capability.broker, workspace_root=capability.workspace_root, plan=plan
+        )
 
     async def assemble_from_package(
         self,
@@ -186,6 +176,7 @@ class AgentAssembler:
         package: AgentPackage,
         account_id: str,
         session_id: str,
+        run_id: str | None = None,
     ) -> AssemblyResult:
         """从一个已加载的智能体包直接装配（草稿预览 / 调试路径）。
 
@@ -202,35 +193,44 @@ class AgentAssembler:
         skill_id = self._skill_resolver.resolve(context)
         if skill_id is None:
             raise ConfigError("无法解析技能")
-        if self._mcp is None or self._script is None:
-            raise ConfigError("MCP 管理器或脚本执行器未初始化，无法装配智能体")
         plan = self._registry.assemble_package(package, skill_id)
         skill_dir = package.root / skill_id
-        workspace = await self._workspaces.create(package.manifest.agent_id)
-        broker = ToolBroker(
-            settings=self._settings, mcp_manager=self._mcp, script_executor=self._script
-        )
-        activation = await broker.activate(
-            plan=plan.tool_plan(),
+        capability = await self._capabilities.activate(
+            agent_id=package.manifest.agent_id,
             skill_dir=skill_dir,
-            workspace=workspace.root,
-            session_id=session_id,
+            plan=plan,
             account_id=account_id,
+            session_id=session_id,
+            run_id=run_id or uuid.uuid4().hex,
         )
-        if not activation.ok:
-            raise ConfigError(f"必需 MCP 依赖不可用：{', '.join(activation.failed_required)}")
-        return AssemblyResult(broker=broker, workspace=workspace, plan=plan)
+        return AssemblyResult(
+            broker=capability.broker, workspace_root=capability.workspace_root, plan=plan
+        )
 
 
 class _ToolGateRunner:
-    """GateRunnerPort 生产适配：把已激活的 gate_<id> 脚本工具接到 Contract 执行。"""
+    """GateRunnerPort 生产适配：把 gate_<id> 脚本经 ActionGateway 统一执行（收口）。
 
-    def __init__(self, tools: ToolRunnerPort) -> None:
-        self._tools = tools
+    gate 脚本虽是内部可信校验器，仍走唯一工具执行入口（ActionGateway →
+    ToolRuntime），避免 harness 层出现第二条 broker.execute 旁路。
+    """
+
+    def __init__(
+        self,
+        actions: ActionGatewayPort,
+        *,
+        run_id: str,
+        phase_id: str,
+        budget: BudgetState,
+    ) -> None:
+        self._actions = actions
+        self._run_id = run_id
+        self._phase_id = phase_id
+        self._budget = budget
 
     def _find_gate_name(self, gate_id: str) -> str | None:
         suffix = f".script.gate_{gate_id}"
-        for spec in self._tools.exposed_tools():
+        for spec in self._actions.exposed_tools():
             if spec.function.name.endswith(suffix):
                 return spec.function.name
         return None
@@ -245,16 +245,32 @@ class _ToolGateRunner:
                 message=f"门禁脚本未装配：gate_{gate_id}",
                 suggestion="在 SKILL.md gates 中为该门禁声明 validator 后再运行",
             )
-        results = await self._tools.execute(
-            [ToolCallRequest(call_id=f"gate_{gate_id}", tool_name=name, arguments=data)]
+        result = await self._actions.execute_batch(
+            ToolExecutionRequest(
+                run_id=self._run_id,
+                phase_id=self._phase_id,
+                iteration=0,
+                calls=[ToolCallRequest(call_id=f"gate_{gate_id}", tool_name=name, arguments=data)],
+                allowed_tools=[name],
+                budget=self._budget,
+                progress=ProgressState(),
+            )
         )
-        return results[0]
+        if not result.results:
+            return ToolResult(
+                call_id=f"gate_{gate_id}",
+                tool_name=name,
+                ok=False,
+                message="门禁脚本执行返回为空",
+                suggestion="检查门禁脚本输出",
+            )
+        return result.results[0]
 
 
 async def run_skill_workflow(
     *,
     llm: LLMRunnerPort,
-    tools: ToolRunnerPort,
+    actions: ActionGatewayPort,
     events: EventSinkPort,
     request: PhaseExecutionRequest,
     definition: WorkflowDefinition,
@@ -271,7 +287,7 @@ async def run_skill_workflow(
     react = ReactPhaseExecutor(
         BoundedReActExecutor(
             llm=llm,
-            tools=tools,
+            actions=actions,
             events=events,
             display_text=display_text,
             display_thinking=display_thinking,
@@ -291,7 +307,12 @@ async def run_skill_workflow(
     runner = WorkflowRunner(
         executors=registry,
         max_repair_attempts=request.budget.limits.max_repair_attempts,
-        gate_runner=_ToolGateRunner(tools),
+        gate_runner=_ToolGateRunner(
+            actions=actions,
+            run_id=request.run_id,
+            phase_id=request.phase_instance_id,
+            budget=request.budget,
+        ),
     )
     result = await runner.run(
         definition,
@@ -312,7 +333,7 @@ async def run_skill_workflow(
 async def run_agent_turn(
     *,
     llm: LLMRunnerPort,
-    tools: ToolRunnerPort,
+    actions: ActionGatewayPort,
     events: EventSinkPort,
     request: PhaseExecutionRequest,
     display_text: Callable[[str], None] | None = None,
@@ -321,7 +342,7 @@ async def run_agent_turn(
     """跑单阶段 Agent 回合：构建 BoundedReActExecutor → 编译子图 → 执行 → 返回 outcome。"""
     executor = BoundedReActExecutor(
         llm=llm,
-        tools=tools,
+        actions=actions,
         events=events,
         display_text=display_text,
         display_thinking=display_thinking,

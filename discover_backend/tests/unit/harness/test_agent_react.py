@@ -6,7 +6,7 @@
 - AgentAssembler 装配 / build_agent_budget 预算映射 / _outcome_answer 适配；
 - 结构化上下文投影（context_messages）优先于 system prompt 回落路径。
 
-全部 Fake LLM / Fake ToolRunner，无网络无 DB（CLAUDE.md §12）。
+全部 Fake LLM / Fake 工具，无网络无 DB（CLAUDE.md §12）。
 """
 
 from __future__ import annotations
@@ -20,6 +20,12 @@ from app.environment.tools.broker import ToolCallRequest, ToolResult
 from app.environment.tools.models import ToolDescriptor, ToolSource
 from app.harness.agent_runner import build_agent_budget
 from app.harness.events.run_events import RunEvent
+from app.harness.execution.pipeline import (
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolPreflightResult,
+    ToolRuntime,
+)
 from app.harness.graph import build_react_subgraph
 from app.harness.models import (
     BudgetState,
@@ -28,7 +34,7 @@ from app.harness.models import (
     PhaseExecutionRequest,
 )
 from app.harness.react.executor import BoundedReActExecutor
-from app.harness.react.ports import EventSinkPort, LLMRunnerPort, ToolRunnerPort
+from app.harness.react.ports import ActionGatewayPort, EventSinkPort, LLMRunnerPort
 from app.harness.react.state import ReactGraphState
 from app.llm.models import ChatMessage, ChatToolSpec, ToolFunction
 from app.llm.stream_parser import (
@@ -58,8 +64,8 @@ class _CapturingLLM(LLMRunnerPort):
             yield chunk
 
 
-class _FakeTools(ToolRunnerPort):
-    """脚本化 ToolRunner：descriptor 目录固定，execute 恒成功。"""
+class _FakeTools:
+    """脚本化工具：descriptor 目录固定，execute 恒成功。"""
 
     def __init__(self) -> None:
         self._descriptors = {
@@ -94,6 +100,36 @@ class _FakeTools(ToolRunnerPort):
             ToolResult(call_id=call.call_id, tool_name=call.tool_name, ok=True, content="数据")
             for call in calls
         ]
+
+
+class _FakeActions(ActionGatewayPort):
+    """把 _FakeTools 包装为 ActionGatewayPort（经 ToolRuntime 走真实管线边界）。"""
+
+    def __init__(self, tools: _FakeTools, progress_threshold: int = 3) -> None:
+        self._tools = tools
+        self._progress_threshold = progress_threshold
+
+    def _runtime(self) -> ToolRuntime:
+        async def _noop(_event: RunEvent) -> None:
+            return None
+
+        return ToolRuntime(
+            broker=self._tools,
+            emit=_noop,
+            progress_threshold=self._progress_threshold,
+        )
+
+    def exposed_tools(self) -> list[ChatToolSpec]:
+        return self._tools.exposed_tools()
+
+    def get_descriptor(self, name: str) -> ToolDescriptor | None:
+        return self._tools.get_descriptor(name)
+
+    async def preflight(self, request: ToolExecutionRequest) -> ToolPreflightResult:
+        return await self._runtime().preflight(request)
+
+    async def execute_batch(self, request: ToolExecutionRequest) -> ToolExecutionResult:
+        return await self._runtime().execute_prepared(request, request.calls, [])
 
 
 class _RecordingSink(EventSinkPort):
@@ -171,7 +207,7 @@ async def test_skill_system_prompt_injected_into_react_llm() -> None:
 
     llm = _CapturingLLM(respond)
     tools = _FakeTools()
-    executor = BoundedReActExecutor(llm=llm, tools=tools, events=_RecordingSink())
+    executor = BoundedReActExecutor(llm=llm, actions=_FakeActions(tools), events=_RecordingSink())
     request = _request(build_agent_budget(_settings()), system_prompt=skill_prompt)
     state = await _run(executor, request)
 
@@ -261,7 +297,9 @@ async def test_context_messages_override_system_prompt_fallback() -> None:
         return _tool_call("submit_final_answer", '{"answer": "完成"}', call_id="t1")
 
     llm = _CapturingLLM(respond)
-    executor = BoundedReActExecutor(llm=llm, tools=_FakeTools(), events=_RecordingSink())
+    executor = BoundedReActExecutor(
+        llm=llm, actions=_FakeActions(_FakeTools()), events=_RecordingSink()
+    )
     request = _request(build_agent_budget(_settings()), system_prompt="装配层系统提示").model_copy(
         update={"context_messages": projected}
     )
@@ -301,7 +339,7 @@ async def test_tool_results_fed_back_as_tool_messages() -> None:
 
     llm = _CapturingLLM(respond)
     tools = _FakeTools()
-    executor = BoundedReActExecutor(llm=llm, tools=tools, events=_RecordingSink())
+    executor = BoundedReActExecutor(llm=llm, actions=_FakeActions(tools), events=_RecordingSink())
     request = _request(build_agent_budget(_settings()))
     state = await _run(executor, request)
 
@@ -335,7 +373,7 @@ async def test_rejected_tool_call_still_gets_tool_response() -> None:
 
     llm = _CapturingLLM(respond)
     tools = _FakeTools()
-    executor = BoundedReActExecutor(llm=llm, tools=tools, events=_RecordingSink())
+    executor = BoundedReActExecutor(llm=llm, actions=_FakeActions(tools), events=_RecordingSink())
     request = _request(build_agent_budget(_settings()))
     # allowed_tools 排除 score_calculator → 该调用被 Policy 拒绝
     request.allowed_tools = ["other.tool"]

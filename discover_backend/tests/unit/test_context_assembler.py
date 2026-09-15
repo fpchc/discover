@@ -12,13 +12,13 @@ from app.application.chat.turn_context import TurnContextRequest, build_turn_con
 from app.application.dto.conversations import ConversationSession
 from app.config.settings import Settings
 from app.environment.context import (
-    ContextAssembler,
     ContextAssemblyOptions,
     ContextIdentity,
     ContextMessage,
     CurrentInput,
     FileRef,
 )
+from app.harness.context import ContextAssembler
 
 
 class _FakeConversation:
